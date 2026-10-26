@@ -1,0 +1,91 @@
+name: Release (Windows)
+
+# Builds the signed Windows installers with apps/desktop/scripts/release.ps1.
+# Publishing a GitHub release (apps/macos/scripts/release.sh PUBLISH=1) starts
+# it, and it attaches the installers to that release. Run it by hand with the
+# tag of an existing release to rebuild its installers, or without a tag for a
+# signed dry run of the chosen branch whose installers are only kept as a
+# workflow artifact.
+#
+# The windows-release environment holds the Azure IDs and signing account
+# names as variables. There is no secret: azure/login exchanges GitHub's OIDC
+# token, and the Azure app trusts only tokens for jobs in this environment,
+# which only main and v* tags can deploy to.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of an existing release to rebuild (e.g. v0.1.2); empty for a dry run
+        required: false
+        default: ""
+
+permissions:
+  contents: write # gh release upload
+  id-token: write # azure/login
+
+concurrency:
+  group: release-windows-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  installers:
+    name: Signed installers
+    runs-on: windows-latest
+    environment: windows-release
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            apps/desktop/src-tauri -> apps/desktop/src-tauri/target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      # Before signing in: GitHub's OIDC token is short-lived, so keep the
+      # time between azure/login and the first signature down.
+      - name: Build ctx
+        run: cargo build --release -p ctx-cli
+      - name: Sign in to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      # The Azure CLI caches this token (valid for about an hour), and
+      # SignTool's Artifact Signing plugin reads it through the CLI, so
+      # signing keeps working after the OIDC token has expired.
+      - name: Fetch the code-signing token
+        run: az account get-access-token --scope https://codesigning.azure.net/.default --query expiresOn --output tsv
+      - name: Build, sign and check the installers
+        shell: pwsh
+        env:
+          ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          PUBLISH: ${{ env.TAG != '' && '1' || '0' }}
+          RELEASE_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = if ($env:TAG) { $env:TAG.TrimStart('v') } else { '' }
+          ./apps/desktop/scripts/release.ps1 -Version $version
+      - name: Upload the installers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-windows-${{ env.TAG || github.sha }}
+          path: dist/Context_*
+          if-no-files-found: ignore

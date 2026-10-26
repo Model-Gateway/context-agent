@@ -131,6 +131,7 @@ npm run build                # dist/ only
 npm run tauri build          # installer: NSIS .exe + MSI on Windows, .app/.dmg on macOS
 scripts/embed-ctx.sh         # (macOS/Linux) build ctx and copy it to src-tauri/binaries/ for bundling
 scripts/embed-ctx.ps1        # (Windows)
+scripts/release.ps1          # (Windows) release installers signed with Azure Artifact Signing, in the repo's dist/ (see its header; CI: .github/workflows/release-windows.yml)
 ```
 
 `tauri.conf.json`: `productName` "Context", identifier
