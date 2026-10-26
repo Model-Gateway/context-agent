@@ -19,6 +19,8 @@ struct GeneralSettingsSection: View {
     var body: some View {
         @Bindable var preferences = appState.preferences
         SettingsPage {
+            UpdatesSettingsGroup()
+
             SettingsGroup("Backend", footer: "The ctx binary is auto-detected: the app bundle, $CTX_BINARY, ~/.cargo/bin, Homebrew, /usr/local/bin, then a repository checkout. Choose one to override the search.") {
                 SettingsRow("Binary", alignment: .top) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -222,6 +224,59 @@ struct GeneralSettingsSection: View {
                 }
             }
         )
+    }
+}
+
+/// The running version and Sparkle's update settings (App/Updater.swift).
+/// Builds that do not update themselves show the version and say why.
+private struct UpdatesSettingsGroup: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        let updater = appState.updater
+        SettingsGroup("Updates", footer: updater.isAvailable
+                      ? "Context looks for a new release on GitHub once a day. An update replaces the whole app, the ctx backend included; one downloaded in the background installs when you quit Context."
+                      : "This build does not update itself: only the signed releases from GitHub do. Rebuild from source to update a development copy.") {
+            SettingsRow("Version", alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(verbatim: Updater.version)
+                            .font(Theme.Font.mono)
+                            .foregroundStyle(Theme.textPrimary)
+                            .selectableText()
+                        if updater.isAvailable {
+                            Button("Check Now") {
+                                updater.checkForUpdates()
+                            }
+                            .controlSize(.small)
+                            .disabled(!updater.canCheckForUpdates)
+                        }
+                    }
+                    if updater.isAvailable {
+                        Text(lastChecked(updater.lastCheck))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
+            }
+            if updater.isAvailable {
+                SettingsRow("Automatic", alignment: .top) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Check for updates every day", isOn: Binding(get: { updater.automaticallyChecks }, set: { updater.setAutomaticallyChecks($0) }))
+                        Toggle("Download and install updates", isOn: Binding(get: { updater.automaticallyInstalls }, set: { updater.setAutomaticallyInstalls($0) }))
+                            .disabled(!updater.automaticallyChecks)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .onAppear { updater.refresh() }
+    }
+
+    private func lastChecked(_ date: Date?) -> String {
+        guard let date else { return "Not checked yet" }
+        return "Last checked \(date.formatted(.relative(presentation: .named)))"
     }
 }
 

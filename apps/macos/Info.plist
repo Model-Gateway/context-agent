@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged with the Info.plist Xcode generates (GENERATE_INFOPLIST_FILE): only
+  the keys build settings cannot express live here. They configure Sparkle
+  (App/Updater.swift): the feed is the appcast.xml that scripts/release.sh
+  attaches to every GitHub release, and SUPublicEDKey is the public half of
+  the EdDSA key in the release machine's keychain (generate_keys).
+-->
+<plist version="1.0">
+<dict>
+	<key>SUFeedURL</key>
+	<string>https://github.com/Model-Gateway/context-agent/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>mm3TaueR3/zqvVMBibwmXtv7bcNOfE22EEPgRbknnXA=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+</dict>
+</plist>

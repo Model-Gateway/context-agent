@@ -169,6 +169,8 @@ final class AppState {
     let notifier: TaskNotifier
     /// "Sign in with ModelGateway" (App/GatewayState.swift).
     let gateway: GatewayState
+    /// Sparkle self-updates (App/Updater.swift).
+    let updater: Updater
     /// models.dev metadata: display names and the picker's hover cards.
     let modelsDev = ModelsDevCatalog()
 
@@ -210,6 +212,7 @@ final class AppState {
         self.toasts = toasts
         self.notifier = notifier
         gateway = GatewayState(preferences: preferences)
+        updater = Updater()
         sidebarVisible = preferences.sidebarVisible
         inspectorVisible = preferences.inspectorVisible
         inspectorWidth = CGFloat(preferences.inspectorWidth)
@@ -231,6 +234,10 @@ final class AppState {
             NSApp?.activate(ignoringOtherApps: true)
             self.select(project: projectId)
             Task { await self.select(session: sessionId) }
+        }
+        updater.isBusy = { [weak self] in self?.anyProjectRunning ?? false }
+        updater.onPostpone = { [weak toasts] in
+            toasts?.show("Context will restart to finish updating once the running tasks are done.")
         }
         backend.onNotification = { [weak self] notification in
             self?.handle(notification)

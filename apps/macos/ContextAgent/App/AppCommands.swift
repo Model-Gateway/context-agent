@@ -11,6 +11,15 @@ struct AppCommands: Commands {
     let appState: AppState
 
     var body: some Commands {
+        // Only in builds that update themselves (Developer ID releases).
+        CommandGroup(after: .appInfo) {
+            if appState.updater.isAvailable {
+                Button("Check for Updates…") {
+                    appState.updater.checkForUpdates()
+                }
+            }
+        }
+
         // The app has no Settings window: ⌘, opens the profile page's settings tabs.
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") {

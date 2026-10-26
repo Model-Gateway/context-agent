@@ -14,7 +14,9 @@ share history.
   `SWIFT_STRICT_CONCURRENCY = minimal`), deployment target **macOS 26.0**.
 - SwiftUI first; AppKit where SwiftUI lacks the control (`NSOpenPanel`,
   `NSSavePanel`, `NSPasteboard`, `NSWorkspace`, `NSTextView` for the composer).
-- No third-party packages. No network code in Swift: the backend does it.
+- Third-party packages only where the platform has no equivalent (SwiftTerm,
+  the tree-sitter stack, Sparkle). No network code in Swift: the backend does
+  it. The one exception is Sparkle's updater ("Updates" under Build and run).
 - `@Observable` (Observation framework) for state; all state objects are
   `@MainActor`. Backend I/O runs off the main actor and hops back with
   `Task { @MainActor in }` — never `DispatchQueue.main.sync`.
@@ -130,6 +132,7 @@ apps/macos/
       LaunchOptions.swift                     # S4  parses --mock, --autotest DIR, --project PATH, CTX_DESKTOP_MOCK; exposes LaunchOptions.current
       UITestDriver.swift                      # S4  scripted self-test run + window screenshots (see "Self-test mode")
       GatewayState.swift                      # S3  ModelGateway account: GatewayState (@Observable) + AppState intents (device sign-in, sign-out, refresh, endpoint switch)
+      Updater.swift                           #     Sparkle self-updates: Updater (@Observable, AppState.updater), Developer ID gate, relaunch waits for running tasks
     Backend/
       Protocol.swift                          # (written) DTOs, AgentEvent decoding, JSONValue, TaskRunOptions, BackendError
       JSONRPC.swift                           # S1  RPCConnection actor: framing, ids, pending continuations, notification dispatch
@@ -1212,8 +1215,13 @@ xcodebuild -project apps/macos/ContextAgent.xcodeproj -scheme ContextAgent -conf
 The project (`objectVersion = 77`, one `PBXFileSystemSynchronizedRootGroup`,
 no `PBXBuildFile` entries, `GENERATE_INFOPLIST_FILE = YES`,
 `ENABLE_APP_SANDBOX = NO`, `ENABLE_USER_SCRIPT_SANDBOXING = NO`, ad-hoc
-signing `-`, bundle id `dev.contextagent.desktop`, product "Context",
-category developer-tools) was validated on Xcode 26.6; xcodebuild
+signing `-`, `ENABLE_HARDENED_RUNTIME = NO`, bundle id
+`dev.contextagent.desktop`, product "Context", category developer-tools)
+was validated on Xcode 26.6. The hardened runtime is off for these ad-hoc
+builds because its library validation refuses the embedded Sparkle.framework
+when nothing carries a Team ID (dyld: "different Team IDs");
+`scripts/release.sh` turns it on (`--options runtime`) when it re-signs
+everything with the Developer ID. xcodebuild
 auto-creates the scheme. The "Embed ctx backend" Run Script phase declares
 `$(CODESIGNING_FOLDER_PATH)/Contents/Helpers/ctx` as its output (so CodeSign
 re-runs) and runs `scripts/embed-ctx.sh`: `cargo build --release -p ctx-cli`
@@ -1222,3 +1230,23 @@ copies the binary into `Contents/Helpers/ctx` and ad-hoc signs it; a missing
 binary only prints a warning. Acceptance: `codesign --verify --deep --strict`
 on the built app passes; the app launches; `ctx serve --mock` answers
 `initialize` from inside the bundle.
+
+### Updates
+
+Releases update themselves with [Sparkle](https://sparkle-project.org)
+(`App/Updater.swift`). An update replaces the whole bundle, so the app and
+`Contents/Helpers/ctx` always move together and the backend never runs
+against an app speaking another protocol version. `apps/macos/Info.plist`
+(merged with the generated one) holds the feed, the EdDSA public key and the
+defaults: check daily, download in the background, install on quit, verify
+the signature before unpacking. The feed is
+`https://github.com/Model-Gateway/context-agent/releases/latest/download/appcast.xml`:
+`scripts/release.sh` sets `CFBundleVersion` to the release version (what
+Sparkle compares), re-signs Sparkle's helpers with the Developer ID, writes
+`dist/appcast.xml` with the zip's EdDSA signature (`NOTES=<file.md>` embeds
+Markdown release notes) and, with `PUBLISH=1`, creates the GitHub release
+with the zip, dmg and appcast. Only Developer ID builds start the updater:
+Xcode and local `xcodebuild` builds (ad hoc) and `--autotest` runs show the
+version without update controls. "Install and Relaunch" while a task runs
+asks whether to restart now (stopping it) or once every task has finished.
+`CTX_UPDATE_FEED=<url>` points a release build at another appcast.

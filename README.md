@@ -70,6 +70,8 @@ What makes it different from a chat window with tools bolted on:
 
 Download the latest signed and notarized `Context-<version>.dmg` from [Releases](../../releases), open it and drag **Context** to Applications. The app bundles the `ctx` backend, so nothing else is needed. Requires macOS 26 (Tahoe) or later on Apple silicon.
 
+The app keeps itself up to date: it checks for a new release once a day, downloads it in the background and installs it, `ctx` included, the next time you quit. **Context → Check for Updates…** checks right away, and Settings → General → Updates turns the automatic parts off.
+
 ### From source
 
 You need a stable Rust toolchain (1.85+). The macOS app additionally needs Xcode 26.
