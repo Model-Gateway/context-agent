@@ -47,17 +47,16 @@ pub fn process_environment() -> Environment {
 /// `BackendEnvironment.extraPathDirectories`: added to PATH so `ctx` finds
 /// cargo and the installed tools even when the login shell could not be
 /// captured. `~/.cargo/bin` everywhere; `/opt/homebrew/bin` and
-/// `/usr/local/bin` on macOS; `%LOCALAPPDATA%\Programs\Context` on Windows;
-/// `/usr/local/bin` on Linux.
+/// `/usr/local/bin` on macOS; the install folders on Windows
+/// (`%LOCALAPPDATA%\Context`, `%ProgramFiles%\Context`); `/usr/local/bin`
+/// on Linux.
 pub fn extra_path_directories() -> Vec<PathBuf> {
     let mut directories = Vec::new();
     if let Some(home) = dirs::home_dir() {
         directories.push(home.join(".cargo").join("bin"));
     }
     if cfg!(windows) {
-        if let Some(local) = dirs::data_local_dir() {
-            directories.push(local.join("Programs").join("Context"));
-        }
+        directories.extend(super::locator::windows_install_directories());
     } else if cfg!(target_os = "macos") {
         directories.push(PathBuf::from("/opt/homebrew/bin"));
         directories.push(PathBuf::from("/usr/local/bin"));

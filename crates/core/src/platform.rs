@@ -163,12 +163,13 @@ pub fn tool_directories() -> Vec<PathBuf> {
         }
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
             dirs.push(PathBuf::from(&local).join("pnpm"));
-            dirs.push(PathBuf::from(&local).join("Programs").join("Context"));
         }
         if let Some(pf) = std::env::var_os("ProgramFiles") {
             dirs.push(PathBuf::from(&pf).join("nodejs"));
             dirs.push(PathBuf::from(&pf).join("Git").join("cmd"));
         }
+        // The desktop app, which ships ctx.exe next to itself.
+        dirs.extend(desktop_app_directories());
     } else {
         dirs.push(PathBuf::from("/opt/homebrew/bin"));
         dirs.push(PathBuf::from("/usr/local/bin"));
@@ -179,6 +180,16 @@ pub fn tool_directories() -> Vec<PathBuf> {
         }
     }
     dirs
+}
+
+/// Where the Windows installers put the desktop app (and the `ctx.exe` it
+/// ships): the per-user NSIS installer in `%LOCALAPPDATA%\Context`, the
+/// per-machine MSI in `%ProgramFiles%\Context`. Empty elsewhere.
+pub fn desktop_app_directories() -> Vec<PathBuf> {
+    if !cfg!(windows) {
+        return Vec::new();
+    }
+    ["LOCALAPPDATA", "ProgramFiles"].iter().filter_map(std::env::var_os).map(|base| PathBuf::from(base).join("Context")).collect()
 }
 
 // ---------------------------------------------------------------------------
