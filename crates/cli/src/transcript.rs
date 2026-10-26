@@ -50,8 +50,11 @@ const UNICODE_GLYPHS: Glyphs = Glyphs { spinner: &["⠋", "⠙", "⠹", "⠸", "
 const FALLBACK_GLYPHS: Glyphs = Glyphs { spinner: &["|", "/", "-", "\\"], ok: "√", fail: "×", blocked: "!", pending: "○", agents: "♦" };
 
 /// The glyph set for this terminal, chosen once: Unicode everywhere except
-/// a Windows console that is not known to render it (Windows Terminal,
-/// VS Code, ConEmu, WezTerm, Alacritty and anything setting `TERM` are).
+/// the legacy Windows console host, recognised by its console window
+/// (Windows Terminal, VS Code, WezTerm and other ConPTY terminals have a
+/// pseudoconsole window instead). Without a console window, a Windows terminal is
+/// trusted when it is known to render Unicode (Windows Terminal, VS Code,
+/// ConEmu, WezTerm, Alacritty and anything setting `TERM`).
 /// `CTX_ASCII=1` forces the fallback set, `CTX_ASCII=0` the Unicode one.
 pub fn glyphs() -> &'static Glyphs {
     static CHOSEN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -64,13 +67,48 @@ pub fn glyphs() -> &'static Glyphs {
             Some("0") | Some("false") | Some("no") => return true,
             _ => {}
         }
-        !cfg!(windows) || ["WT_SESSION", "TERM_PROGRAM", "ConEmuTask", "WEZTERM_EXECUTABLE", "ALACRITTY_LOG", "TERM"].iter().any(|v| std::env::var_os(v).is_some_and(|x| !x.is_empty()))
+        if !cfg!(windows) {
+            return true;
+        }
+        // The environment alone is not enough: a conhost started from
+        // inside Windows Terminal (`conhost.exe cmd`) inherits WT_SESSION.
+        match legacy_console_window() {
+            Some(legacy) => !legacy,
+            None => ["WT_SESSION", "TERM_PROGRAM", "ConEmuTask", "WEZTERM_EXECUTABLE", "ALACRITTY_LOG", "TERM"].iter().any(|v| std::env::var_os(v).is_some_and(|x| !x.is_empty())),
+        }
     });
     if unicode {
         &UNICODE_GLYPHS
     } else {
         &FALLBACK_GLYPHS
     }
+}
+
+/// Whether this process's console is the legacy console host's own window:
+/// `Some(true)` for a shown `ConsoleWindowClass` window, `Some(false)` for a
+/// pseudoconsole (`PseudoConsoleWindow`, behind Windows Terminal, VS Code
+/// and other ConPTY terminals) or a hidden console (ConEmu), `None` without
+/// a console.
+#[cfg(windows)]
+fn legacy_console_window() -> Option<bool> {
+    use windows_sys::Win32::System::Console::GetConsoleWindow;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClassNameW, IsWindowVisible};
+    // SAFETY: queries on the console window, checked for null; the class
+    // name buffer is ours and its length is passed.
+    unsafe {
+        let window = GetConsoleWindow();
+        if window.is_null() {
+            return None;
+        }
+        let mut class = [0u16; 64];
+        let len = GetClassNameW(window, class.as_mut_ptr(), class.len() as i32).max(0) as usize;
+        Some(String::from_utf16_lossy(&class[..len]) == "ConsoleWindowClass" && IsWindowVisible(window) != 0)
+    }
+}
+
+#[cfg(not(windows))]
+fn legacy_console_window() -> Option<bool> {
+    None
 }
 
 /// Spinner frame for something that started at `since`.
