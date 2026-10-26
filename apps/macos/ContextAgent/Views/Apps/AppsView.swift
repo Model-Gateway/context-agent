@@ -1060,7 +1060,7 @@ private struct ComputerUsePermissions: View {
             }
         }
 
-        /// The System Settings pane and the `tccutil` service.
+        /// The System Settings pane.
         var pane: String {
             switch self {
             case .screenRecording: return "Privacy_ScreenCapture"
@@ -1068,10 +1068,13 @@ private struct ComputerUsePermissions: View {
             }
         }
 
-        var service: String {
+        /// The backend asks for input with `CGRequestPostEventAccess`,
+        /// which records its own PostEvent entry beside Accessibility, so a
+        /// reset has to clear both or the backend keeps a stale one.
+        var services: [String] {
             switch self {
-            case .screenRecording: return "ScreenCapture"
-            case .accessibility: return "Accessibility"
+            case .screenRecording: return ["ScreenCapture"]
+            case .accessibility: return ["Accessibility", "PostEvent"]
             }
         }
     }
@@ -1167,28 +1170,30 @@ private struct ComputerUsePermissions: View {
     /// (re-signed) app leaves behind, then asks again.
     private func reset(_ permission: Permission) {
         guard let bundleId = Bundle.main.bundleIdentifier else {
-            note = "This build has no bundle identifier; run `tccutil reset \(permission.service)` in Terminal instead."
+            note = "This build has no bundle identifier; run `tccutil reset \(permission.services[0])` in Terminal instead."
             return
         }
         working = true
         note = nil
         Task.detached(priority: .userInitiated) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-            process.arguments = ["reset", permission.service, bundleId]
-            let pipe = Pipe()
-            process.standardError = pipe
-            process.standardOutput = pipe
             var failure: String?
-            do {
-                try process.run()
-                process.waitUntilExit()
-                if process.terminationStatus != 0 {
-                    let text = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    failure = text.isEmpty ? "tccutil exited with \(process.terminationStatus)" : text
+            for service in permission.services where failure == nil {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+                process.arguments = ["reset", service, bundleId]
+                let pipe = Pipe()
+                process.standardError = pipe
+                process.standardOutput = pipe
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    if process.terminationStatus != 0 {
+                        let text = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        failure = text.isEmpty ? "tccutil exited with \(process.terminationStatus)" : text
+                    }
+                } catch {
+                    failure = error.localizedDescription
                 }
-            } catch {
-                failure = error.localizedDescription
             }
             await MainActor.run {
                 working = false
