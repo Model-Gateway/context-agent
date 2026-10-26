@@ -1,0 +1,184 @@
+@import "tailwindcss";
+
+/*
+ * Context site design tokens.
+ *
+ * The page is a light "blueprint" frame: a paper background with dotted
+ * gutters, one central column bounded by hairlines, hatched bands between
+ * sections and crosshairs where the rules meet. Product UI sits on grainy
+ * photographic skies (the app's own banner art) inside frosted glass frames.
+ */
+:root {
+  --paper: #efefef;
+  --paper-2: #f3f3f5;
+  --surface: #ffffff;
+  --surface-2: #f7f7f8;
+  --ink: #0b0b0c;
+  --ink-2: #2c2c2e;
+  --muted: #6b6b70;
+  --faint: #9c9ca2;
+  --line: rgba(11, 11, 12, 0.13);
+  --line-soft: rgba(11, 11, 12, 0.07);
+  --hatch: rgba(11, 11, 12, 0.13);
+  --dot: rgba(11, 11, 12, 0.2);
+  --accent: #2f6bff;
+  --accent-soft: #e8efff;
+  --green: #167c45;
+  --green-soft: #e6f5ec;
+  --red: #c0362d;
+  --red-soft: #fbeaea;
+  --amber: #e08a1e;
+  --amber-soft: #fcf1e1;
+  --violet: #7c5cf6;
+  --violet-soft: #efebfe;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --shadow-card: 0 1px 2px rgba(11, 11, 12, 0.06), 0 8px 24px -8px rgba(11, 11, 12, 0.14);
+  --shadow-float: 0 2px 4px rgba(11, 11, 12, 0.04), 0 24px 60px -18px rgba(11, 11, 12, 0.32);
+
+  --animate-blink: blink 1.1s steps(1, end) infinite;
+  --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
+
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+}
+
+/*
+ * In-page anchors land with the whole hatched band above the section showing
+ * under the sticky header (64px + 32px band; 76px + 40px band from md), the
+ * same way the top of the page looks.
+ */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 96px;
+}
+
+@media (min-width: 48rem) {
+  html {
+    scroll-padding-top: 116px;
+  }
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+/* ---------------------------------------------------------------- textures */
+
+/* A square grid of small dots; used in the gutters and behind the hero. */
+.bg-dots {
+  background-image: radial-gradient(circle at center, var(--dot) 0.9px, transparent 1.3px);
+  background-size: 12px 12px;
+  background-position: 6px 6px;
+}
+
+/* Thin diagonal rules for the bands between sections. */
+.bg-hatch {
+  background-color: var(--paper);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0,
+    transparent 6px,
+    var(--hatch) 6px,
+    var(--hatch) 7px
+  );
+}
+
+/* Film grain for photographic panels (SVG fractal noise). */
+.bg-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* Fades a texture out towards the left, so dots dissolve into the copy. */
+.mask-fade-left {
+  mask-image: linear-gradient(to right, transparent 0%, #000 55%);
+}
+
+.mask-fade-bottom {
+  mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+}
+
+/* ------------------------------------------------------------- scroll reveal */
+
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  [data-reveal]:not([data-revealed]) {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  [data-reveal] {
+    transition:
+      opacity 700ms cubic-bezier(0.2, 0.7, 0.2, 1),
+      transform 700ms cubic-bezier(0.2, 0.7, 0.2, 1);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+}
+
+/* ---------------------------------------------------------------- utilities */
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
