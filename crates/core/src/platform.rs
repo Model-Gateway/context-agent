@@ -409,6 +409,33 @@ pub fn hide_console_window(cmd: &mut std::process::Command) -> &mut std::process
     cmd
 }
 
+/// Makes this process's standard handles non-inheritable (a no-op
+/// elsewhere). Windows hands every inheritable handle to every child, not
+/// only its standard ones, so a server an agent command leaves running in
+/// the background would hold ctx's stdout open: whatever reads it (`ctx run
+/// | tee`, CI, the desktop app's JSON-RPC pipe) would not see end-of-file
+/// until that server exits. A child given `Stdio::inherit()` still gets the
+/// handle: std passes it a duplicate made inheritable for that child only.
+/// Call once, first thing in `main`.
+pub fn keep_std_handles_private() {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
+        for id in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            // SAFETY: GetStdHandle has no preconditions; a missing handle is
+            // null or INVALID_HANDLE_VALUE and skipped; clearing a flag on a
+            // valid handle we hold has no other effect.
+            unsafe {
+                let handle = GetStdHandle(id);
+                if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
+                    SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+                }
+            }
+        }
+    }
+}
+
 /// Opens `url` in the default browser without waiting for it.
 pub fn open_url(url: &str) -> std::io::Result<()> {
     let mut cmd = if cfg!(target_os = "macos") {
@@ -557,6 +584,49 @@ mod tests {
         std::fs::write(dir.path().join("plain"), "data").unwrap();
         let path = std::env::join_paths([dir.path()]).unwrap();
         assert_eq!(find_executable_in("plain", Some(&path)), None);
+    }
+
+    /// A child started after `keep_std_handles_private` does not hold our
+    /// stdout: a pipe we hand it as stdout reaches end-of-file as soon as
+    /// the child's own background process is the only one left running.
+    #[cfg(windows)]
+    #[test]
+    fn background_grandchildren_do_not_hold_the_parent_stdout() {
+        use std::io::Read;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::{GetHandleInformation, HANDLE_FLAG_INHERIT};
+        use windows_sys::Win32::System::Console::{GetStdHandle, SetStdHandle, STD_OUTPUT_HANDLE};
+        let (mut reader, writer) = std::io::pipe().unwrap();
+        // Stand in for a parent whose stdout is a pipe (`ctx run | tee`):
+        // make the pipe this process's stdout, inheritable as Windows hands it over.
+        let raw = writer.as_raw_handle();
+        // SAFETY: `writer` outlives every use of `raw` below, and the test
+        // harness's stdout is put back before `writer` is dropped.
+        let original = unsafe {
+            let original = GetStdHandle(STD_OUTPUT_HANDLE);
+            windows_sys::Win32::Foundation::SetHandleInformation(raw, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+            SetStdHandle(STD_OUTPUT_HANDLE, raw);
+            original
+        };
+        keep_std_handles_private();
+        let mut flags = 0;
+        // SAFETY: as above.
+        unsafe { GetHandleInformation(raw, &mut flags) };
+        // A shell that leaves a process running, with its own output elsewhere.
+        let status = std::process::Command::new("cmd")
+            .args(["/D", "/C", "start /B ping -n 4 127.0.0.1 > NUL"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        // SAFETY: restores the handle saved above.
+        unsafe { SetStdHandle(STD_OUTPUT_HANDLE, original) };
+        assert_eq!(flags & HANDLE_FLAG_INHERIT, 0, "stdout is still inheritable");
+        assert!(status.unwrap().success());
+        drop(writer);
+        let started = std::time::Instant::now();
+        let mut rest = Vec::new();
+        reader.read_to_end(&mut rest).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "the background process held our stdout for {:?}", started.elapsed());
     }
 
     #[cfg(windows)]
