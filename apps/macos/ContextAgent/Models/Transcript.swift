@@ -215,6 +215,28 @@ struct AgentRun: Identifiable, Equatable {
     var runningCalls: Int { calls.filter { $0.status == .running }.count }
     var elapsed: TimeInterval { (endedAt ?? Date()).timeIntervalSince(startedAt) }
 
+    /// A later turn (the lead messaged the agent after it reported): the
+    /// same row runs again, keeping its earlier tool calls.
+    mutating func resume(agentTaskId: String) {
+        self.agentTaskId = agentTaskId
+        status = .running
+        report = nil
+        endedAt = nil
+        liveText = ""
+    }
+
+    /// The run ended before the agent reported.
+    mutating func stop(at date: Date) {
+        guard status.isRunning else { return }
+        status = .stopped
+        endedAt = date
+        liveText = ""
+        for c in calls.indices where calls[c].status == .running {
+            calls[c].status = .failed
+            if calls[c].summary.isEmpty { calls[c].summary = "stopped" }
+        }
+    }
+
     /// The agent's tool calls as a tool group, for the shared timeline view.
     var toolGroup: ToolGroup {
         var group = ToolGroup(id: id + ".tools", calls: calls, filesChanged: filesChanged, commandsRun: commandsRun, startedAt: startedAt, endedAt: endedAt)

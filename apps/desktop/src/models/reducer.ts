@@ -52,6 +52,8 @@ import {
   makeToolGroup,
   makeToolOutput,
   makeUserTurn,
+  resumeAgentRun,
+  stopAgentRun,
   terminalForStatus,
   toolGroupRunningCount,
   Transcript,
@@ -783,18 +785,35 @@ export class TranscriptReducer {
         this.flushPending()
         this.commitLive(date)
         this.commitLiveTools(date)
-        const run = makeAgentRun({
-          id: event.agent_id,
-          agentTaskId: event.agent_task_id,
-          name: event.name,
-          mode: event.mode,
-          objective: event.objective,
-          startedAt: date,
-        })
-        if (t.liveAgents === null) t.liveAgents = makeAgentGroup({ startedAt: date })
-        this.mutateLiveAgents((group) => {
-          group.agents.push(run)
-        })
+        // Every turn of an agent announces it again under the same id
+        // (the lead messaged it after it reported): its row runs again.
+        const liveIndex = t.liveAgents ? lastIndexWhere(t.liveAgents.agents, (agent) => agent.id === event.agent_id) : null
+        const location = liveIndex === null ? t.transcript.locateAgent(event.agent_id) : null
+        if (liveIndex !== null) {
+          this.mutateLiveAgents((group) => {
+            const agent = group.agents[liveIndex]
+            if (agent) group.agents[liveIndex] = resumeAgentRun(agent, event.agent_task_id)
+          })
+        } else if (location) {
+          t.transcript.updateAgents(location.item, (group) => {
+            const agent = group.agents[location.agent]
+            if (agent) group.agents[location.agent] = resumeAgentRun(agent, event.agent_task_id)
+            group.endedAt = null
+          })
+        } else {
+          const run = makeAgentRun({
+            id: event.agent_id,
+            agentTaskId: event.agent_task_id,
+            name: event.name,
+            mode: event.mode,
+            objective: event.objective,
+            startedAt: date,
+          })
+          if (t.liveAgents === null) t.liveAgents = makeAgentGroup({ startedAt: date })
+          this.mutateLiveAgents((group) => {
+            group.agents.push(run)
+          })
+        }
         this.refreshFollowedAgent()
         this.addLog(`◈ agent ${event.name} (${event.mode}) started: ${TranscriptReducer.clip(event.objective, 60)}`, date)
         return true
@@ -828,6 +847,15 @@ export class TranscriptReducer {
           date,
           report.status === 'failed' ? 'warn' : 'info',
         )
+        if (!this.target.liveAgents?.agents.some((agent) => agent.id === event.agent_id)) {
+          // A later turn of an agent in an already committed card.
+          const location = this.target.transcript.locateAgent(event.agent_id)
+          if (location) {
+            this.target.transcript.updateAgents(location.item, (group) => {
+              if (!agentGroupIsOpen(group)) group.endedAt = date
+            })
+          }
+        }
         this.commitLiveAgentsIfDone(date)
         this.refreshFollowedAgent()
         return true
@@ -1080,22 +1108,20 @@ export class TranscriptReducer {
   /// `ChatState.closeLiveAgents(date:)`: the run ended: agents still running
   /// are marked stopped and the group is committed as it stands.
   private closeLiveAgents(date: Date): void {
+    // An agent messaged for a later turn runs again in its committed card.
+    const transcript = this.target.transcript
+    transcript.items.forEach((item, index) => {
+      if (item.kind !== 'agents' || !agentGroupIsOpen(item)) return
+      transcript.updateAgents(index, (group) => {
+        group.agents = group.agents.map((agent) => stopAgentRun(agent, date))
+        group.endedAt = date
+      })
+    })
     const group = this.target.liveAgents
     if (!group) return
     this.target.liveAgents = null
     if (group.agents.length === 0) return
-    const agents = group.agents.map((agent): AgentRun => {
-      if (!agentStatusIsRunning(agent.status)) return agent
-      return {
-        ...agent,
-        status: { kind: 'stopped' },
-        endedAt: date,
-        liveText: '',
-        calls: agent.calls.map((call) =>
-          call.status !== 'running' ? call : { ...call, status: 'failed', summary: call.summary.length === 0 ? 'stopped' : call.summary },
-        ),
-      }
-    })
+    const agents = group.agents.map((agent) => stopAgentRun(agent, date))
     this.target.transcript.append({ ...group, agents, endedAt: date })
     this.refreshFollowedAgent()
   }
@@ -1107,7 +1133,21 @@ export class TranscriptReducer {
     let latest: AgentRun | null = null
     const running = lastIndexWhere(liveAgents, (agent) => agentStatusIsRunning(agent.status))
     if (running !== null) latest = liveAgents[running] ?? null
-    else latest = liveAgents[liveAgents.length - 1] ?? null
+    if (latest === null) {
+      // An agent on a later turn runs in an earlier, committed card.
+      const items = t.transcript.items
+      for (let i = items.length - 1; i >= 0; i -= 1) {
+        const item = items[i]
+        if (item && item.kind === 'agents') {
+          const index = lastIndexWhere(item.agents, (agent) => agentStatusIsRunning(agent.status))
+          if (index !== null) {
+            latest = item.agents[index] ?? null
+            break
+          }
+        }
+      }
+    }
+    if (latest === null) latest = liveAgents[liveAgents.length - 1] ?? null
     if (latest === null) {
       const items = t.transcript.items
       for (let i = items.length - 1; i >= 0; i -= 1) {

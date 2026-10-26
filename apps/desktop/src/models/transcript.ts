@@ -389,6 +389,27 @@ export function agentRunElapsed(agent: AgentRun, now: Date = new Date()): number
   return ((agent.endedAt ?? now).getTime() - agent.startedAt.getTime()) / 1000
 }
 
+/// `AgentRun.resume(agentTaskId:)`: a later turn (the lead messaged the
+/// agent after it reported): the same row runs again, keeping its earlier
+/// tool calls.
+export function resumeAgentRun(agent: AgentRun, agentTaskId: string): AgentRun {
+  return { ...agent, agentTaskId, status: { kind: 'running' }, report: null, endedAt: null, liveText: '' }
+}
+
+/** `AgentRun.stop(at:)`: the run ended before the agent reported. */
+export function stopAgentRun(agent: AgentRun, date: Date): AgentRun {
+  if (!agentStatusIsRunning(agent.status)) return agent
+  return {
+    ...agent,
+    status: { kind: 'stopped' },
+    endedAt: date,
+    liveText: '',
+    calls: agent.calls.map((call) =>
+      call.status !== 'running' ? call : { ...call, status: 'failed', summary: call.summary.length === 0 ? 'stopped' : call.summary },
+    ),
+  }
+}
+
 /** `AgentRun.toolGroup`: the agent's tool calls as a tool group, for the shared timeline view. */
 export function agentRunToolGroup(agent: AgentRun): ToolGroup {
   let terminal: ToolGroupTerminal | null

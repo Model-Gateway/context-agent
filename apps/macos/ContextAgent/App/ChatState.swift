@@ -194,7 +194,17 @@ final class ChatState: Identifiable {
     }
 
     private func refreshFollowedAgent() {
-        var latest = liveAgents?.agents.last { $0.status.isRunning } ?? liveAgents?.agents.last
+        var latest = liveAgents?.agents.last { $0.status.isRunning }
+        if latest == nil {
+            // An agent on a later turn runs in an earlier, committed card.
+            for item in transcript.items.reversed() {
+                if case .agents(let group) = item, let running = group.agents.last(where: { $0.status.isRunning }) {
+                    latest = running
+                    break
+                }
+            }
+        }
+        if latest == nil { latest = liveAgents?.agents.last }
         if latest == nil {
             for item in transcript.items.reversed() {
                 if case .agents(let group) = item, let last = group.agents.last {
@@ -582,12 +592,23 @@ final class ChatState: Identifiable {
             flushPending()
             commitLive(date: date)
             commitLiveTools(date: date)
-            var run = AgentRun(id: agentId, agentTaskId: agentTaskId, name: name, mode: mode, objective: objective)
-            run.startedAt = date
-            if liveAgents == nil {
-                liveAgents = AgentGroup(startedAt: date)
+            // Every turn of an agent announces it again under the same id
+            // (the lead messaged it after it reported): its row runs again.
+            if let index = liveAgents?.agents.lastIndex(where: { $0.id == agentId }) {
+                liveAgents?.agents[index].resume(agentTaskId: agentTaskId)
+            } else if let location = transcript.locate(agentId: agentId) {
+                transcript.update(agentsAt: location.item) { group in
+                    group.agents[location.agent].resume(agentTaskId: agentTaskId)
+                    group.endedAt = nil
+                }
+            } else {
+                var run = AgentRun(id: agentId, agentTaskId: agentTaskId, name: name, mode: mode, objective: objective)
+                run.startedAt = date
+                if liveAgents == nil {
+                    liveAgents = AgentGroup(startedAt: date)
+                }
+                liveAgents?.agents.append(run)
             }
-            liveAgents?.agents.append(run)
             refreshFollowedAgent()
             addLog("◈ agent \(name) (\(mode.rawValue)) started: \(Self.clip(objective, 60))", date: date)
 
@@ -609,6 +630,10 @@ final class ChatState: Identifiable {
             pendingAgentText[agentId] = nil
             changedPaths.formUnion(report.modifiedFiles)
             addLog("◈ agent \(report.name) \(report.status.rawValue): \(report.steps) steps, \(report.toolCalls) tool calls, \(report.durationMs) ms", date: date, level: report.status == .failed ? "warn" : "info")
+            if liveAgents?.agents.contains(where: { $0.id == agentId }) != true, let location = transcript.locate(agentId: agentId) {
+                // A later turn of an agent in an already committed card.
+                transcript.update(agentsAt: location.item) { if !$0.isOpen { $0.endedAt = date } }
+            }
             commitLiveAgentsIfDone(date: date)
             refreshFollowedAgent()
 
@@ -779,18 +804,18 @@ final class ChatState: Identifiable {
     /// The run ended: agents still running are marked stopped and the group
     /// is committed as it stands.
     private func closeLiveAgents(date: Date) {
+        // An agent messaged for a later turn runs again in its committed card.
+        for i in transcript.items.indices {
+            guard case .agents(let g) = transcript[i], g.isOpen else { continue }
+            transcript.update(agentsAt: i) { group in
+                for a in group.agents.indices { group.agents[a].stop(at: date) }
+                group.endedAt = date
+            }
+        }
         guard var group = liveAgents else { return }
         liveAgents = nil
         guard !group.agents.isEmpty else { return }
-        for i in group.agents.indices where group.agents[i].status.isRunning {
-            group.agents[i].status = .stopped
-            group.agents[i].endedAt = date
-            group.agents[i].liveText = ""
-            for c in group.agents[i].calls.indices where group.agents[i].calls[c].status == .running {
-                group.agents[i].calls[c].status = .failed
-                if group.agents[i].calls[c].summary.isEmpty { group.agents[i].calls[c].summary = "stopped" }
-            }
-        }
+        for i in group.agents.indices { group.agents[i].stop(at: date) }
         group.endedAt = date
         transcript.append(.agents(group))
         refreshFollowedAgent()
