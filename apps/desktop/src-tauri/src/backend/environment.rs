@@ -278,7 +278,9 @@ mod tests {
 
     #[test]
     fn merged_path_prefers_login_then_extras_then_current() {
-        let merged = merged_path(Some("/login/bin:/usr/bin"), Some("/usr/bin:/current/bin"));
+        let login = ["/login/bin", "/usr/bin"].join(PATH_SEPARATOR);
+        let current = ["/usr/bin", "/current/bin"].join(PATH_SEPARATOR);
+        let merged = merged_path(Some(&login), Some(&current));
         let parts: Vec<&str> = merged.split(PATH_SEPARATOR).collect();
         assert_eq!(parts[0], "/login/bin");
         assert_eq!(parts[1], "/usr/bin");
