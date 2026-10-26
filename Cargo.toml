@@ -110,7 +110,7 @@ tempfile = "3.27"
 similar = "3.2"
 unicode-width = "0.2"
 parking_lot = "0.12"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 lto = "thin"

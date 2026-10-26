@@ -33,6 +33,12 @@ fn fixture() -> tempfile::TempDir {
     git(root, &["init", "-q"]);
     git(root, &["add", "-A"]);
     git(root, &["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "initial"]);
+    // Check the files out again as a clone has them (CRLF under Git for
+    // Windows' core.autocrlf), so a worktree checkout matches them byte for byte.
+    for file in ["README.md", "src/lib.rs", "src/util.py"] {
+        std::fs::remove_file(root.join(file)).unwrap();
+    }
+    git(root, &["checkout", "--", "."]);
     std::fs::write(root.join("src/lib.rs"), "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\npub fn sub(a: i32, b: i32) -> i32 {\n    a - b\n}\n").unwrap();
     dir
 }
@@ -776,7 +782,9 @@ fn indexing_runs_and_close_reopen_are_ordered() {
     let started_at = c.trace_position(0, |f| is_event(f, &pid, "task_started")).expect("task_started");
     assert!(ready_at < started_at, "index/ready@{ready_at} must precede task_started@{started_at}");
 
-    // Rebuild, then run: the run waits for the rebuild.
+    // Rebuild, then run: the run waits for the rebuild, for up to the
+    // runner's 2 s grace (a slow disk, or a virus scanner on Windows, can
+    // make 400 files take longer; the run then starts without it).
     let mark = c.trace.len();
     assert_eq!(c.result("index/rebuild", json!({"project_id": pid})), json!({}));
     c.result("task/run", json!({"project_id": pid, "session_id": sid, "prompt": "Summarize again"}));
@@ -784,10 +792,15 @@ fn indexing_runs_and_close_reopen_are_ordered() {
     assert!(status["indexing"] == true || c.trace_position(mark, |f| is_notification(f, "index/ready", &pid)).is_some(), "{status}");
     let finished = c.wait_notification(|n| is_notification(n, "task/finished", &pid));
     assert_eq!(finished["params"]["status"], "completed", "{finished}");
+    let rebuilt = |f: &Value| is_notification(f, "index/ready", &pid) && f["params"]["rebuilt"] == true;
+    if c.trace_position(mark, rebuilt).is_none() {
+        c.wait_notification(rebuilt);
+    }
     let ready_at = c.trace_position(mark, |f| is_notification(f, "index/ready", &pid)).expect("index/ready");
     assert_eq!(c.trace[ready_at]["params"]["rebuilt"], true);
     let started_at = c.trace_position(mark, |f| is_event(f, &pid, "task_started")).expect("task_started");
-    assert!(ready_at < started_at, "index/ready@{ready_at} must precede task_started@{started_at}");
+    let rebuild_ms = c.trace[ready_at]["params"]["duration_ms"].as_u64().unwrap();
+    assert!(ready_at < started_at || rebuild_ms >= 2_000, "index/ready@{ready_at} must precede task_started@{started_at} unless the rebuild outlasted the grace ({rebuild_ms} ms)");
 
     // task/finished is queued before the slot is released: the first
     // accepted follow-up run always comes after it on the wire.
@@ -1392,7 +1405,8 @@ fn worktree_merge_lands_the_branch_in_the_parent() {
     let commits = log["commits"].as_array().unwrap();
     assert_eq!(commits[0]["hash"], sha.as_str(), "{log}");
     assert!(commits.iter().any(|e| e["hash"] == wt_sha.as_str()), "{log}");
-    assert_eq!(std::fs::read_to_string(repo.path().join("docs.md")).unwrap(), "# Docs\n");
+    // The merge checks the file out with the user's line endings (CRLF under Git for Windows).
+    assert_eq!(std::fs::read_to_string(repo.path().join("docs.md")).unwrap().replace("\r\n", "\n"), "# Docs\n");
     assert_eq!(c.result("git/status", json!({"project_id": pid}))["branch"], parent_branch.as_str());
     assert!(!root.exists(), "the worktree checkout is gone");
     assert_eq!(c.request("project/status", json!({"project_id": wid}))["error"]["code"], -32001);

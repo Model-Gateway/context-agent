@@ -47,6 +47,7 @@ the app is built.
 | What | Where |
 |---|---|
 | Data directory (sessions, tasks, index, memories, `config.toml`, `credentials.toml`) | `%USERPROFILE%\.context-agent`, or `CTX_DATA_DIR` |
+| The desktop app and the `ctx.exe` it ships | `%LOCALAPPDATA%\Context` (setup `.exe`, per user) or `%ProgramFiles%\Context` (`.msi`) |
 | The desktop app's API keys | Windows Credential Manager, service `dev.contextagent.desktop` |
 | The desktop app's pasted images | `%APPDATA%\dev.contextagent.desktop.tauri\Pasted Images` |
 

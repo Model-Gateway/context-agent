@@ -289,7 +289,8 @@ backend receives the key in its environment under `model.api_key_env`,
 built in Rust (`environment.rs`) exactly as `BackendEnvironment.build`:
 process environment, then (macOS/Linux only) the login shell's variables
 and PATH, then the extra PATH directories (`~/.cargo/bin`, and on Windows
-`%USERPROFILE%\.cargo\bin`, `%LOCALAPPDATA%\Programs\Context`), then the
+`%USERPROFILE%\.cargo\bin`, `%LOCALAPPDATA%\Context` and `%ProgramFiles%\Context`
+where the NSIS and MSI installers put the app), then the
 key from the secret store when the variable is not already set.
 
 ## Design system

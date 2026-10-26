@@ -163,12 +163,13 @@ pub fn tool_directories() -> Vec<PathBuf> {
         }
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
             dirs.push(PathBuf::from(&local).join("pnpm"));
-            dirs.push(PathBuf::from(&local).join("Programs").join("Context"));
         }
         if let Some(pf) = std::env::var_os("ProgramFiles") {
             dirs.push(PathBuf::from(&pf).join("nodejs"));
             dirs.push(PathBuf::from(&pf).join("Git").join("cmd"));
         }
+        // The desktop app, which ships ctx.exe next to itself.
+        dirs.extend(desktop_app_directories());
     } else {
         dirs.push(PathBuf::from("/opt/homebrew/bin"));
         dirs.push(PathBuf::from("/usr/local/bin"));
@@ -179,6 +180,16 @@ pub fn tool_directories() -> Vec<PathBuf> {
         }
     }
     dirs
+}
+
+/// Where the Windows installers put the desktop app (and the `ctx.exe` it
+/// ships): the per-user NSIS installer in `%LOCALAPPDATA%\Context`, the
+/// per-machine MSI in `%ProgramFiles%\Context`. Empty elsewhere.
+pub fn desktop_app_directories() -> Vec<PathBuf> {
+    if !cfg!(windows) {
+        return Vec::new();
+    }
+    ["LOCALAPPDATA", "ProgramFiles"].iter().filter_map(std::env::var_os).map(|base| PathBuf::from(base).join("Context")).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -302,11 +313,28 @@ fn powershell_script(command: &str) -> String {
 pub fn default_shell_program() -> String {
     if let Ok(shell) = std::env::var("CTX_SHELL") {
         if !shell.trim().is_empty() {
-            return shell;
+            return resolve_shell_name(shell);
         }
     }
     static DETECTED: OnceLock<String> = OnceLock::new();
     DETECTED.get_or_init(detect_shell).clone()
+}
+
+/// `CTX_SHELL` as a program. On Windows a bare `bash` / `sh` becomes the
+/// shell detection would pick: `CreateProcess` looks in System32 before
+/// `PATH`, so the bare name would start WSL's `bash.exe`. Anything else,
+/// and every value on Unix, is used as given.
+fn resolve_shell_name(shell: String) -> String {
+    #[cfg(windows)]
+    {
+        let bare = !shell.trim().contains(['/', '\\']);
+        if bare && matches!(file_stem_any(shell.trim()).as_str(), "bash" | "sh") {
+            if let Some(found) = posix_shell() {
+                return found.to_string_lossy().to_string();
+            }
+        }
+    }
+    shell
 }
 
 /// [`default_shell_program`] as a [`Shell`].
@@ -321,13 +349,8 @@ fn detect_shell() -> String {
 
 #[cfg(windows)]
 fn detect_shell() -> String {
-    if let Some(bash) = git_bash() {
-        return bash.to_string_lossy().to_string();
-    }
-    for name in ["sh", "bash"] {
-        if let Some(found) = find_executable(name).filter(|p| !is_wsl_launcher(p)) {
-            return found.to_string_lossy().to_string();
-        }
+    if let Some(posix) = posix_shell() {
+        return posix.to_string_lossy().to_string();
     }
     if let Some(pwsh) = find_executable("pwsh") {
         return pwsh.to_string_lossy().to_string();
@@ -338,6 +361,13 @@ fn detect_shell() -> String {
         return powershell.to_string_lossy().to_string();
     }
     "powershell.exe".into()
+}
+
+/// Git for Windows' bash, else another `sh` / `bash` on `PATH` (MSYS2,
+/// Cygwin), never WSL's.
+#[cfg(windows)]
+fn posix_shell() -> Option<PathBuf> {
+    git_bash().or_else(|| ["sh", "bash"].into_iter().find_map(|name| find_executable(name).filter(|p| !is_wsl_launcher(p))))
 }
 
 /// Git for Windows' `bin\bash.exe` (the launcher that puts its coreutils on
@@ -388,6 +418,33 @@ pub fn hide_console_window(cmd: &mut std::process::Command) -> &mut std::process
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     cmd
+}
+
+/// Makes this process's standard handles non-inheritable (a no-op
+/// elsewhere). Windows hands every inheritable handle to every child, not
+/// only its standard ones, so a server an agent command leaves running in
+/// the background would hold ctx's stdout open: whatever reads it (`ctx run
+/// | tee`, CI, the desktop app's JSON-RPC pipe) would not see end-of-file
+/// until that server exits. A child given `Stdio::inherit()` still gets the
+/// handle: std passes it a duplicate made inheritable for that child only.
+/// Call once, first thing in `main`.
+pub fn keep_std_handles_private() {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
+        for id in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            // SAFETY: GetStdHandle has no preconditions; a missing handle is
+            // null or INVALID_HANDLE_VALUE and skipped; clearing a flag on a
+            // valid handle we hold has no other effect.
+            unsafe {
+                let handle = GetStdHandle(id);
+                if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
+                    SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+                }
+            }
+        }
+    }
 }
 
 /// Opens `url` in the default browser without waiting for it.
@@ -538,6 +595,63 @@ mod tests {
         std::fs::write(dir.path().join("plain"), "data").unwrap();
         let path = std::env::join_paths([dir.path()]).unwrap();
         assert_eq!(find_executable_in("plain", Some(&path)), None);
+    }
+
+    /// A child started after `keep_std_handles_private` does not hold our
+    /// stdout: a pipe we hand it as stdout reaches end-of-file as soon as
+    /// the child's own background process is the only one left running.
+    #[cfg(windows)]
+    #[test]
+    fn background_grandchildren_do_not_hold_the_parent_stdout() {
+        use std::io::Read;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::{GetHandleInformation, HANDLE_FLAG_INHERIT};
+        use windows_sys::Win32::System::Console::{GetStdHandle, SetStdHandle, STD_OUTPUT_HANDLE};
+        let (mut reader, writer) = std::io::pipe().unwrap();
+        // Stand in for a parent whose stdout is a pipe (`ctx run | tee`):
+        // make the pipe this process's stdout, inheritable as Windows hands it over.
+        let raw = writer.as_raw_handle();
+        // SAFETY: `writer` outlives every use of `raw` below, and the test
+        // harness's stdout is put back before `writer` is dropped.
+        let original = unsafe {
+            let original = GetStdHandle(STD_OUTPUT_HANDLE);
+            windows_sys::Win32::Foundation::SetHandleInformation(raw, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+            SetStdHandle(STD_OUTPUT_HANDLE, raw);
+            original
+        };
+        keep_std_handles_private();
+        let mut flags = 0;
+        // SAFETY: as above.
+        unsafe { GetHandleInformation(raw, &mut flags) };
+        // A shell that leaves a process running, with its own output elsewhere.
+        let status = std::process::Command::new("cmd")
+            .args(["/D", "/C", "start /B ping -n 4 127.0.0.1 > NUL"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        // SAFETY: restores the handle saved above.
+        unsafe { SetStdHandle(STD_OUTPUT_HANDLE, original) };
+        assert_eq!(flags & HANDLE_FLAG_INHERIT, 0, "stdout is still inheritable");
+        assert!(status.unwrap().success());
+        drop(writer);
+        let started = std::time::Instant::now();
+        let mut rest = Vec::new();
+        reader.read_to_end(&mut rest).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "the background process held our stdout for {:?}", started.elapsed());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ctx_shell_bash_is_never_wsl() {
+        for name in ["bash", "sh", "bash.exe"] {
+            let resolved = resolve_shell_name(name.into());
+            assert!(!is_wsl_launcher(Path::new(&resolved)), "{name} → {resolved}");
+            if git_bash().is_some() {
+                assert!(Path::new(&resolved).is_absolute(), "{name} → {resolved}");
+            }
+        }
+        assert_eq!(resolve_shell_name("pwsh".into()), "pwsh");
+        assert_eq!(resolve_shell_name(r"C:\tools\bash.exe".into()), r"C:\tools\bash.exe");
     }
 
     #[test]

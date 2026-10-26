@@ -9,7 +9,8 @@
 //! `target/release/ctx` or `target/debug/ctx`) found by walking up from the
 //! executable's directory and from the current directory.
 //! Windows: the override, `ctx.exe` next to the app executable, `CTX_BINARY`,
-//! `%USERPROFILE%\.cargo\bin`, `%LOCALAPPDATA%\Programs\Context`, every PATH
+//! `%USERPROFILE%\.cargo\bin`, the install folders (`%LOCALAPPDATA%\Context`
+//! from the NSIS installer, `%ProgramFiles%\Context` from the MSI), every PATH
 //! entry honouring `PATHEXT`, then the repository walk. Linux: the override,
 //! next to the executable, `CTX_BINARY`, `~/.cargo/bin`, `/usr/local/bin`,
 //! every PATH entry, then the repository walk.
@@ -80,9 +81,7 @@ pub fn candidates(override_path: Option<&str>) -> Vec<PathBuf> {
         list.push(PathBuf::from("/opt/homebrew/bin").join(&name));
         list.push(PathBuf::from("/usr/local/bin").join(&name));
     } else if cfg!(windows) {
-        if let Some(local) = dirs::data_local_dir() {
-            list.push(local.join("Programs").join("Context").join(&name));
-        }
+        list.extend(windows_install_directories().into_iter().map(|dir| dir.join(&name)));
         list.extend(path_candidates());
     } else {
         list.push(PathBuf::from("/usr/local/bin").join(&name));
@@ -97,6 +96,17 @@ pub fn candidates(override_path: Option<&str>) -> Vec<PathBuf> {
     }
 
     dedupe(list)
+}
+
+/// Where the Windows installers put the app and its `ctx.exe`: the
+/// per-user NSIS installer in `%LOCALAPPDATA%\Context`, the per-machine MSI
+/// in `%ProgramFiles%\Context`.
+pub fn windows_install_directories() -> Vec<PathBuf> {
+    ["LOCALAPPDATA", "ProgramFiles"]
+        .iter()
+        .filter_map(env::var_os)
+        .map(|base| PathBuf::from(base).join("Context"))
+        .collect()
 }
 
 /// Walks up from `start`; every ancestor holding a `Cargo.toml` contributes

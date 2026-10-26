@@ -10,7 +10,8 @@
 //! existed restore the whole tree, as they always did.
 //!
 //! Snapshots are git tree objects written through a scratch index (seeded
-//! from the real one so unchanged files are not re-hashed), so the user's
+//! from the real one so unchanged files are not re-hashed, unless the user's
+//! git converts line endings), with no line-ending conversion, so the user's
 //! own index and HEAD are never touched. They live in the repository's
 //! object store and are not referenced; `git gc` prunes unreachable objects
 //! after `gc.pruneExpire` (two weeks by default), after which a rewind can
@@ -57,6 +58,11 @@ async fn git_with_index(root: &Path, index: &Path, args: &[&str], stdin: Option<
     let mut command = tokio::process::Command::new("git");
     ctx_core::platform::hide_console_window(command.as_std_mut());
     command
+        // A snapshot restores the bytes it saw. Git for Windows sets
+        // `core.autocrlf=true` system-wide, which would hand an LF file back
+        // with CRLF endings; with it off, `add` and `checkout-index` copy
+        // files as they are (the default everywhere else).
+        .args(["-c", "core.autocrlf=false"])
         .args(args)
         .current_dir(root)
         .env("GIT_INDEX_FILE", index)
@@ -89,6 +95,17 @@ async fn git_dir(root: &Path) -> Option<PathBuf> {
     Some(root.join(dir))
 }
 
+/// Whether the user's `git add` converts line endings (`core.autocrlf` true
+/// or input, Git for Windows' default). The real index then holds converted
+/// blobs that its stat cache would carry into a snapshot unchanged, so it
+/// cannot seed a snapshot index, which stores files as they are.
+async fn converts_line_endings(root: &Path) -> bool {
+    match git(root, &["config", "--get", "core.autocrlf"]).await {
+        Ok(out) if out.status.success() => !matches!(String::from_utf8_lossy(&out.stdout).trim().to_ascii_lowercase().as_str(), "" | "false" | "no" | "off" | "0"),
+        _ => false,
+    }
+}
+
 /// A scratch index seeded from the real one (stat cache), removed by the guard.
 struct ScratchIndex(PathBuf);
 
@@ -118,7 +135,7 @@ impl Drop for ScratchIndex {
 /// the run then proceeds without an undo point.
 pub(super) async fn take_tree(root: &Path) -> Option<String> {
     let dir = git_dir(root).await?;
-    let scratch = ScratchIndex::new(&dir, true);
+    let scratch = ScratchIndex::new(&dir, !converts_line_endings(root).await);
     let add = git_with_index(root, &scratch.0, &["add", "-A", "--ignore-errors", "--", "."], None).await.ok()?;
     if !add.status.success() {
         tracing::warn!(root = %root.display(), error = %git_error_line(&add.stderr), "snapshot: git add failed");
@@ -652,6 +669,35 @@ mod tests {
 
         assert!(!tree_exists(root, "0000000000000000000000000000000000000000").await);
         assert!(take_tree(tempfile::tempdir().unwrap().path()).await.is_none(), "not a repository");
+    }
+
+    /// With `core.autocrlf=true` (Git for Windows' default) a restore puts
+    /// back the exact bytes: an LF file stays LF and a committed CRLF file,
+    /// unchanged since `git add`, stays CRLF.
+    #[tokio::test]
+    async fn snapshots_keep_line_endings_under_autocrlf() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let run = |args: &[&str]| {
+            let status = std::process::Command::new("git").args(args).current_dir(root).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().unwrap();
+            assert!(status.success(), "git {args:?}");
+        };
+        run(&["init", "-q"]);
+        run(&["config", "core.autocrlf", "true"]);
+        std::fs::write(root.join("crlf.txt"), "one\r\ntwo\r\n").unwrap();
+        // Older than the index, so git trusts its stat cache for it.
+        let past = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        std::fs::File::options().write(true).open(root.join("crlf.txt")).unwrap().set_modified(past).unwrap();
+        run(&["add", "crlf.txt"]);
+        run(&["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "init"]);
+        std::fs::write(root.join("lf.txt"), "one\ntwo\n").unwrap();
+        let before = take_tree(root).await.expect("snapshot");
+
+        std::fs::write(root.join("crlf.txt"), "changed\r\n").unwrap();
+        std::fs::write(root.join("lf.txt"), "changed\n").unwrap();
+        restore_tree(root, &before).await.unwrap();
+        assert_eq!(std::fs::read(root.join("crlf.txt")).unwrap(), b"one\r\ntwo\r\n");
+        assert_eq!(std::fs::read(root.join("lf.txt")).unwrap(), b"one\ntwo\n");
     }
 
     /// Only the files the session wrote go back, and only those still as it

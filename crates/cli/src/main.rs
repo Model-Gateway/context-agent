@@ -329,6 +329,7 @@ pub enum EvalCmd {
 
 #[tokio::main]
 async fn main() {
+    ctx_core::platform::keep_std_handles_private();
     let cli = Cli::parse();
     let code = match run(cli).await {
         Ok(code) => code,
