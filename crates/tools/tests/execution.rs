@@ -210,11 +210,19 @@ async fn stale_patches_are_rejected_and_commands_time_out() {
 #[tokio::test]
 async fn backgrounded_processes_never_wedge_a_command() {
     let (_dir, ctx, tools) = fixture(PermissionProfile::WorkspaceAutonomous, Arc::new(AutoApprove));
-    // `a && b > log &` backgrounds the whole list in a subshell that keeps
-    // the output pipe open: the call returns once the shell exits and the
-    // background process keeps running.
+    // `a && b > log &` backgrounds the whole list in a subshell. bash keeps
+    // that subshell, and with it the output pipe, open; dash execs `b` in
+    // its place and releases the pipe. Either way the call returns once the
+    // shell exits.
     let started = std::time::Instant::now();
     let r = tools.execute(&call("execute_command", json!({"command": "echo ready && sleep 30 > /dev/null 2>&1 &", "timeout_secs": 20})), &ctx).await;
+    assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+    assert!(!r.output.is_error && r.output.content.contains("ready"), "{}", r.output.content);
+
+    // A background process that inherits the pipe holds it open in any
+    // shell: the call still returns, and says the process keeps running.
+    let started = std::time::Instant::now();
+    let r = tools.execute(&call("execute_command", json!({"command": "echo ready && sleep 30 &", "timeout_secs": 20})), &ctx).await;
     assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
     assert!(!r.output.is_error && r.output.content.contains("ready") && r.output.content.contains("still running"), "{}", r.output.content);
 
