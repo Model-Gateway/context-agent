@@ -1,0 +1,517 @@
+/* AccountView.swift: ScrollView { VStack(alignment: .leading, spacing: 16) { cards }
+   .frame(maxWidth: contentMaxWidth).padding(24).frame(maxWidth: .infinity) } on canvas. */
+.page {
+  flex: 1 1 auto;
+  height: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--canvas);
+  line-height: 1.3;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  width: 100%;
+  max-width: calc(var(--content-max-width) + 48px);
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* .card(padding: 20): surface, 12 px continuous radius, a 1 px `border` stroke
+   drawn inside the padding (an overlay in SwiftUI), so content sits 20 px in. */
+.card {
+  min-width: 0;
+  padding: 19px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* VStack spacings. */
+.stack3,
+.stack4,
+.stack6,
+.stack8,
+.stack10,
+.stack12,
+.stack14,
+.stack16,
+.stack18 {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.stack3 { gap: 3px; }
+.stack4 { gap: 4px; }
+.stack6 { gap: 6px; }
+.stack8 { gap: 8px; }
+.stack10 { gap: 10px; }
+.stack12 { gap: 12px; }
+.stack14 { gap: 14px; }
+.stack16 { gap: 16px; }
+.stack18 { gap: 18px; }
+
+/* Spacer(minLength: 8). */
+.spacer {
+  flex: 1 1 0;
+  min-width: 8px;
+}
+
+/* Typography (Theme.Font). */
+.title {
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-title);
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.heading {
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  color: var(--text-primary);
+}
+
+.secondaryText {
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+.caption {
+  font-size: var(--font-size-caption);
+}
+
+.captionTertiary {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.captionSecondary {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+/* .system(size: 13.5, weight: .semibold). */
+.rowTitle {
+  font-size: var(--font-size-sidebar);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.secondaryColor {
+  color: var(--text-secondary);
+}
+
+.warning {
+  color: var(--warning);
+}
+
+.danger,
+.dangerText {
+  color: var(--danger);
+}
+
+/* .lineLimit(1) with tail truncation. */
+.oneLine {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* .lineLimit(2). */
+.twoLines {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.noShrink {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Rows. */
+.buttonRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.baselineRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* HStack(alignment: .top, spacing: 6) { warning glyph .padding(.top, 1); message }. */
+.messageRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.messageIcon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.messageText {
+  min-width: 0;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.headerIcon {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+/* A prominent / bordered button's spinner and label (HStack(spacing: 6)). */
+.inlineLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The label's text gives the button its baseline (HStack(alignment: .firstTextBaseline) rows). */
+.baselineText {
+  align-self: baseline;
+}
+
+/* A tooltip that must also show over a disabled button (.help on a disabled Button). */
+.tooltipHost {
+  display: inline-flex;
+}
+
+.tooltipHost > button:disabled {
+  pointer-events: none;
+}
+
+/* Divider(). */
+.divider {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* The 6 px capsule bars. */
+.capsule {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.capsuleFill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.capsuleFill.accent {
+  background: var(--accent);
+}
+
+.capsuleFill.warning {
+  background: var(--warning);
+}
+
+.capsuleFill.danger {
+  background: var(--danger);
+}
+
+/* MARK: Signed out */
+
+.signInHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+/* 22 pt medium glyph, accent on accentSoft, 44 × 44, radius 12. */
+.gatewayBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.codeRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* .system(size: 30, weight: .semibold, design: .monospaced).kerning(3), padding 16 × 8 on surfaceRaised. */
+.userCode {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 3px;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+/* MARK: Account header */
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* The initial: 20 pt semibold accent on an accentSoft circle, 48 × 48. */
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.headerButtons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.spinnerSlot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+/* HStack(spacing: 0) of stats split by 1 × 40 dividers with 12 px on each side; .padding(.top, 2). */
+.stats {
+  display: flex;
+  align-items: center;
+  padding-top: 2px;
+  min-width: 0;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* .system(size: 18, weight: .semibold, design: .rounded). */
+.statValue {
+  font-family: ui-rounded, var(--font-ui);
+  font-size: 18px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.statDivider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 40px;
+  margin: 0 12px;
+  background: var(--border);
+}
+
+/* MARK: Context credit */
+
+.creditCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+/* 18 pt medium glyph, accent on accentSoft, 40 × 40, radius 12. */
+.creditBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.creditBody {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* MARK: Plan */
+
+.quotaRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* MARK: Usage */
+
+/* ViewThatFits: HStack(spacing: 10) { scope; Spacer(minLength: 8); metric }, else stacked 8 apart. */
+.pickers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: 18px;
+  row-gap: 8px;
+}
+
+.usageLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 120px;
+}
+
+.seriesHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* .system(size: 13, weight: .medium, design: .rounded), textSecondary. */
+.seriesValue {
+  flex: 0 0 auto;
+  font-family: ui-rounded, var(--font-ui);
+  font-size: var(--font-size-secondary);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* "Show all 9": a plain button in the secondary font, accent. */
+.linkButton {
+  align-self: flex-start;
+  font-size: var(--font-size-secondary);
+  color: var(--accent);
+  transition: opacity var(--duration-hover) var(--ease-out);
+}
+
+.linkButton:active {
+  opacity: 0.6;
+}
+
+/* The series past the first six (Collapsible): the 18 px gap before them lives
+   inside, so the block can shrink to nothing while it fades out. */
+.collapsible {
+  margin-top: -18px;
+  min-width: 0;
+}
+
+.collapsibleRows {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 18px;
+  min-width: 0;
+  padding-top: 18px;
+}
+
+/* MARK: Settings */
+
+.settingRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.settingTitle {
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+.settingControl {
+  flex: 0 0 auto;
+  padding-top: 2px;
+}
+
+
+/* MARK: Sign out */
+
+/* HStack(alignment: .firstTextBaseline, spacing: 12). */
+.signOutCard {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+/* .buttonStyle(.bordered).tint(Theme.danger): a faint danger fill, danger label and glyph. */
+.dangerButton {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 9%, var(--surface));
+}
+
+.dangerButton:hover:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 11%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 16%, var(--surface));
+}
+
+.dangerButton:active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface));
+}

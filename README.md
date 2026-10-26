@@ -72,9 +72,13 @@ Download the latest signed and notarized `Context-<version>.dmg` from [Releases]
 
 The app keeps itself up to date: it checks for a new release once a day, downloads it in the background and installs it, `ctx` included, the next time you quit. **Context → Check for Updates…** checks right away, and Settings → General → Updates turns the automatic parts off.
 
+### Windows
+
+Download `Context_<version>_x64-setup.exe` (or the `.msi`) from [Releases](../../releases). The desktop app bundles `ctx.exe`; the CLI runs natively in Windows Terminal, PowerShell or Git Bash, without WSL. Install [Git for Windows](https://git-scm.com/download/win) as well: the agent runs its commands in its bash when it is there. Details, including building from source: [docs/windows.md](docs/windows.md).
+
 ### From source
 
-You need a stable Rust toolchain (1.85+). The macOS app additionally needs Xcode 26.
+You need a stable Rust toolchain (1.85+). The macOS app additionally needs Xcode 26; the cross-platform desktop app in `apps/desktop` (Tauri) needs Node.js 22 ([docs/windows.md](docs/windows.md)).
 
 ```bash
 git clone <this repository> context && cd context

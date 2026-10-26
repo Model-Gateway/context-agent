@@ -1,0 +1,329 @@
+/* ConnectView and CustomConnectView (Views/Apps/AppsView.swift). */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* `.frame(maxWidth: 460).padding(.horizontal, 24).padding(.top, 48).padding(.bottom, 24).frame(maxWidth: .infinity)` */
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 508px;
+  margin: 0 auto;
+  padding: 48px 24px 24px;
+  line-height: 1.3;
+}
+
+/* The buttons under the scroll view: `.padding(.top, 12).padding(.bottom, 28)`. */
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 508px;
+  margin: 0 auto;
+  padding: 12px 24px 28px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+/* Header */
+
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.marks {
+  display: flex;
+  align-items: center;
+}
+
+.circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+/* `HStack(spacing: -8)`: the app's circle overlaps the Context mark's. */
+.overlap {
+  position: relative;
+  margin-left: -8px;
+}
+
+.titles {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* Shared text */
+
+.label {
+  font-size: var(--font-size-secondary);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.caption {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.help {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+/* Where it runs */
+
+.whereItRuns {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--canvas);
+  border: 1px solid var(--border);
+}
+
+.whereIcon {
+  display: inline-flex;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  color: var(--text-secondary);
+}
+
+.whereText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* The credentials / sign-in / custom fields box. */
+.box {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--canvas);
+  border: 1px solid var(--border);
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--canvas);
+  border: 1px solid var(--border);
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+/* `.textFieldStyle(.plain)`: no focus ring, the caret shows the focus. */
+.field:focus-visible {
+  outline: none;
+}
+
+.link {
+  align-self: flex-start;
+  font-size: var(--font-size-caption);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+/* Sign-in */
+
+.checking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+.accountRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.codeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.waitingRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.waitingText {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+/* What Context can access */
+
+.access {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.accessTitle {
+  padding: 0 4px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+.accessOuter {
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--canvas);
+  border: 1px solid var(--border);
+}
+
+.accessInner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(var(--text-primary-rgb), 0.03);
+}
+
+.accessNote {
+  padding: 0 4px;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.accessRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: 4px;
+}
+
+.accessRow:focus-visible {
+  outline-offset: 3px;
+}
+
+/* The macOS checkbox: 14 px, accent when on. */
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 1.5px;
+  border-radius: 3.5px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 0.5px 1px rgba(var(--shadow-rgb), 0.08);
+  color: var(--on-accent);
+}
+
+.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.checkboxDisabled {
+  opacity: 0.5;
+}
+
+.accessText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.accessDescription {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+/* Custom connect: the header's two fields side by side. */
+.headerFields {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.headerName {
+  flex: 0 0 140px;
+  width: 140px;
+}

@@ -1,0 +1,46 @@
+.text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  /* The fitted text never overflows; the clip is only a guard while fonts load. */
+  text-overflow: clip;
+}
+
+/* `lines`: wraps, clamped to `--middle-lines` lines. */
+.lines {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--middle-lines);
+  line-clamp: var(--middle-lines);
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* `natural`: the natural width of the full text (the hidden sizer),
+   shrinkable below it; the fitted text fills the same grid cell. */
+.natural {
+  display: inline-grid;
+  grid-template-columns: minmax(0, max-content);
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sizer,
+.fitted {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+.sizer {
+  overflow: hidden;
+  white-space: nowrap;
+  visibility: hidden;
+  height: 0;
+}
+
+.sizer::before {
+  content: attr(data-text);
+}

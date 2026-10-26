@@ -1,0 +1,122 @@
+/* MentionMenu.swift: 380 px, 4 px padding, surface, hairline, 12 px radius, floating shadow. */
+.menu {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-floating);
+  line-height: 1.25;
+  text-align: left;
+}
+
+/* The rows; they scroll only when the pane leaves less room above the card than ten rows need. */
+.items {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+}
+
+.section {
+  padding: 0 10px 4px;
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: var(--radius-small);
+  min-width: 0;
+}
+
+.selected {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.fileIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  color: var(--text-secondary);
+}
+
+.fileText {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.appText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rowTitle {
+  flex: 0 0 auto;
+  font-size: var(--font-size-secondary);
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* `.truncationMode(.head)`: the end of the directory stays visible. */
+.directory {
+  min-width: 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.appTitle {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.state {
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+}
+
+.hint {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}

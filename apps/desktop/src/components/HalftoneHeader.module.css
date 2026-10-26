@@ -1,0 +1,13 @@
+/*
+ * HalftoneHeader.swift: a full-width band (`.frame(height:)` +
+ * `.frame(maxWidth: .infinity)`) the component draws into as a canvas;
+ * decorative, never hit-tested.
+ */
+.band {
+  display: block;
+  width: 100%;
+  flex: 0 0 auto;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}

@@ -1,0 +1,294 @@
+/* SidebarRowChrome: padding h 8 · 30 tall · full width · 8 radius surfaceRaised on hover / selection. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.highlighted {
+  background: var(--surface-raised);
+}
+
+.disabledRow {
+  opacity: 0.45;
+}
+
+/* RowIcon: 16 pt medium symbol (an 18 px lucide glyph) in a 22 × 22 frame. */
+.rowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+}
+
+.secondary {
+  color: var(--text-secondary);
+}
+
+.accent {
+  color: var(--accent);
+}
+
+.tertiary {
+  color: var(--text-tertiary);
+}
+
+.title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--font-size-sidebar);
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.muted {
+  color: var(--text-tertiary);
+}
+
+/* Spacer(minLength: 4) */
+.spacer {
+  flex: 1 1 0;
+  min-width: 4px;
+}
+
+.flexSpacer {
+  flex: 1 1 0;
+  min-width: 4px;
+}
+
+/* SidebarSectionHeader: HStack(spacing 6) · padding h 8, top 14, bottom 4. */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px 4px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 15px;
+  color: var(--text-tertiary);
+}
+
+/* ProjectRow's ViewThatFits: the name and the branch chip on one line when both fit;
+   otherwise the chip wraps onto a second, clipped line and the name truncates alone. */
+.nameAndBranch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: flex-start;
+  column-gap: 10px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 22px;
+  overflow: hidden;
+}
+
+.fitName {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  height: 22px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--font-size-sidebar);
+  line-height: 22px;
+  color: var(--text-primary);
+}
+
+.fitChip {
+  flex: 0 0 auto;
+}
+
+/* The worktree chevron: 10 pt semibold tertiary in a 16 × 16 frame, 4 closer to the name; turns 90° when expanded. */
+.collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-left: -4px;
+  color: var(--text-tertiary);
+}
+
+.collapse svg {
+  transition: transform var(--duration-reveal) ease-in-out;
+}
+
+.expanded svg {
+  transform: rotate(90deg);
+}
+
+/* ZStack(alignment: .trailing) of the status (spinner + badge) and the hover ×. */
+.trailingSlot {
+  display: grid;
+  grid-template-areas: 'stack';
+  align-items: center;
+  justify-items: end;
+  flex: 0 0 auto;
+}
+
+.statusLayer,
+.closeLayer {
+  grid-area: stack;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: opacity var(--duration-hover) var(--ease-out);
+}
+
+.statusLayer.hidden {
+  opacity: 0;
+}
+
+.closeLayer {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.closeLayer.shown {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chipSlot {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* WorktreeRow: 18 further in. */
+.worktreeRow {
+  padding-left: 26px;
+}
+
+.worktreeLabel {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--font-size-sidebar);
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.sheetMessage {
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height);
+  color: var(--text-secondary);
+}
+
+/* SessionRowsSkeleton: VStack(spacing 2) of rows with a 9 px bar each. */
+.skeleton > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* PinnedRecentRow: the name muted, middle-truncated; pin.fill 10 pt tertiary. */
+.pinnedName {
+  flex: 1 1 0;
+  font-size: var(--font-size-sidebar);
+  line-height: 1.3;
+  color: var(--text-secondary);
+}
+
+.pinGlyph {
+  flex: 0 0 auto;
+  /* The Spacer(minLength: 4) and its second 10 pt gap. */
+  margin-left: 14px;
+  color: var(--text-tertiary);
+}
+
+/* SessionRow: HStack(spacing 8). */
+.sessionRow {
+  gap: 8px;
+}
+
+.indicatorSlot {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* A 7 pt dot in an 11 pt frame. */
+.dotBox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.dot.warning {
+  background: var(--warning);
+}
+
+.dot.accent {
+  background: var(--accent);
+}
+
+.dot.danger {
+  background: var(--danger);
+}
+
+.relativeTime {
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+  animation: fadeIn var(--duration-hover) var(--ease-out);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The inline rename field: plain, sidebar font. */
+.renameField {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--font-size-sidebar);
+  color: var(--text-primary);
+}
+
+.renameField:focus-visible {
+  outline: none;
+}

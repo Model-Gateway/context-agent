@@ -1,0 +1,243 @@
+/* Views/Palette/CommandPalette.swift. Sizes are the Swift points; text
+   lines are 1.23 of the font size, the height SF Pro gives a SwiftUI Text. */
+
+/* The window-wide layer: black 18 % behind a panel 72 from the top. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 975;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 72px;
+  line-height: 1.23;
+  animation: fadeIn 150ms ease-out both;
+}
+
+.leaving {
+  animation: fadeOut 150ms ease-out both;
+  pointer-events: none;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(var(--shadow-rgb), 0.18);
+}
+
+/* 560 wide, surface, 16 radius, hairline, floatingShadow + black 12 % radius 30 y 16. */
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-large);
+  box-shadow:
+    var(--shadow-floating),
+    0 16px 30px rgba(var(--shadow-rgb), 0.12);
+  overflow: hidden;
+}
+
+.panel:focus-visible {
+  outline: none;
+}
+
+/* MARK: Search field */
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.searchIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.searchInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.23;
+  color: var(--text-primary);
+}
+
+.searchInput:focus-visible {
+  outline: none;
+}
+
+.clearButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.clearButton:hover {
+  color: var(--text-secondary);
+}
+
+.divider {
+  flex: 0 0 1px;
+  height: 1px;
+  background: var(--border);
+}
+
+.noResults {
+  padding: 24px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+/* MARK: List */
+
+.list {
+  flex: 0 0 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* VStack(alignment: .leading, spacing: 1).padding(8) */
+.listContent {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sectionHeader {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* PaletteRowView: HStack(spacing: 10).padding(.horizontal, 10).padding(.vertical, 7), surfaceRaised while selected. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: var(--radius-small);
+}
+
+.rowSelected {
+  background: var(--surface-raised);
+}
+
+.rowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+}
+
+.rowIconSelected {
+  color: var(--text-primary);
+}
+
+.rowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.rowTitleLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rowTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.rowSnippet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.rowSpacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.rowTrailing {
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* MARK: Footer */
+
+/* HStack(spacing: 14).padding(.horizontal, 14).padding(.vertical, 8).hairline(.top) */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hintLabel {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}

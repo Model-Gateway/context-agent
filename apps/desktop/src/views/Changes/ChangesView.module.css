@@ -1,0 +1,565 @@
+/* ChangesView.swift. px = the macOS points. */
+
+.changesView {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.loadingText {
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+.flexSpacer {
+  flex: 1 1 4px;
+  min-width: 4px;
+}
+
+/* MARK: Split */
+
+.split {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The list: canvas, trailing hairline over its content (`.hairline(.trailing)`). */
+.listPane {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+.listPane::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+.diffPane {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.listColumn {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* MARK: Header */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 12px 12px 8px;
+}
+
+.headerTitle {
+  font-size: var(--font-size-heading);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+.busy {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* MARK: Branch row */
+
+.branchRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0 12px 8px;
+}
+
+/* Menu(.borderlessButton, .controlSize(.small)) "⎇ main ⌄" */
+.branchMenu {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 4px;
+  margin-left: -4px;
+  border-radius: 5px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+  background: transparent;
+  white-space: nowrap;
+}
+
+.branchMenu:active:not(:disabled),
+.branchMenu[aria-expanded='true'] {
+  background: var(--surface-raised);
+}
+
+.branchMenu:disabled {
+  opacity: 0.4;
+}
+
+.branchName {
+  line-height: 1;
+}
+
+.branchChevron {
+  color: var(--text-secondary);
+  margin-left: 1px;
+}
+
+/* ViewThatFits(in: .horizontal) { chip; EmptyView() }: a zero-width probe
+   leads the line, so a chip that does not fit wraps onto the hidden second
+   line instead of overflowing. Also the row's Spacer(minLength: 4). */
+.aheadSlot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 20px;
+  overflow: hidden;
+  padding-right: 10px;
+}
+
+.aheadProbe {
+  width: 0;
+  height: 20px;
+}
+
+/* The chip keeps its full width (no ellipsis): it either fits or wraps away. */
+.aheadSlot .aheadChip {
+  max-width: none;
+}
+
+/* MARK: Commit box */
+
+.commitBox {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 0 12px 10px;
+}
+
+.commitBox::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+/* TextEditor 64 tall, padded 6 × 4, on surface with an 8 px hairline box;
+   the text (and placeholder) start 11 px in and 8 px down. */
+.commitEditor {
+  display: block;
+  width: 100%;
+  height: 72px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-secondary);
+  line-height: 16px;
+  resize: none;
+}
+
+.commitEditor::placeholder {
+  color: var(--text-tertiary);
+}
+
+.commitEditor:focus,
+.commitEditor:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.commitActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A disabled .borderedProminent button draws grey on macOS, not faded accent. */
+.commitButton:disabled {
+  opacity: 1;
+  color: var(--text-tertiary);
+  background: var(--surface-raised);
+  border-color: var(--surface-raised);
+}
+
+/* The chevron Menu (.borderlessButton, indicator hidden), 22 px wide. */
+.commitChevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.commitChevron:active:not(:disabled),
+.commitChevron[aria-expanded='true'] {
+  background: var(--surface-raised);
+}
+
+.commitChevron:disabled {
+  opacity: 0.4;
+}
+
+/* MARK: Error banner */
+
+.errorBanner {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.errorBanner::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+.errorIcon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.errorText {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-caption);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.retry {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--font-size-caption);
+  color: var(--accent);
+}
+
+/* MARK: List */
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.list:focus,
+.list:focus-visible {
+  outline: none;
+}
+
+/* LazyVStack(spacing: 2).padding(8) */
+.listContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.cleanRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+}
+
+.cleanIcon {
+  flex: 0 0 auto;
+  color: var(--success);
+}
+
+.cleanText {
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+/* SectionHeader */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px 2px;
+}
+
+.sectionTitle {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.sectionCount {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+/* ChangeRow */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: var(--radius-small);
+  background: transparent;
+  text-align: left;
+}
+
+.row:hover,
+.rowSelected {
+  background: var(--surface-raised);
+}
+
+.rowText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.rowName {
+  font-size: var(--font-size-secondary);
+  line-height: 16px;
+  color: var(--text-primary);
+}
+
+/* `.truncationMode(.head)`: the folder keeps its end. */
+.rowDirectory {
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+/* Hover swaps the line counts for the row actions (one hover per row). */
+.rowActions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  /* Taller than a text line; the buttons spill into the row padding so
+     hovering does not resize the row. */
+  height: 16px;
+}
+
+.rowHasActions:hover .rowActions {
+  display: flex;
+}
+
+.rowHasActions:hover .rowCounts {
+  display: none;
+}
+
+.rowCounts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.added {
+  color: var(--success);
+}
+
+.removed {
+  color: var(--danger);
+}
+
+.stagedDot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+/* StatusLetter: 18 × 18, the tint at 14 % behind it. */
+.statusLetter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+}
+
+/* CommitRow */
+.commitRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 8px;
+}
+
+.commitHash {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono-small);
+  color: var(--text-tertiary);
+}
+
+.commitSubject {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* MARK: Diff pane */
+
+.diffColumn {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.diffHeader {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 9px 14px;
+  background: var(--surface);
+}
+
+.diffHeader::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+.diffHeaderIcon {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.diffPath {
+  flex: 0 1 auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--text-primary);
+}
+
+.headerChips {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.diffCounts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.diffHeaderSpacer {
+  flex: 1 1 8px;
+  min-width: 8px;
+}

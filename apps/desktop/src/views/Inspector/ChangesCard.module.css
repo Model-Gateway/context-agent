@@ -1,0 +1,131 @@
+.spacer {
+  flex: 1 1 0;
+  min-width: 8px;
+}
+
+/* Summary: HStack(spacing: 8). */
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cleanIcon {
+  flex: 0 0 auto;
+  color: var(--success);
+}
+
+.clean,
+.dirty {
+  min-width: 0;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-secondary);
+}
+
+.clean {
+  color: var(--text-secondary);
+}
+
+.dirty {
+  color: var(--text-primary);
+}
+
+.busy {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.lines {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.added {
+  color: var(--success);
+}
+
+.removed {
+  color: var(--danger);
+}
+
+/* Branch row: HStack(spacing: 6). */
+.branchRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.branchIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.branchName {
+  margin-right: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* Actions: an HStack(spacing: 6) when it fits, else a VStack(alignment: .leading, spacing: 6). */
+.actions {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.actionsRow {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.actionsColumn {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* .controlSize(.small): AppKit's small controls set their title in 11 pt. */
+.actions .actionButton {
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+/* Review is .borderless: just the title, no padding and no hover fill. */
+.actions .reviewButton {
+  padding: 0;
+  font-size: 11px;
+}
+
+.actions .reviewButton:hover:not(:disabled),
+.actions .reviewButton:active:not(:disabled) {
+  background: transparent;
+}
+
+.error {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  color: var(--danger);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.mergeMessage {
+  margin: 0;
+}

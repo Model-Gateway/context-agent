@@ -1,0 +1,63 @@
+.row {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 8px;
+  overflow: hidden;
+}
+
+/* The label row: 6 px × 4 px padding and an 8 px hover highlight (`hoverHighlight()`). */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 8px;
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.header:hover {
+  background: var(--surface-raised);
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  color: inherit;
+  border-radius: 4px;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  transition: transform var(--duration-reveal) ease-in-out;
+}
+
+.open {
+  transform: rotate(90deg);
+}
+
+.trailing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* The content's own reveal is Fade's (DisclosureRow.tsx). */
+.content {
+  min-width: 0;
+}

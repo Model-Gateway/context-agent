@@ -1,0 +1,108 @@
+/* CompletionListView / CompletionRow (Views/Editor/CompletionPanel.swift). */
+
+/* The borderless child panel: 440 wide, rows × 24 + the list padding. */
+.panel {
+  position: fixed;
+  z-index: 960;
+  width: 440px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  /* NSPanel.hasShadow */
+  box-shadow: var(--shadow-menu);
+  color: var(--text-primary);
+}
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 5px 0;
+  overflow-y: auto;
+  /* .scrollIndicators(.never) */
+  scrollbar-width: none;
+}
+
+.list::-webkit-scrollbar {
+  display: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  margin: 0 4px;
+  padding: 0 10px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.selected {
+  background: var(--accent-soft);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  color: var(--accent);
+}
+
+.selected .icon {
+  color: var(--text-primary);
+}
+
+.label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--text-primary);
+}
+
+.label b {
+  font-weight: 700;
+}
+
+.detail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono-small);
+  color: var(--text-secondary);
+}
+
+.selected .detail {
+  color: color-mix(in srgb, var(--text-primary) 75%, transparent);
+}
+
+/* Spacer(minLength: 8) */
+.spacer {
+  flex: 1 0 8px;
+}
+
+/* The path, truncated at its head, at most 160 wide, right-aligned. */
+.path {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.selected .path {
+  color: color-mix(in srgb, var(--text-primary) 60%, transparent);
+}

@@ -1,0 +1,117 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: var(--font-size-secondary);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text-primary);
+  background: transparent;
+  transition:
+    background-color var(--duration-hover) var(--ease-out),
+    color var(--duration-hover) var(--ease-out),
+    border-color var(--duration-hover) var(--ease-out),
+    opacity var(--duration-hover) var(--ease-out);
+}
+
+.button:disabled {
+  opacity: 0.5;
+}
+
+.label {
+  display: inline-block;
+}
+
+.icon {
+  flex: 0 0 auto;
+}
+
+/* Sizes */
+.small {
+  height: 20px;
+  padding: 0 8px;
+  gap: 4px;
+  font-size: var(--font-size-caption);
+  border-radius: 5px;
+}
+
+.large {
+  height: 30px;
+  padding: 0 14px;
+  font-size: var(--font-size-body);
+  border-radius: var(--radius-small);
+}
+
+.block {
+  display: flex;
+  width: 100%;
+}
+
+/* .plain: text only, highlight on hover */
+.plain {
+  color: var(--text-secondary);
+}
+
+.plain:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+}
+
+.plain:active:not(:disabled) {
+  background: color-mix(in srgb, var(--surface-raised) 70%, var(--border));
+}
+
+/* .bordered: the macOS 26 push button, a translucent grey fill with no
+   hairline (a native render reads #EBEBEB on white) and a regular-weight
+   title. */
+.bordered {
+  background: rgba(var(--text-primary-rgb), 0.08);
+  font-weight: 400;
+}
+
+.bordered:hover:not(:disabled) {
+  background: rgba(var(--text-primary-rgb), 0.11);
+}
+
+.bordered:active:not(:disabled) {
+  background: rgba(var(--text-primary-rgb), 0.16);
+}
+
+/* .borderedProminent: accent fill, white text */
+.prominent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.prominent:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, black);
+  border-color: color-mix(in srgb, var(--accent) 88%, black);
+}
+
+.prominent:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 78%, black);
+}
+
+/* Destructive: danger fill */
+.destructive {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-accent);
+}
+
+.destructive:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 88%, black);
+  border-color: color-mix(in srgb, var(--danger) 88%, black);
+}
+
+.destructive:active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 78%, black);
+}

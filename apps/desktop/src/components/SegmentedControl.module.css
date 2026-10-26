@@ -1,0 +1,82 @@
+/* NSSegmentedControl (macOS 26, a native render): a 24 px grey track, equally
+   wide segments (the widest label plus 11 px a side when it hugs its labels),
+   the selected one an accent capsule as tall as the track, hairlines between
+   the others. */
+.picker {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  flex: 0 0 auto;
+  height: 24px;
+  border-radius: 6px;
+  background: rgba(var(--text-primary-rgb), 0.08);
+}
+
+/* `.frame(maxWidth:)`: as wide as the container allows, up to the cap. */
+.stretch {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.disabled {
+  opacity: 0.5;
+}
+
+.segment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 11px;
+  border-radius: 6px;
+  font-size: var(--font-size-secondary);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.stretch .segment {
+  padding: 0 8px;
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Hairlines between segments that do not touch the selected one. */
+.segment + .segment::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: -0.5px;
+  width: 1px;
+  background: rgba(var(--text-primary-rgb), 0.12);
+  pointer-events: none;
+}
+
+.selected::before,
+.selected + .segment::before {
+  visibility: hidden;
+}
+
+.segment:active:not(.selected):not(:disabled) {
+  background: rgba(var(--text-primary-rgb), 0.06);
+}
+
+.selected {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.segment:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 1px;
+  z-index: 1;
+}

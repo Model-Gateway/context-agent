@@ -1,0 +1,119 @@
+/* ToolOutputView.swift: padding 10 top · 14 sides · 12 bottom, spacing 8,
+   `codeBackground` in a 14 px rounded rectangle with a hairline. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 14px 12px;
+  border-radius: 14px;
+  background: var(--code-background);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 28px;
+}
+
+/* The segment picker: 2 px padding on `surfaceRaised`, 7 px radius. */
+.picker {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--surface-raised);
+}
+
+.segment {
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.segmentSelected {
+  color: var(--text-primary);
+  background: var(--surface);
+  box-shadow: 0 1px 1px rgba(var(--shadow-rgb), 0.06);
+}
+
+.segmentUnavailable {
+  opacity: 0.45;
+}
+
+.format {
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Takes the free space (the spacer stays at its 8 px minimum) so the
+   middle-truncated path is fitted to what is free. */
+.patchPath {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.spacer {
+  flex: 1 0 8px;
+  min-width: 8px;
+}
+
+.spacerFixed {
+  flex: 0 0 8px;
+}
+
+.running {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.runningLabel,
+.duration {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.duration {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.lines {
+  padding-right: 4px;
+}
+
+/* Longer than 18 lines: its own 320 px scroll view. */
+.scroller {
+  height: 320px;
+  overflow-y: auto;
+}
+
+.empty {
+  padding: 2px 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.omitted {
+  align-self: flex-start;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}

@@ -1,0 +1,231 @@
+.tab {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+/* AgentTabStrip: 36 px, hairline below, horizontally scrolling without indicators. */
+.strip {
+  display: flex;
+  flex: 0 0 auto;
+  height: 36px;
+  min-width: 0;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.stripScroll {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.stripScroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* AgentTabChip: HStack(spacing: 5), padding 8, 24 px, radius 6. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+  animation: chipIn 300ms cubic-bezier(0.3, 1.1, 0.55, 1) both;
+}
+
+.chip:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-raised) 55%, transparent);
+}
+
+.chip.selected {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+}
+
+.chip:focus-visible {
+  outline-offset: -1px;
+}
+
+@keyframes chipIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.chipName {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.selected .chipName {
+  font-weight: 600;
+}
+
+/* AgentPane */
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Header: HStack(alignment: .center, spacing: 10), padding 12, hairline below. */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 12px;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.agentName {
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.headerSpacer {
+  flex: 1 1 0;
+  min-width: 8px;
+}
+
+/* The scrolling timeline: padding 12, VStack(spacing: 12) of brief, rows and what follows. */
+.timeline {
+  flex: 1 1 auto;
+}
+
+.timelineContent.timelineContent {
+  gap: 12px;
+  padding: 12px;
+}
+
+/* The tool rows sit 0 apart; the connector runs behind the icon column from the first icon to the last. */
+.timelineRows {
+  position: relative;
+  isolation: isolate;
+}
+
+.timelineRows:empty {
+  display: none;
+}
+
+.timelineRows::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 18px;
+  bottom: 18px;
+  left: 17.5px;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+.timelineRowsToEnd::before {
+  bottom: 30px;
+}
+
+.timelineRows:has(> :only-child)::before {
+  display: none;
+}
+
+/* Brief: a DisclosureRow pulled 6 px left, its text indented 6 px. */
+.brief {
+  margin-left: -6px;
+}
+
+.briefLabel {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.objective {
+  margin: 0;
+  padding-left: 6px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.newest {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.liveLine {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.liveText {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.unresolved {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.unresolvedLine {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--font-size-secondary);
+  color: var(--warning);
+  overflow-wrap: anywhere;
+}
+
+.usage {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,150 @@
+/* ApprovalCardView.swift: spacing 12, padding 16, `surface` with a 1 px
+   `warning` border at the 12 px radius. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--warning);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.headerIcon {
+  flex: 0 0 auto;
+  color: var(--warning);
+}
+
+.title {
+  flex: 0 0 auto;
+  font-size: var(--font-size-heading);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.spacer {
+  flex: 1 0 8px;
+  min-width: 8px;
+}
+
+.summary {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reason {
+  margin: 0;
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* DetailsBlock: 12 × 10 padding, `codeBackground`, 8 px radius, hairline. */
+.details {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-small);
+  background: var(--code-background);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.detailsScrolling {
+  height: 240px;
+  overflow-y: auto;
+}
+
+.detailsList {
+  width: 100%;
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.errorIcon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.buttons .spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.sending {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+.sendingLabel {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+/* `.buttonStyle(.borderless)` in `textSecondary`: no fill, even on hover. */
+.borderless,
+.borderless:hover:not(:disabled),
+.borderless:active:not(:disabled) {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.borderless:active:not(:disabled) {
+  color: var(--text-primary);
+}
+
+/* MARK: Resolved line */
+
+.resolved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 6px;
+}
+
+.resolvedIcon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+}
+
+.resolvedText {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}

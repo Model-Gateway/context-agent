@@ -1,0 +1,157 @@
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+/* Toolbar: HStack(spacing: 6), padding 12, 32 px, hairline below. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 12px;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.toolbarIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+/* arrow.down.right.and.arrow.up left / arrow.clockwise at 11 pt ≈ 10 pt glyphs; lucide's
+   fill three quarters of their box. */
+.toolbarButton svg {
+  width: 13.5px;
+  height: 13.5px;
+}
+
+.projectName {
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.list {
+  position: relative;
+  width: 100%;
+}
+
+.window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* FileRow: HStack(spacing: 4), leading 8 + depth × 12, trailing 12, 24 px. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 24px;
+  padding-right: 12px;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.row:hover {
+  background: rgba(var(--text-primary-rgb), 0.05);
+}
+
+.row.selected {
+  background: var(--accent-soft);
+}
+
+/* A row a folder toggle brought in: the 0.15 s opacity transition. */
+.row.entering {
+  animation: rowIn 150ms ease-out both;
+}
+
+@keyframes rowIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row.entering {
+    animation: none;
+  }
+}
+
+.row:focus-visible {
+  outline-offset: -2px;
+}
+
+/* chevron at 9 pt semibold ≈ 7 pt tall; lucide's chevron fills half its box, so it is
+   drawn at 13 px, overflowing the 12 px frame symmetrically. Folder and doc.text at
+   12 pt ≈ 12 pt glyphs: 14 px lucide glyphs in the 16 px frame. */
+.chevronFrame {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 12px;
+  color: var(--text-tertiary);
+}
+
+.iconFrame {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+}
+
+.folderIcon {
+  color: var(--accent);
+}
+
+.fileIcon {
+  color: var(--text-tertiary);
+}
+
+.name {
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+.deleted {
+  text-decoration: line-through;
+}
+
+.rowSpacer {
+  flex: 0 0 4px;
+}
+
+.code {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--warning);
+}

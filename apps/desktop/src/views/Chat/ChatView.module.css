@@ -1,0 +1,222 @@
+/* ChatView.swift: find bar · transcript pane · composer dock, on the canvas. */
+
+.placeholder {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+/* VStack(spacing: 0). */
+.chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+/* The transcript pane: the scroller plus the "Jump to latest" overlay. */
+.pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* VStack(alignment: .leading, spacing: 20) padded 24 / 20 top / 12 bottom,
+   at most contentMaxWidth + 48 wide, centred. The 20 px spacing is the
+   TailWindow's rowGap. */
+.content {
+  width: 100%;
+  max-width: calc(var(--content-max-width) + 48px);
+  margin: 0 auto;
+  padding: 20px 24px 12px;
+}
+
+/* An entry: its day separator above the row, 20 apart. */
+.entry {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20px;
+  min-width: 0;
+}
+
+.row {
+  position: relative;
+  min-width: 0;
+}
+
+/* The current find match: a 1.5 px accent ring 8 px outside the row. */
+.matchRing {
+  position: absolute;
+  inset: -8px;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+/* A skeleton exchange standing in for unloaded rows: 132 + 2 × 14 = 160. */
+.skeletonExchange {
+  padding: 14px 0;
+}
+
+/* `Color.clear.frame(height: 1)`: the bottom anchor. */
+.bottomAnchor {
+  flex: 0 0 1px;
+  height: 1px;
+}
+
+.flexSpacer {
+  flex: 1 1 8px;
+  min-width: 8px;
+}
+
+/* History error: warning glyph + 12.5 px danger text + Retry (first-line aligned). */
+.historyError {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.historyErrorIcon {
+  flex: 0 0 auto;
+  margin-top: 1.5px;
+  color: var(--danger);
+}
+
+.historyErrorText {
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 15px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+/* ModelMismatchNotice: 12 × 6 padding, surface-raised, 8 radius, 12.5 px text-tertiary. */
+.mismatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+  opacity: 1;
+  transition: opacity 150ms var(--ease-out);
+}
+
+.leaving {
+  opacity: 0;
+}
+
+.mismatchIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.mismatchText {
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 15px;
+  color: var(--text-tertiary);
+}
+
+/* LiveTurnView: VStack(alignment: .leading, spacing: 20), full width. */
+.live {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* The "Investigating…" row: HStack(spacing: 8), 2 px vertical padding. */
+.working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.workingLabel {
+  font-size: var(--font-size-secondary);
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+
+/* ActionRow: HStack(spacing: 8) of small bordered buttons, 2 px above. */
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+/* JumpToLatestPill: capsule, surface, hairline, floating shadow, 12 above the bottom;
+   it fades and slides in from below over 0.15 s (fades only with Reduce Motion). */
+.pill {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  line-height: 15px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, calc(100% + 12px));
+  pointer-events: none;
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+
+.pillShown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill,
+  .pillShown {
+    transform: translate(-50%, 0);
+    transition: opacity 150ms var(--ease-out);
+  }
+}
+
+/* ComposerDock: max contentMaxWidth, 24 horizontal, 8 top, 16 bottom; VStack(spacing: 10). */
+.dock {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 8px 24px 16px;
+}
+
+.dockColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  /* The 10 px between the question card and the composer is the card's own
+     bottom padding, so it opens and closes with the card. */
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+}
+

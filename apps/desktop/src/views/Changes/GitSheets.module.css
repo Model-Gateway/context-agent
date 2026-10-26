@@ -1,0 +1,203 @@
+/* GitSheets.swift: VStack(alignment: .leading, spacing: 14) in a 20 px
+   padded surface card (the Sheet). */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  color: var(--text-primary);
+  font-size: var(--font-size-secondary);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.headerIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  color: var(--accent);
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--font-size-heading);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.secondary {
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+.tertiaryCaption {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.warningCaption {
+  font-size: var(--font-size-caption);
+  color: var(--warning);
+}
+
+.inlineCode {
+  font-family: var(--font-mono);
+  font-size: inherit;
+}
+
+/* Grid(horizontalSpacing: 12, verticalSpacing: 10) */
+.grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 10px;
+  align-items: center;
+  font-size: var(--font-size-secondary);
+}
+
+.gridLabel {
+  color: var(--text-secondary);
+}
+
+.toggles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+}
+
+.toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* .textFieldStyle(.roundedBorder) */
+.textField {
+  width: 100%;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--font-size-secondary);
+}
+
+.textField::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* Picker (pop-up button) */
+.picker {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.pickerSelect {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 22px;
+  padding: 0 24px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--font-size-secondary);
+  text-overflow: ellipsis;
+  box-shadow: 0 1px 1px rgba(var(--shadow-rgb), 0.04);
+}
+
+.pickerChevron {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+/* TextEditor with .padding(6), canvas background, 8 px radius, hairline. */
+.textEditor {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-secondary);
+  line-height: 1.35;
+  resize: none;
+  overflow-y: auto;
+}
+
+.path {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--text-secondary);
+}
+
+/* outputBox: ScrollView maxHeight 140 on code-background. */
+.outputBox {
+  max-height: 140px;
+  overflow: auto;
+  border-radius: var(--radius-small);
+  background: var(--code-background);
+}
+
+.output {
+  margin: 0;
+  padding: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono-small);
+  line-height: 1.4;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.outputError {
+  color: var(--danger);
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.pushSpinner {
+  margin-left: 4px;
+}

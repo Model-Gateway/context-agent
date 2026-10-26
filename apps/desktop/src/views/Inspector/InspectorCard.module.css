@@ -1,0 +1,60 @@
+/* InspectorCard: VStack(spacing: 10), padding 12, surface + 1 px border, radius 12.
+   The SwiftUI border is drawn inside the padded frame (strokeBorder overlay), so the
+   CSS padding is 11 px plus the 1 px border. Text lines use AppKit's line heights
+   (SF 11 pt ≈ 13, 12 pt ≈ 15) instead of the global 1.45. */
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  padding: 11px;
+  line-height: 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 13px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* StatRow: HStack(spacing: 8) label · Spacer(minLength: 8) · value. */
+.statRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  line-height: 15px;
+}
+
+.statLabel {
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.statSpacer {
+  flex: 1 1 0;
+  min-width: 8px;
+}
+
+.statValue {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}

@@ -1,0 +1,241 @@
+/* AttachmentRow: scrolls sideways without indicators, chips 6 px apart. */
+.row {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.row::-webkit-scrollbar {
+  display: none;
+}
+
+.rowContent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  padding: 1px 0;
+}
+
+/* AttachmentChip: 28 px, 7 px leading / 2 px trailing, hairline, 8 px radius. */
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 2px 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  transition: background-color var(--duration-hover) var(--ease-out);
+  line-height: 1.25;
+}
+
+.chipHover {
+  background: var(--surface-raised);
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+/* Finder's folder icon is a filled blue folder: the outline glyph gets a light accent fill. */
+.folderGlyph svg {
+  fill: color-mix(in srgb, currentColor 28%, transparent);
+}
+
+.thumbnail {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.chipName {
+  max-width: 160px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* AttachmentHoverCard: 340 px, 10 px padding, 8 px between header and content. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 340px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-floating);
+  line-height: 1.25;
+}
+
+.cardHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 4px;
+  min-width: 0;
+}
+
+.cardName {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cardMetaText {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The bordered box under the header; text previews fade out at the bottom. */
+.inset {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.insetFades {
+  max-height: 150px;
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+
+.textBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.textTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.textMono,
+.textPlain {
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* lineSpacing(2) on top of the font's own line height. */
+.textMono {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: calc(1.25em + 2px);
+}
+
+.textPlain {
+  font-size: 11px;
+  line-height: calc(1.25em + 2px);
+}
+
+.image {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  margin: 0 auto;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.entries {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.entryIcon {
+  display: inline-flex;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 12px;
+  color: var(--text-tertiary);
+}
+
+.entryName {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.more {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* AttachmentDropHighlight: accent 1.5 px outline, accent 5 % wash, a centred capsule. */
+.dropHighlight {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-large);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.dropVisible {
+  opacity: 1;
+}
+
+.dropLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--accent);
+  line-height: 1.25;
+}

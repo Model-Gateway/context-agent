@@ -1,0 +1,5 @@
+/* A flex item that takes the row's free space. */
+.grow {
+  flex: 1 1 0;
+  min-width: 0;
+}

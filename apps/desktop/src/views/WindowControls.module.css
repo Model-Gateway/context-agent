@@ -1,0 +1,44 @@
+/* Caption buttons: 46 px wide over the bar's full height (the hairline below stays visible),
+   flush with the window's right edge. */
+.controls {
+  display: flex;
+  align-items: stretch;
+  align-self: flex-start;
+  flex: 0 0 auto;
+  height: calc(100% - 1px);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  color: var(--text-primary);
+  background: transparent;
+  transition:
+    background-color var(--duration-hover) var(--ease-out),
+    color var(--duration-hover) var(--ease-out);
+}
+
+.button:hover {
+  background: var(--surface-raised);
+}
+
+.button:active {
+  background: color-mix(in srgb, var(--surface-raised) 70%, var(--border));
+}
+
+.close:hover {
+  color: var(--on-accent);
+  background: var(--danger);
+}
+
+.close:active {
+  color: var(--on-accent);
+  background: color-mix(in srgb, var(--danger) 82%, black);
+}
+
+.button:focus-visible {
+  outline-offset: -2px;
+}

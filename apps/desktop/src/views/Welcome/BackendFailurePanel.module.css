@@ -1,0 +1,112 @@
+/* BackendFailurePanel: VStack(spacing 12) · padding 16 · surface · 12 radius · danger hairline at 45 %. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  text-align: left;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.warning {
+  flex: 0 0 auto;
+  color: var(--danger);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.explanation {
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height);
+  color: var(--text-secondary);
+}
+
+.pathList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pathTitle {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--text-tertiary);
+}
+
+.path {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+/* ScrollView { Text(mono).padding(10) }.frame(maxHeight: 160) on codeBackground, 8 radius. */
+.code {
+  max-height: 160px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: var(--radius-small);
+  background: var(--code-background);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  line-height: 1.45;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* InspectorView failureSection: VStack(spacing 8). */
+.compact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.compactButtons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spinnerLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

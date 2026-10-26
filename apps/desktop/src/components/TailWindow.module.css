@@ -1,0 +1,69 @@
+.scroller {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* The keeper holds the scroll position itself; the browser's anchoring would fight it. */
+  overflow-anchor: none;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tw-gap, 0px);
+  min-height: 100%;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tw-gap, 0px);
+  flex: 0 0 auto;
+}
+
+.row {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.spacer {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.placeholderAtBottom,
+.placeholderAtTop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+}
+
+.placeholderAtBottom {
+  bottom: 0;
+}
+
+.placeholderAtTop {
+  top: 0;
+}
+
+.placeholderPulse {
+  height: 100%;
+}
+
+.placeholderStackBottom,
+.placeholderStackTop {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.placeholderStackBottom {
+  justify-content: flex-end;
+}
+
+.placeholderStackTop {
+  justify-content: flex-start;
+}

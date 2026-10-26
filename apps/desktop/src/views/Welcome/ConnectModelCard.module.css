@@ -1,0 +1,149 @@
+/* ConnectModelCard: VStack(spacing 12) · padding 16 · surface · 12 radius · warning hairline at 50 %. */
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent);
+  text-align: left;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+}
+
+.keyIcon {
+  flex: 0 0 auto;
+  color: var(--warning);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.description {
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height);
+  color: var(--text-secondary);
+}
+
+/* Grid(horizontalSpacing 12, verticalSpacing 8): labels at least 72 wide. */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 8px;
+  align-self: stretch;
+  margin: 0;
+}
+
+.label {
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.value {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.tail {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.keyRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* SecureField with `.roundedBorder`. */
+.secureField {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--text-primary);
+}
+
+.secureField:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 0;
+  border-color: var(--accent);
+}
+
+/* `.borderedProminent` tinted accent, regular size. */
+.save {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: var(--font-size-secondary);
+  font-weight: 500;
+  color: var(--on-accent);
+  background: var(--accent);
+  transition: background-color var(--duration-hover) var(--ease-out), opacity var(--duration-hover) var(--ease-out);
+}
+
+.save:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, black);
+}
+
+.save:disabled {
+  opacity: 0.45;
+}
+
+.caption {
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  color: var(--text-tertiary);
+}
+
+.failure {
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+/* "Open Settings → Model" + arrow.up.forward: plain button, secondary font, accent. */
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-secondary);
+  line-height: 1.3;
+  color: var(--accent);
+}
+
+.link:hover {
+  text-decoration: underline;
+}

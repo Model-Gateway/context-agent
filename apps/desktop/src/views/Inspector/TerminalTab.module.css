@@ -1,0 +1,162 @@
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+/* TerminalTabStrip: 36 px, hairline below, horizontally scrolling without indicators. */
+.strip {
+  display: flex;
+  flex: 0 0 auto;
+  height: 36px;
+  min-width: 0;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.stripScroll {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.stripScroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* plus at 12 pt ≈ 10 pt; lucide's plus fills 58 % of its box. */
+.newButton svg {
+  width: 17px;
+  height: 17px;
+}
+
+.tabList {
+  display: contents;
+}
+
+/* TerminalTabChip: HStack(spacing: 5), leading 8, trailing 4, 24 px, radius 6. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+  animation: chipIn 300ms cubic-bezier(0.3, 1.1, 0.55, 1) both;
+}
+
+.chip:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-raised) 55%, transparent);
+}
+
+.chip.selected {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+}
+
+.chip:focus-visible {
+  outline-offset: -1px;
+}
+
+@keyframes chipIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Closing: the removal transition, .scale(scale: 0.85).combined(with: .opacity). */
+.chip.closing {
+  pointer-events: none;
+  animation: chipOut 150ms ease-out both;
+}
+
+@keyframes chipOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+.chipIcon {
+  flex: 0 0 auto;
+}
+
+.chipTitle {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.selected .chipTitle {
+  font-weight: 600;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  color: inherit;
+  opacity: 0;
+  transition:
+    opacity 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.chip:hover .close,
+.chip.selected .close,
+.close:focus-visible {
+  opacity: 1;
+}
+
+.close:hover {
+  background: rgba(var(--text-primary-rgb), 0.1);
+}
+
+/* TerminalHost: .padding(.leading, 8).padding(.top, 4). */
+.hostFrame {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px 0 0 8px;
+}
+
+.host {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The element xterm renders into (moved between hosts, never re-opened). */
+.xterm {
+  position: absolute;
+  inset: 0;
+}

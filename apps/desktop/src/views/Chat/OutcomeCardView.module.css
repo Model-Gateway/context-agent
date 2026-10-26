@@ -1,0 +1,106 @@
+/* OutcomeCardView.swift: spacing 14, vertical padding 4, no box. */
+
+.outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.pillRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* FlowLayout(spacing: 6). */
+.flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fileChip {
+  display: inline-flex;
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 4px;
+  list-style: none;
+}
+
+.bullet {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height);
+  color: var(--warning);
+  overflow-wrap: anywhere;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.footerText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footerSpacer {
+  flex: 1 0 8px;
+  min-width: 8px;
+}
+
+.finished {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .finished {
+    animation: appear 120ms var(--ease-out);
+  }
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

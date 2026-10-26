@@ -1,0 +1,31 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  transition:
+    background-color var(--duration-hover) var(--ease-out),
+    color var(--duration-hover) var(--ease-out);
+}
+
+.button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+}
+
+.button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--surface-raised) 70%, var(--border));
+}
+
+.button:disabled {
+  opacity: 0.4;
+}
+
+.active,
+.active:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--surface-raised);
+}

@@ -1,0 +1,58 @@
+/* The macOS 26 small NSSwitch (Switch.tsx). */
+
+.switch {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgba(var(--text-primary-rgb), 0.1);
+  transition:
+    background-color 150ms var(--ease-out),
+    opacity var(--duration-hover) var(--ease-out);
+}
+
+.on {
+  background: var(--accent);
+}
+
+.switch:disabled {
+  opacity: 0.45;
+}
+
+.knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 26px;
+  height: 16px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 0.5px rgba(var(--shadow-rgb), 0.08),
+    0 1px 2px rgba(var(--shadow-rgb), 0.18);
+  transition: transform 150ms var(--ease-out);
+}
+
+.on .knob {
+  transform: translateX(14px);
+}
+
+/* The dark knob is a light grey, not white. */
+:global(:root[data-theme="dark"]) .knob {
+  background: #e2e2e4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .knob {
+    background: #e2e2e4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch,
+  .knob {
+    transition: none;
+  }
+}

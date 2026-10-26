@@ -1,0 +1,186 @@
+/* RunTab: ScrollView(.vertical) { VStack(alignment: .leading, spacing: 12).padding(12) }. */
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px;
+}
+
+/* No chat and no git project: the Backend card (padding 12) over the placeholder. */
+.emptyColumn {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.backendPadding {
+  flex: 0 0 auto;
+  padding: 12px;
+}
+
+.flexSpacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* TaskStateCard */
+.taskHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.elapsed {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cancelling {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.clamp4 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+}
+
+/* ContextStatsCard */
+.usageBar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.usageFill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.chipRow {
+  display: flex;
+  align-items: center;
+}
+
+.note {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  color: var(--text-tertiary);
+}
+
+/* BackendCard: VStack(spacing: 8) padding 12, surface, hairline, radius 12. */
+.backendCard {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  /* 12 px from the card's edge to the content: the border is inside it (strokeBorder). */
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  line-height: 15px;
+}
+
+/* The summary button: VStack(spacing: 6), plain style, the whole area clickable. */
+.backendSummary {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.backendStatusLine {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.backendLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.tertiaryIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.dotReady,
+.dotFailed {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.dotReady {
+  background: var(--success);
+}
+
+.dotFailed {
+  background: var(--danger);
+}
+
+.backendModelLine,
+.backendApprovalLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.backendModel,
+.backendApproval {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+.chipHover {
+  display: inline-flex;
+  flex: 0 0 auto;
+}

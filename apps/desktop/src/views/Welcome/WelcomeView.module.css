@@ -1,0 +1,211 @@
+/* ScrollView(.vertical) on canvas. */
+.scroll {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--canvas);
+}
+
+/* VStack(spacing 28) · maxWidth 760 · padding h 32, top 56, bottom 40 · centred. */
+.column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  width: 100%;
+  max-width: calc(var(--content-max-width) + 64px);
+  margin: 0 auto;
+  padding: 56px 32px 40px;
+}
+
+/* Hero: VStack(spacing 14) — ✳ 34, "Context" 28 semibold, the open button 6 below. */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--text-primary);
+}
+
+.heroTitle {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.openBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+}
+
+/* `.borderedProminent` · `.controlSize(.large)` · accent: the label (14 pt icon, 15 pt semibold
+   title, padding 18 × 8) inside the large capsule bezel. */
+.openButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 30px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--on-accent);
+  background: var(--accent);
+  transition:
+    background-color var(--duration-hover) var(--ease-out),
+    opacity var(--duration-hover) var(--ease-out);
+}
+
+.openButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, black);
+}
+
+.openButton:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 78%, black);
+}
+
+.openButton:disabled {
+  opacity: 0.45;
+}
+
+.openHint {
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* RecentsGrid: VStack(alignment leading, spacing 12). */
+.recents {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.recentsHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recentsTitle {
+  margin: 0;
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.spacer {
+  flex: 1 1 0;
+}
+
+.count {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.viewAll {
+  font-size: var(--font-size-caption);
+  color: var(--accent);
+}
+
+.viewAll:hover {
+  text-decoration: underline;
+}
+
+/* "Projects you open show up here." on surface, 12 radius, dashed hairline. */
+.emptyRecents {
+  width: 100%;
+  padding: 18px 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height);
+  color: var(--text-tertiary);
+}
+
+/* LazyVGrid(.adaptive(minimum: 220, maximum: 360), spacing 12). */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  align-items: start;
+  gap: 12px;
+  width: 100%;
+}
+
+/* Footer: HStack(spacing 8) · 8 above. */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding-top: 8px;
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.dotReady {
+  background: var(--success);
+}
+
+.dotFailed {
+  background: var(--danger);
+}
+
+.footerLabel {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.footerSeparator {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+/* The data directory takes the Spacer's room so its middle truncation can follow the width. */
+.dataDirSlot {
+  flex: 1 1 0;
+  min-width: 0;
+  /* The Spacer(minLength: 0) and its second 8 pt gap. */
+  padding-right: 8px;
+}
+
+.dataDir {
+  color: var(--text-tertiary);
+}
+
+.settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+.settings:hover {
+  color: var(--text-primary);
+}

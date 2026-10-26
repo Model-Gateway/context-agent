@@ -1,0 +1,136 @@
+/*
+ * EditorFindBar: the text view's find bar on CodeMirror's top panel (which
+ * CodeEditor.module.css gives the surface and a hairline below), laid out
+ * like the Chat find bar: HStack(spacing: 8), 12 × 6 padding.
+ */
+
+.panel {
+  font-family: var(--font-ui);
+}
+
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The field: 10 px padding, 26 tall, at most 320 wide, surface, 8 radius, border (border-strong while focused). */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 320px;
+  min-width: 100px;
+  height: 26px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  transition: border-color var(--duration-hover) var(--ease-out);
+}
+
+.focused {
+  border-color: var(--border-strong);
+}
+
+.fieldIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+}
+
+.input:focus-visible {
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* Match Case · Whole Words · Regular Expression, inside the field. */
+.option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 3px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-tertiary);
+  transition:
+    background-color var(--duration-hover) var(--ease-out),
+    color var(--duration-hover) var(--ease-out);
+}
+
+.option:hover {
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+}
+
+.optionActive,
+.optionActive:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.option:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 0;
+}
+
+.wholeWord {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Theme.Font.caption, text-tertiary, monospaced digits, at least 64 wide in a wide pane; the field gives way first. */
+.count {
+  flex: 0 0 auto;
+  min-width: min(64px, 12%);
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.replaceToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.replaceToggle input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.spacer {
+  flex: 1 1 8px;
+  min-width: 8px;
+}

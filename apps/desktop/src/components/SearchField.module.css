@@ -1,0 +1,54 @@
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: border-color var(--duration-hover) var(--ease-out);
+  min-width: 0;
+}
+
+.focused {
+  border-color: var(--border-strong);
+}
+
+.disabled {
+  opacity: 0.5;
+}
+
+.magnifier {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+  /* A narrow field cuts its placeholder with an ellipsis ("Search ch…"), like NSTextField. */
+  text-overflow: ellipsis;
+}
+
+.input:focus-visible {
+  outline: none;
+}
+
+.clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  color: var(--text-tertiary);
+}
+
+.clear:hover {
+  color: var(--text-secondary);
+}

@@ -1,0 +1,268 @@
+/* TranscriptItemViews.swift: the user bubble, the assistant message and notices. */
+
+.flexSpacer {
+  flex: 1 1 8px;
+  min-width: 8px;
+}
+
+/* `.frame(maxWidth: .infinity, alignment: .trailing)` around the user column. */
+.userRow {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  min-width: 0;
+}
+
+/* VStack(alignment: .trailing, spacing: 2): the hover area is its own bounds. */
+.userColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* `SentPromptView` is `maxWidth: .infinity`, so the column spans the row. */
+.userColumnFull {
+  width: 100%;
+}
+
+.sentPrompt {
+  align-self: stretch;
+  padding-bottom: 4px;
+}
+
+/* Theme.Font.body, lineSpacing 3, 14 × 10 padding, surfaceRaised, 16 radius, max 70 % of 760. */
+.bubble {
+  max-width: calc(var(--content-max-width) * 0.7);
+  padding: 10px 14px;
+  border-radius: var(--radius-large);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  line-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hit {
+  background: color-mix(in srgb, var(--warning) 32%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* The timestamp + pencil strip under the bubble (HStack spacing 6), shown on hover. */
+.userMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity var(--duration-hover) var(--ease-out);
+}
+
+.shown {
+  opacity: 1;
+}
+
+.clock {
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Images above the bubble: HStack spacing 6, max 70 % of the column, 4 below. */
+.imageStrip {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 6px;
+  max-width: calc(var(--content-max-width) * 0.7);
+  padding-bottom: 4px;
+  overflow: hidden;
+}
+
+.thumbnail {
+  display: block;
+  flex: 0 0 auto;
+  max-width: none;
+  border-radius: var(--radius-small);
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
+  object-fit: contain;
+  cursor: pointer;
+}
+
+.thumbnailPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 96px;
+  height: 96px;
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+  color: var(--text-tertiary);
+}
+
+/* The editor (VStack trailing, spacing 8), the bubble's width. */
+.editor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  max-width: calc(var(--content-max-width) * 0.7);
+}
+
+.editorField {
+  display: block;
+  width: 100%;
+  min-height: 74px;
+  max-height: 258px;
+  padding: 8px 10px;
+  resize: none;
+  overflow-y: auto;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-large);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  line-height: 20px;
+}
+
+/* The accent border is the editor's focus indicator (TextEditor draws no ring). */
+.editorField:focus-visible {
+  outline: none;
+}
+
+.editorFooter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.editorHint {
+  min-width: 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+/* AssistantMessageView: VStack(alignment: .leading, spacing: 8), 8 px trailing padding. */
+.assistant {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding-right: 8px;
+}
+
+.writing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.writingLabel {
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  color: var(--text-tertiary);
+}
+
+/* The hover toolbar: top-trailing overlay, 6 px up, surface, 8 radius, 2 padding. */
+.toolbar {
+  position: absolute;
+  top: -6px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-hover) var(--ease-out);
+}
+
+.toolbar.shown {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.toolbar:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.toolbarClock {
+  padding-left: 6px;
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* NoticeView: VStack(alignment: .leading, spacing: 3), 12.5 px text-tertiary. */
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+}
+
+.noticeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* HStack(alignment: .firstTextBaseline): the glyph sits on the first line (15 px). */
+.noticeIcon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--danger);
+}
+
+.noticeLine {
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 15px;
+  color: var(--text-tertiary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.noticeError {
+  color: var(--danger);
+}
+
+/* `.padding(.leading, -6)`: the row's own 6 px inset lines its text up with the lines above. */
+.noticeDisclosure {
+  margin-left: -6px;
+  align-self: stretch;
+}
+
+.noticeDetailsLabel {
+  font-size: 12.5px;
+  line-height: 15px;
+  color: var(--text-tertiary);
+}
+
+.noticeDetails {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding-left: 6px;
+  padding-bottom: 2px;
+}

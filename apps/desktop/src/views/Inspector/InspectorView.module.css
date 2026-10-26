@@ -1,0 +1,226 @@
+/* InspectorView.swift: header (52 px, hairline below) over the tab content, canvas background.
+   Entering panes animate with `backwards` fill so no transform stays on them afterwards. */
+
+.inspector {
+  /* spring(response: 0.34, dampingFraction: 0.82): a short ease-out with a slight overshoot. */
+  --inspector-spring: cubic-bezier(0.3, 1.12, 0.55, 1);
+  --inspector-spring-duration: 380ms;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  height: 52px;
+  padding: 0 12px;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* xmark at 12 pt draws a ~9.5 pt cross; lucide's X fills half its box, so the glyph
+   is drawn at 18 px inside the 24 px button (stroke ≈ SF medium). */
+.closeButton svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.75;
+}
+
+/* The ZStack: fills the rest, content at the top, clipped. */
+.content {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.leaving {
+  pointer-events: none;
+}
+
+.enterFade {
+  animation: paneFadeIn var(--inspector-spring-duration) ease-out backwards;
+}
+
+.exitFade {
+  animation: paneFadeOut var(--inspector-spring-duration) ease-out both;
+}
+
+.enterLeading {
+  animation: paneInFromLeading var(--inspector-spring-duration) var(--inspector-spring) backwards;
+}
+
+.exitLeading {
+  animation: paneOutToLeading var(--inspector-spring-duration) var(--inspector-spring) both;
+}
+
+.enterTrailing {
+  animation: paneInFromTrailing var(--inspector-spring-duration) var(--inspector-spring) backwards;
+}
+
+.exitTrailing {
+  animation: paneOutToTrailing var(--inspector-spring-duration) var(--inspector-spring) both;
+}
+
+@keyframes paneFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes paneFadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes paneInFromLeading {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes paneOutToLeading {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes paneInFromTrailing {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes paneOutToTrailing {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+/* InspectorTabs: 2 px track padding, buttons 2 px apart on surface-raised. */
+.tabs {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 2px;
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+}
+
+/* The sliding selection card (matchedGeometryEffect): surface, hairline, soft shadow. */
+.selection {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 34px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.08);
+  transition: transform var(--inspector-spring-duration) var(--inspector-spring);
+  pointer-events: none;
+}
+
+.tabButton {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+
+.tabButton:hover:not(.selected) {
+  color: var(--text-primary);
+  background: rgba(var(--text-primary-rgb), 0.06);
+}
+
+.selected {
+  color: var(--text-primary);
+}
+
+.tabIcon {
+  transition: transform 150ms ease-out;
+}
+
+.tabButton:hover:not(.selected) .tabIcon {
+  transform: translateY(-0.5px) scale(1.12);
+}
+
+/* The agent drives the browser: a 6 px accent dot at the top trailing corner, scaling and
+   fading in and out (`.transition(.scale.combined(with: .opacity))`). */
+.busyDot {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transform: scale(0);
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms ease-out;
+  pointer-events: none;
+}
+
+.busyDotShown {
+  opacity: 1;
+  transform: scale(1);
+}

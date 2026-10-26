@@ -1,0 +1,149 @@
+/* VStack(spacing 0) { TopBar; panes } on canvas. */
+.window {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--canvas);
+}
+
+/* HStack(spacing 0): sidebar · centre · inspector. */
+.panes {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+/* The centre pane: `minWidth: 0` + `clipped()` so wide content never widens the row. */
+.detail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* A side pane's slot: its width animates while the content keeps its own. */
+.pane {
+  position: relative;
+  flex: 0 0 auto;
+  height: 100%;
+}
+
+.paneAnimating {
+  transition: width 200ms ease-in-out;
+}
+
+.paneClip {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* The sidebar leaves to the left, the inspector to the right. */
+.anchorTrailing {
+  justify-content: flex-end;
+}
+
+.anchorLeading {
+  justify-content: flex-start;
+}
+
+.paneContent {
+  flex: 0 0 auto;
+  height: 100%;
+}
+
+.sidebar,
+.inspector {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar > *,
+.inspector > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* `.hairline(.trailing)` / `.hairline(.leading)`: a 1 px line drawn over the pane's edge. */
+.hairlineTrailing::after,
+.hairlineLeading::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+.hairlineTrailing::after {
+  right: 0;
+}
+
+.hairlineLeading::after {
+  left: 0;
+}
+
+/* The inspector's resize strip, over its leading hairline (outside the clip so it reaches 4 px into the centre). */
+.handleSlot {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  width: 0;
+}
+
+/* DropHighlight: accent frame (2 px, 16 radius, accent 6 % fill) 8 in, caption in a capsule. */
+.dropHighlight {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  padding: 8px;
+  pointer-events: none;
+}
+
+.dropFrame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-large);
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.dropCaption {
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  color: var(--text-primary);
+}
+
+.alertMessage {
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height);
+  color: var(--text-secondary);
+  white-space: pre-line;
+}

@@ -1,0 +1,167 @@
+/* ModelHoverCard.swift: 280 px card, 12 px padding, 10 px between sections. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 280px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-floating);
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.logoTile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtitle {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.description {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.stats {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.statLabel {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.statValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.savings {
+  color: var(--success);
+}
+
+.rateDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.cost {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* AutoScrollingRow */
+.autoScroll {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.autoScrollContent {
+  display: inline-flex;
+  width: max-content;
+  will-change: transform;
+}
+
+/* LabLogo */
+.logoBox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.logoMask {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.logoProbe {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* FloatingCard (HoverCardPanel): never takes the pointer. */
+.floating {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+/* MiddleText (head mode) */
+.headText {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}

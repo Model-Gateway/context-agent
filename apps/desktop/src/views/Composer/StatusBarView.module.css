@@ -1,0 +1,80 @@
+/* StatusBarView.swift: 22 px, caption text in text-secondary, 6 px side padding, 12 px between sides. */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 22px;
+  padding: 0 6px;
+  min-width: 0;
+  font-size: var(--font-size-caption);
+  line-height: 1.25;
+  color: var(--text-secondary);
+}
+
+.spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.primary {
+  color: var(--text-primary);
+}
+
+.tertiary {
+  color: var(--text-tertiary);
+}
+
+.dot {
+  color: var(--text-tertiary);
+}
+
+.digits {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+/* `.hoverHighlight(radius: 5)`. */
+.contextButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 5px;
+  color: inherit;
+  font-size: inherit;
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.contextButton:hover {
+  background: var(--surface-raised);
+}
+
+.indexGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.indexFailed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--warning);
+}

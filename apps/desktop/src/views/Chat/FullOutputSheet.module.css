@@ -1,0 +1,150 @@
+/* FullOutputSheet (ToolOutputView.swift): 760 × 540 on `surface`; the
+   header and footer are 16 × 12 padded rows with hairlines. */
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+}
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 16px;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.title {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: var(--font-size-heading);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.spacer {
+  flex: 1 0 8px;
+  min-width: 8px;
+}
+
+.spacerFixed {
+  flex: 0 0 8px;
+}
+
+.size {
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* ReadOnlyTextView: 12 px text-container inset, wrapping, vertical scroller only. */
+.textScroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--code-background);
+}
+
+.textScroller:focus,
+.textScroller:focus-visible {
+  outline: none;
+}
+
+.text {
+  margin: 0;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  line-height: 1.2;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+
+.footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+/* The text view's find bar (NSTextFinder), styled like the chat's find bar:
+   8 × 16 padding, a 28 px field (at most 320 wide), hairline below. */
+.findBar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.findField {
+  display: flex;
+  flex: 0 1 320px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  transition: border-color var(--duration-hover) var(--ease-out);
+}
+
+.findFocused {
+  border-color: var(--border-strong);
+}
+
+.findIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.findInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+.findInput:focus-visible {
+  outline: none;
+}
+
+.findCount {
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* NSTextFinder's highlights: every match tinted, the current one in the
+   find indicator's yellow. */
+.text::highlight(ctx-output-match) {
+  background-color: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.text::highlight(ctx-output-current) {
+  background-color: #ffd60a;
+  color: #1a1a1c;
+}

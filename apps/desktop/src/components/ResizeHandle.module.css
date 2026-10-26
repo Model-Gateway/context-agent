@@ -1,0 +1,38 @@
+.handle {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  width: 8px;
+  margin: 0 -4px;
+  align-self: stretch;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+
+/* Invisible like the Swift strip (the cursor tells it apart); an accent
+   line shows only for keyboard focus. */
+.handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0;
+}
+
+.handle:focus-visible::after {
+  opacity: 0.6;
+}
+
+/* Keep the resize cursor while dragging even when the pointer outruns the strip. */
+.dragging {
+  cursor: col-resize;
+}
+
+.handle:focus-visible {
+  outline: none;
+}

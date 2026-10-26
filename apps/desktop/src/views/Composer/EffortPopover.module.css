@@ -1,0 +1,62 @@
+/* EffortPopover.swift: 280 px, 6 px padding, rows 2 px apart. */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--surface);
+  outline: none;
+  line-height: 1.25;
+}
+
+.list:focus-visible {
+  outline: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-small);
+  text-align: left;
+  background: transparent;
+}
+
+.highlighted {
+  background: var(--surface-raised);
+}
+
+.icon {
+  display: inline-flex;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.title {
+  font-size: 13px;
+}
+
+.description {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.check {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-left: 4px;
+}

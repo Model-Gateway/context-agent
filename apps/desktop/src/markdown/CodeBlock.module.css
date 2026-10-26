@@ -1,0 +1,159 @@
+/* CodeBlockView.swift: language label top-left, actions top-right on hover,
+   horizontally scrolling highlighted lines on codeBackground, radius 12 with
+   a hairline border; 14 px side padding, 8 px top, 12 px bottom. */
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 14px 12px;
+  background: var(--code-background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+}
+
+.label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-caption);
+  line-height: 16px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Invisible until hovered, but always reachable by keyboard and assistive technology. */
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--duration-hover) var(--ease-out);
+}
+
+.block:hover .actions,
+.actions:focus-within {
+  opacity: 1;
+}
+
+/* RunButton: the play button beside Copy, styled like CopyButton. */
+.run {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-hover) var(--ease-out),
+    color var(--duration-hover) var(--ease-out),
+    transform var(--duration-hover) var(--ease-out);
+}
+
+.run:hover {
+  background: var(--surface-raised);
+  color: var(--success);
+  transform: scale(1.08);
+}
+
+.run:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actions,
+  .run {
+    transition: none;
+  }
+
+  .run:hover {
+    transform: none;
+  }
+}
+
+/* ScrollView(.horizontal, showsIndicators: false) around the LineList. */
+.scroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+  scrollbar-width: none;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/* The LineList grows to its longest line (plus the 8 px trailing padding)
+   so the scroller, not the list, does the clipping. */
+.scroller > .lines {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  padding-right: 8px;
+  box-sizing: border-box;
+}
+
+/* SyntaxHighlighter.color(for:): global so LineList, tool output and the
+   editor's previews colour tokens the same way. */
+:global(.token-string) {
+  color: var(--code-string);
+}
+
+:global(.token-comment) {
+  color: var(--code-comment);
+}
+
+:global(.token-keyword) {
+  color: var(--code-keyword);
+}
+
+:global(.token-number) {
+  color: var(--code-number);
+}
+
+:global(.token-key) {
+  color: var(--text-secondary);
+}
+
+:global(.token-type) {
+  color: var(--code-type);
+}
+
+:global(.token-function) {
+  color: var(--code-function);
+}
+
+:global(.token-diff-added) {
+  color: var(--success);
+}
+
+:global(.token-diff-removed) {
+  color: var(--danger);
+}
+
+:global(.token-diff-hunk) {
+  color: var(--text-tertiary);
+}
+
+:global(.token-diff-meta) {
+  color: var(--text-secondary);
+}

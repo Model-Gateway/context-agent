@@ -1,0 +1,53 @@
+/* BYOKSettingsSection.swift */
+
+.routing {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.routingText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.routingTitle {
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+.spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.caption {
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  color: var(--text-tertiary);
+}
+
+.captionSecondary {
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  color: var(--text-secondary);
+}
+
+.keyRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.probeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}

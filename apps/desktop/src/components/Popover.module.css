@@ -1,0 +1,90 @@
+.panel {
+  position: fixed;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  max-width: calc(100vw - 16px);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.padded {
+  padding: 8px;
+}
+
+.below {
+  transform-origin: top center;
+}
+
+.above {
+  transform-origin: bottom center;
+}
+
+.enter {
+  animation: pop 140ms var(--ease-out);
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.above.enter {
+  animation-name: popUp;
+}
+
+@keyframes popUp {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Closing: a quick fade toward the anchor, with its own keyframes (reusing
+   `pop` reversed would not restart the finished animation). */
+.leave {
+  animation: popAway 120ms ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes popAway {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+}
+
+.above.leave {
+  animation-name: popAwayUp;
+}
+
+@keyframes popAwayUp {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(2px);
+  }
+}

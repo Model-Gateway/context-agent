@@ -1,0 +1,213 @@
+/* The macOS controls of the Settings forms (SettingsControls.tsx). */
+
+/* MARK: Toggle (.toggleStyle(.switch), .controlSize(.small)) */
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+.toggleLabel {
+  min-width: 0;
+}
+
+.disabled {
+  opacity: 0.5;
+}
+
+/* A labelled toggle dims as a whole, not its switch on top of that. */
+.toggle.disabled .labelledSwitch:disabled {
+  opacity: 1;
+}
+
+/* MARK: TextField / SecureField (.settingsField()) */
+
+.field {
+  height: 24px;
+  min-width: 0;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+  transition:
+    border-color var(--duration-hover) var(--ease-out),
+    box-shadow var(--duration-hover) var(--ease-out);
+}
+
+.field:focus,
+.field:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.field:disabled {
+  opacity: 0.5;
+}
+
+.stretch {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+/* MARK: Picker (menu style): the pop-up button */
+
+/* The same bezel as the push buttons next to it (components/Button
+   `bordered`, the grey rounded fill of the macOS app's buttons), with the
+   up/down indicator at the trailing end. */
+.popUp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+  text-align: left;
+  transition:
+    background-color var(--duration-hover) var(--ease-out),
+    border-color var(--duration-hover) var(--ease-out);
+}
+
+.popUp:hover:not(:disabled),
+.popUp[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--surface-raised) 75%, var(--border));
+  border-color: var(--border-strong);
+}
+
+.popUp:disabled {
+  opacity: 0.5;
+}
+
+.popUpSmall {
+  height: 20px;
+  gap: 6px;
+  padding: 0 6px 0 8px;
+  border-radius: 5px;
+  font-size: var(--font-size-caption);
+}
+
+/* `.frame(maxWidth:)`: as wide as offered, up to the inline width. */
+.popUpFill {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.popUpLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popUpChevron {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+/* MARK: Help: a tooltip host that still gets the pointer over a disabled control */
+
+.help {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.help > button:disabled {
+  pointer-events: none;
+}
+
+/* MARK: Picker (.radioGroup) */
+
+.radioGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.radio {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+.radioInput {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  opacity: 0;
+}
+
+.radioMark {
+  position: relative;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  box-shadow: 0 0.5px 1px rgba(var(--shadow-rgb), 0.1);
+}
+
+.radioInput:checked + .radioMark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.radioInput:checked + .radioMark::after {
+  content: "";
+  position: absolute;
+  top: 3.5px;
+  left: 3.5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--on-accent);
+}
+
+.radioInput:focus-visible + .radioMark {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.radioLabel {
+  min-width: 0;
+}
+
+/* MARK: Save · Revert · Unsaved changes */
+
+.formButtons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.unsaved {
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  color: var(--warning);
+}

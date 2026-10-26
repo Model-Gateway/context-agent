@@ -1,0 +1,647 @@
+/* Views/Project/ProjectView.swift. Sizes are the Swift points. Text lines
+   are 1.23 of the font size, the height SF Pro gives a SwiftUI Text. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas);
+  line-height: 1.23;
+}
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* VStack(spacing: 20).padding(24).frame(maxWidth: 1080), centred. */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* MARK: Header */
+
+.headerHost {
+  position: relative;
+  min-width: 0;
+}
+
+/* Off-screen copies of the name and the three chip rows, for ViewThatFits. */
+.measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  width: max-content;
+  height: 0;
+  overflow: hidden;
+}
+
+.measure > div {
+  width: max-content;
+}
+
+/* HStack(alignment: .top, spacing: 16) { titleBlock; Spacer(minLength: 8); chips } */
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 40px;
+  min-width: 0;
+}
+
+.headerRow > .chips {
+  margin-left: auto;
+}
+
+/* VStack(alignment: .leading, spacing: 12) { titleBlock; chips } */
+.headerColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.headerColumn > .titleBlock {
+  align-self: stretch;
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-title);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.pathRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rootPath {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--text-secondary);
+}
+
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* MARK: Cards */
+
+/* Two columns when the container is at least 340 × 2 + 16 wide. */
+.cardsContainer {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+@container (min-width: 696px) {
+  .cards {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* ProjectCard: `.card()` (surface, hairline, 12 radius, 16 padding), VStack(spacing: 12). */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cardIcon {
+  color: var(--text-secondary);
+}
+
+.cardTitle {
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.cardSpacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.flexSpacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.emptyText {
+  padding: 4px 0;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+.secondaryText {
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+.secondaryFont {
+  font-size: var(--font-size-secondary);
+}
+
+.wrapText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.captionTertiary {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.moreText {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.moreIndent {
+  padding-left: 8px;
+}
+
+.danger {
+  color: var(--danger);
+}
+
+.success {
+  color: var(--success);
+}
+
+.loadingRow,
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.readyRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.successIcon {
+  color: var(--success);
+}
+
+/* HStack(alignment: .top, spacing: 6) { warning glyph; text }, in danger. */
+.warningRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--font-size-secondary);
+}
+
+.inlineIcon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+/* StatRow */
+.statRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.statLabel {
+  flex: 0 0 auto;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+.statValue {
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+/* Grid(horizontalSpacing: 16, verticalSpacing: 6) of two StatRow columns. */
+.statGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 16px;
+  row-gap: 6px;
+}
+
+.progressTrack {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 200ms ease-out;
+}
+
+.detached {
+  font-size: var(--font-size-secondary);
+  color: var(--text-tertiary);
+}
+
+.gitError {
+  font-size: var(--font-size-caption);
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+/* Validation commands */
+.validationList {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.validationRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.validationLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.command {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--text-primary);
+}
+
+.validationDetail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+/* "See all N" / "Show fewer": plain, 12.5 medium, accent. */
+.linkButton {
+  align-self: flex-start;
+  padding-top: 2px;
+  font-size: 12.5px;
+  font-weight: var(--font-weight-medium);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* Languages */
+.languageList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.languageRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.languageLabel {
+  flex: 0 0 96px;
+  width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+.languageTrack {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 8px;
+}
+
+.languageBar {
+  height: 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 75%, transparent);
+}
+
+.languageCount {
+  flex: 0 0 48px;
+  width: 48px;
+  text-align: right;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+/* Doctor */
+.doctorButtons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.report {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.verdict {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.verdictMark {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.reportSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reportSectionTitle {
+  padding-top: 2px;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+/* HStack(alignment: .firstTextBaseline, spacing: 6) { mark (12 wide); label (128 wide, 2 lines); value (3 lines) } */
+.reportRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.reportMark {
+  flex: 0 0 12px;
+  width: 12px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.reportLabel {
+  flex: 0 0 128px;
+  width: 128px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+.reportValue {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+.reportValue.danger {
+  color: var(--danger);
+}
+
+/* Memories */
+.memoryList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* VStack(spacing: 4).padding(.bottom, 6).hairline(.bottom) */
+.memoryRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-bottom: 6px;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.memoryHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.memoryHeader:not(:disabled) {
+  cursor: pointer;
+}
+
+.memorySpacer {
+  flex: 1 1 auto;
+  min-width: 4px;
+}
+
+.memoryChevron {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  transition: transform 180ms ease-in-out;
+}
+
+.memoryChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.memoryBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.memoryContent {
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.memoryClamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.memoryClickable {
+  cursor: pointer;
+}
+
+.memoryInvalidated {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.evidence {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--text-tertiary);
+}
+
+.evidenceExpanded {
+  overflow-wrap: anywhere;
+}
+
+/* Recent tasks */
+.extrasError {
+  display: inline-flex;
+  color: var(--danger);
+}
+
+.taskList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* TaskRow: VStack(spacing: 3).padding(.horizontal, 8).padding(.vertical, 6).hoverHighlight() */
+.taskRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-small);
+  text-align: left;
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.taskRow:hover,
+.help:hover > .taskRow:disabled {
+  background: var(--surface-raised);
+}
+
+/* A plain-style button's disabled look: the label dims, the hover highlight stays. */
+.taskRow:disabled > * {
+  opacity: 0.5;
+}
+
+.taskObjective {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+.taskMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.unresolved {
+  font-size: var(--font-size-caption);
+  color: var(--warning);
+}
+
+/* MARK: Helpers */
+
+/* A tooltip host that still gets the pointer over a disabled button. */
+.help {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.help > button:disabled {
+  pointer-events: none;
+}

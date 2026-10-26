@@ -1,0 +1,92 @@
+/* AppsView (Views/Apps/AppsView.swift). */
+
+.apps {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--canvas);
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* `.transition(.opacity)` with `.animation(.easeInOut(duration: 0.18))`. */
+.fade {
+  animation: apps-fade 180ms ease-in-out;
+}
+
+/* AppPage: `.transition(.move(edge: .trailing).combined(with: .opacity))`. */
+.slide {
+  animation: apps-slide 180ms ease-in-out;
+}
+
+/* The outgoing page (a static copy), over the incoming one, taking no input. */
+.leaving {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.leaving:empty {
+  display: none;
+}
+
+.fadeOut {
+  animation: apps-fade-out 180ms ease-in-out forwards;
+}
+
+.slideOut {
+  animation: apps-slide-out 180ms ease-in-out forwards;
+}
+
+@keyframes apps-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes apps-slide-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes apps-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes apps-slide {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

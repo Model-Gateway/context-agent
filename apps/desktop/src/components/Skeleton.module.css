@@ -1,0 +1,178 @@
+.pulse {
+  display: block;
+  width: 100%;
+}
+
+.inner {
+  display: block;
+  width: 100%;
+}
+
+.animated {
+  animation: skeletonPulse 1400ms ease-in-out infinite;
+}
+
+.still {
+  opacity: 0.8;
+}
+
+@keyframes skeletonPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.bar {
+  flex: 0 0 auto;
+  background: var(--border);
+}
+
+.fill {
+  width: 100%;
+}
+
+/* Transcript */
+.transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  width: 100%;
+}
+
+.exchange {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+.bubbleRow {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.replyLines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.toolCall {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 36px;
+  padding: 6px;
+}
+
+.toolLabel {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chatLoading {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--canvas);
+  display: flex;
+  justify-content: center;
+}
+
+.chatColumn {
+  width: 100%;
+  max-width: calc(var(--content-max-width) + 48px);
+  padding: 20px 24px 0;
+}
+
+/* Empty chat */
+.emptyChat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0 24px 56px;
+  background: var(--canvas);
+}
+
+.emptyChatColumn {
+  max-width: var(--content-max-width);
+}
+
+.emptyChatStack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.emptyChatHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.starterRow {
+  display: flex;
+  gap: 12px;
+}
+
+.starterRow > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Settings */
+.settingsRows {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 2px 0;
+  width: 100%;
+}
+
+.settingsRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.settingsLabel {
+  display: flex;
+  justify-content: flex-end;
+  width: 128px;
+  flex: 0 0 auto;
+}
+
+.settingsValue {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settingsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.settingsCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+}

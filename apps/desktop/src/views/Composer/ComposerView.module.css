@@ -1,0 +1,297 @@
+/* ComposerView.swift */
+
+/* ChatComposer: steering row, queue row, the card; 8 px apart. */
+.chatComposer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* ComposerCard: the concurrent-run hint over the card, 6 px apart. */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  min-width: 0;
+  font-size: var(--font-size-caption);
+}
+
+.hintText {
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.hintAction {
+  color: var(--accent);
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* The card: surface, hairline, 16 px radius, floating shadow. The hairline
+   is drawn inside the frame (SwiftUI's strokeBorder overlay), so the
+   paddings below count from the outer edge as in Swift. */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--radius-large);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-floating);
+  min-width: 0;
+}
+
+.visionWarning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 0;
+  font-size: var(--font-size-caption);
+  color: var(--warning);
+}
+
+.attachments {
+  padding: 10px 12px 0;
+  min-width: 0;
+}
+
+/* Editor: 14 px sides, 10 px top; the text view's own insets are 6 px (vertical) and 5 px (line fragment padding). */
+.editor {
+  padding: 10px 14px 0;
+  min-width: 0;
+}
+
+.editorBox {
+  position: relative;
+  min-width: 0;
+  /* The mirror / text / placeholder layers stay inside the editor. */
+  isolation: isolate;
+}
+
+.textarea,
+.mirror,
+.measure {
+  font-family: var(--font-ui);
+  font-size: var(--font-size-body);
+  line-height: 17px;
+  padding: 6px 5px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  tab-size: 8;
+  letter-spacing: normal;
+}
+
+.textarea {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+}
+
+.textarea:focus-visible {
+  outline: none;
+}
+
+/* While mentions are tinted the mirror behind draws the text. */
+.textareaTinted {
+  color: transparent;
+}
+
+.mirror {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  pointer-events: none;
+}
+
+.mention {
+  color: var(--accent);
+}
+
+/* The hidden clone the height is measured with, in a zero-height box so it
+   never adds scrollable overflow to the panes around the composer. */
+.measureBox {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.measure {
+  height: auto;
+}
+
+.placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 5px 0;
+  pointer-events: none;
+  min-width: 0;
+}
+
+.placeholderText {
+  min-width: 0;
+  font-size: var(--font-size-body);
+  line-height: 17px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Bottom row: 10 px sides, 6 px top, 10 px bottom, 6 px between controls. */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 10px;
+  min-width: 0;
+}
+
+.spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.attachButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  color: var(--text-secondary);
+}
+
+.permissionsChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  white-space: nowrap;
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.permissionsChip:hover {
+  background: var(--surface-raised);
+}
+
+.permissionsLabel {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* The effort and model chips: borderless, hover highlight. */
+.plainChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-small);
+  white-space: nowrap;
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.plainChip:hover:not(:disabled) {
+  background: var(--surface-raised);
+}
+
+.chipIcon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.chipTitle {
+  font-size: 13px;
+}
+
+.modelName {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.savings {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--success);
+}
+
+.chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+/* Send / stop / queue: a 32 px accent-soft circle, the glyph in accent. */
+.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The `@` menu's bottom sits 8 px above the card's top, 8 px in from its left. */
+.mentionAnchor {
+  position: absolute;
+  left: 8px;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+}

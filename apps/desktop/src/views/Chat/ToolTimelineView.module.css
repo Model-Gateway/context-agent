@@ -1,0 +1,255 @@
+/* ToolTimelineView.swift: columnInset 6, iconSize 24, rowPadding 6. */
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+/* MARK: Header (`.hoverHighlight()`, 8 px radius) */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+  border-radius: var(--radius-small);
+  text-align: left;
+  color: var(--text-primary);
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.header:hover {
+  background: var(--surface-raised);
+}
+
+.headline {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-body);
+  color: var(--text-primary);
+}
+
+.chevron {
+  flex: 0 0 auto;
+  /* The 16 px box draws the glyph as wide as the 11 pt SF chevron; the
+     negative margins take back the box's empty sides. */
+  margin: 0 -3px;
+  color: var(--text-tertiary);
+}
+
+.collapsed .chevron {
+  transform: rotate(-90deg);
+}
+
+.spacer {
+  flex: 1 0 12px;
+  min-width: 12px;
+}
+
+.elapsed {
+  flex: 0 0 auto;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.underHeader {
+  padding-top: 2px;
+}
+
+/* MARK: Rows */
+
+.rows {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The 1 px line behind the icon column, from the first icon's centre to
+   the last row's icon centre (or the top of the ending row's icon). */
+.connector {
+  position: absolute;
+  left: 17.5px;
+  top: 18px;
+  bottom: 18px;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+.connectorToEnd {
+  bottom: 30px;
+}
+
+.callBlock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+  border-radius: var(--radius-small);
+  text-align: left;
+  color: var(--text-primary);
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.expanded {
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+}
+
+.row:hover {
+  background: var(--surface-raised);
+}
+
+/* A plain `surfaceRaised` square; no border (it competed with the connector). */
+.iconSlot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+}
+
+.iconSlotFailed {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+/* The label column takes the free space (`Spacer(minLength: 12)` stays at
+   its minimum) so the middle-truncated label is fitted to what is free. */
+.labels {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rowGap {
+  flex: 0 0 12px;
+}
+
+.label {
+  font-size: var(--font-size-body);
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+.detail {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* The call's duration, shown while the pointer is over a finished row. */
+.duration {
+  display: none;
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.row:hover .duration {
+  display: inline;
+}
+
+/* It fades in and out with the hover (`withAnimation(.easeOut(duration: 0.12))`). */
+@media (prefers-reduced-motion: no-preference) {
+  .duration {
+    opacity: 0;
+    transition: opacity var(--duration-hover) var(--ease-out), display var(--duration-hover) allow-discrete;
+  }
+
+  .row:hover .duration {
+    opacity: 1;
+  }
+
+  @starting-style {
+    .row:hover .duration {
+      opacity: 0;
+    }
+  }
+}
+
+.counts {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  font-size: var(--font-size-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.added {
+  color: var(--success);
+}
+
+.removed {
+  color: var(--danger);
+}
+
+.card {
+  padding: 6px 0;
+}
+
+/* MARK: Ending row */
+
+.terminalRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px;
+}
+
+.terminalIcon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.terminalLabel {
+  font-size: var(--font-size-body);
+  color: var(--text-primary);
+}
+
+/* MARK: Fade (SwiftUI `.transition(.opacity)` under `withAnimation(.easeInOut(duration: 0.18))`;
+   the animation itself runs from the component through the Web Animations API) */
+
+
+@media (prefers-reduced-motion: no-preference) {
+  .chevron {
+    transition: transform 180ms ease-in-out;
+  }
+}

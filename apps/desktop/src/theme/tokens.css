@@ -1,0 +1,180 @@
+/*
+ * Design tokens: the macOS app's Theme.swift (Theme.Hex and the other
+ * Color.adaptive pairs, Theme.Font, Theme.Metrics) as CSS custom properties.
+ * Light values live on :root; dark values apply under
+ * :root[data-theme="dark"] and, when the appearance is "system"
+ * (no data-theme or data-theme="system"), under prefers-color-scheme: dark.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces (Theme.canvas / surface / surfaceRaised / sidebar / border / borderStrong) */
+  --canvas: #ffffff;
+  --surface: #ffffff;
+  --surface-raised: #f2f2f4;
+  --sidebar: #ffffff;
+  --border: #e7e7ea;
+  --border-strong: #d8d8dc;
+
+  /* Text */
+  --text-primary: #1a1a1c;
+  --text-secondary: #6b6f76;
+  --text-tertiary: #9a9ea6;
+
+  /* Accent and semantic colours */
+  --accent: #2f7bf6;
+  --accent-soft: #dcebfd;
+  --ultra: #9b5de5;
+  --success: #1a9e57;
+  --warning: #d98806;
+  --danger: #d93a3a;
+
+  /* Code */
+  --code-background: #f6f6f7;
+  --code-string: #1b8a3d;
+  --code-keyword: #6f42c1;
+  --code-number: #b45309;
+  --code-comment: #8a8f98;
+  --code-type: #0e7490;
+  --code-function: #2457c5;
+
+  /* Badges */
+  --badge-background: #fde7ec;
+  --badge-text: #e0245e;
+
+  /* Derived: text-primary as RGB triplet for alpha mixes (halftone dots, dimming) */
+  --text-primary-rgb: 26, 26, 28;
+  /* Text on accent / danger fills (send button, prominent buttons). */
+  --on-accent: #ffffff;
+  --shadow-rgb: 0, 0, 0;
+  --backdrop: rgba(0, 0, 0, 0.18);
+
+  /* Typography (Theme.Font) */
+  --font-ui: -apple-system, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  /* Sizes in px = the macOS points. `--text-secondary` is the colour above,
+     so the sizes are `--font-size-*`; the non-colliding `--text-*` names
+     from ARCHITECTURE.md are kept as aliases. */
+  --font-size-title: 22px;        /* weight 600 */
+  --font-size-heading: 15px;      /* weight 600 */
+  --font-size-body: 14px;
+  --font-size-secondary: 13px;
+  --font-size-caption: 12px;
+  --font-size-mono: 12.5px;
+  --font-size-sidebar: 13.5px;
+  --font-size-mono-small: 11.5px;
+  --text-title: var(--font-size-title);
+  --text-heading: var(--font-size-heading);
+  --text-body: var(--font-size-body);
+  --text-caption: var(--font-size-caption);
+  --text-mono: var(--font-size-mono);
+  --text-sidebar: var(--font-size-sidebar);
+  --text-mono-small: var(--font-size-mono-small);
+  --line-height: 1.45;
+  /* Theme.Font weights: title and heading are semibold, chips and pills medium. */
+  --font-weight-title: 600;
+  --font-weight-heading: 600;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* Metrics (Theme.Metrics) */
+  --sidebar-width: 248px;
+  --inspector-width: 320px;
+  --inspector-min-width: 260px;
+  --inspector-max-width: 720px;
+  --content-max-width: 760px;
+  --radius-small: 8px;
+  --radius: 12px;
+  --radius-large: 16px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --top-bar-height: 52px;
+
+  /* floatingShadow(): composer, popovers, toasts — black 6 % in both
+     appearances, as in Modifiers.swift. */
+  --shadow-floating: 0 4px 10px rgba(var(--shadow-rgb), 0.06);
+  /* The selected TabPill: black 5 %, radius 3, y 1 (both appearances). */
+  --shadow-pill: 0 1px 3px rgba(var(--shadow-rgb), 0.05);
+  /* Menus and sheets stand in for NSMenu / NSPanel, whose system shadow is
+     deeper (and deeper again in dark mode). */
+  --shadow-menu: 0 8px 24px rgba(var(--shadow-rgb), 0.12), 0 1px 3px rgba(var(--shadow-rgb), 0.06);
+  --shadow-sheet: 0 18px 50px rgba(var(--shadow-rgb), 0.22), 0 2px 8px rgba(var(--shadow-rgb), 0.08);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --duration-hover: 120ms;
+  --duration-reveal: 180ms;
+}
+
+/* Dark appearance chosen explicitly. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #1e1e20;
+  --surface: #1e1e20;
+  --surface-raised: #2b2b2e;
+  --sidebar: #1e1e20;
+  --border: #343438;
+  --border-strong: #45454a;
+  --text-primary: #f3f3f5;
+  --text-secondary: #a3a6ad;
+  --text-tertiary: #6f7278;
+  --accent: #5b9bff;
+  --accent-soft: #1e3a5f;
+  --ultra: #b98cff;
+  --success: #3dd68c;
+  --warning: #f5b544;
+  --danger: #ff6b6b;
+  --code-background: #1e1e21;
+  --code-string: #7ee2a8;
+  --code-keyword: #c3a6ff;
+  --code-number: #f0b35e;
+  --code-comment: #7a7f88;
+  --code-type: #7dd3e8;
+  --code-function: #8ab4ff;
+  --badge-background: #4a1f2b;
+  --badge-text: #ff7a9a;
+  --text-primary-rgb: 243, 243, 245;
+  --backdrop: rgba(0, 0, 0, 0.45);
+  --shadow-menu: 0 8px 24px rgba(var(--shadow-rgb), 0.45), 0 1px 3px rgba(var(--shadow-rgb), 0.3);
+  --shadow-sheet: 0 18px 50px rgba(var(--shadow-rgb), 0.55), 0 2px 8px rgba(var(--shadow-rgb), 0.3);
+}
+
+/* System appearance resolving to dark (the same values as above). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --canvas: #1e1e20;
+    --surface: #1e1e20;
+    --surface-raised: #2b2b2e;
+    --sidebar: #1e1e20;
+    --border: #343438;
+    --border-strong: #45454a;
+    --text-primary: #f3f3f5;
+    --text-secondary: #a3a6ad;
+    --text-tertiary: #6f7278;
+    --accent: #5b9bff;
+    --accent-soft: #1e3a5f;
+    --ultra: #b98cff;
+    --success: #3dd68c;
+    --warning: #f5b544;
+    --danger: #ff6b6b;
+    --code-background: #1e1e21;
+    --code-string: #7ee2a8;
+    --code-keyword: #c3a6ff;
+    --code-number: #f0b35e;
+    --code-comment: #7a7f88;
+    --code-type: #7dd3e8;
+    --code-function: #8ab4ff;
+    --badge-background: #4a1f2b;
+    --badge-text: #ff7a9a;
+    --text-primary-rgb: 243, 243, 245;
+    --backdrop: rgba(0, 0, 0, 0.45);
+    --shadow-menu: 0 8px 24px rgba(var(--shadow-rgb), 0.45), 0 1px 3px rgba(var(--shadow-rgb), 0.3);
+    --shadow-sheet: 0 18px 50px rgba(var(--shadow-rgb), 0.55), 0 2px 8px rgba(var(--shadow-rgb), 0.3);
+  }
+}

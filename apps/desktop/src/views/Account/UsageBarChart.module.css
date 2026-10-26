@@ -1,0 +1,70 @@
+/* UsageBarChart.swift: VStack(spacing: 8) { the chart; the caption }. */
+.chart {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* ScrollView(.horizontal, showsIndicators: false). */
+.scroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  min-width: 0;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.canvas {
+  display: block;
+  overflow: visible;
+}
+
+/* Canvas text: system 10 pt in textTertiary. */
+.axisLabel {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  fill: var(--text-tertiary);
+  pointer-events: none;
+}
+
+/* Bars: accent, the others at 55 % while one is hovered, empty stubs surfaceRaised. */
+.bar {
+  fill: var(--accent);
+}
+
+.barDimmed {
+  fill: var(--accent);
+  fill-opacity: 0.55;
+}
+
+.barEmpty {
+  fill: var(--surface-raised);
+}
+
+.hoverColumn {
+  fill: var(--surface-raised);
+  fill-opacity: 0.6;
+}
+
+/* The caption: Theme.Font.caption, textSecondary (textPrimary while hovering), one line, tail truncation. */
+.caption {
+  display: block;
+  min-width: 0;
+  min-height: calc(var(--font-size-caption) * 1.3);
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.captionHovered {
+  color: var(--text-primary);
+}

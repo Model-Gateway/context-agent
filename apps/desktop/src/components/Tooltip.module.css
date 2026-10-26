@@ -1,0 +1,55 @@
+.anchor {
+  display: contents;
+}
+
+/* A disabled control lets the pointer through to the element under it,
+   which follows the hover for the tooltip (Tooltip.tsx): engines send no
+   pointer events to disabled controls, or only some. */
+.anchor > :disabled {
+  pointer-events: none;
+}
+
+.bubble {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-floating);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: pre-line;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
+}
+
+.bubble.below {
+  transform: translateY(-2px);
+}
+
+.bubble.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.text {
+  flex: 1 1 auto;
+  /* Long unbreakable runs (file paths) wrap inside the bubble instead of spilling out. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.shortcut {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+}

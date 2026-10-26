@@ -1,0 +1,171 @@
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+/* BrowserToolbar: HStack(spacing: 4), padding 8, 36 px, hairline below. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  height: 36px;
+  min-width: 0;
+  padding: 0 8px;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+/* SF Symbols at 12 pt draw larger glyphs than lucide's at 12 px: chevron.left and xmark
+   ≈ 10 pt (lucide fills half its box), arrow.clockwise ≈ 10.5 pt (three quarters),
+   arrow.up.forward at 11 pt ≈ 8 pt (lucide's arrow fills 40 %). The buttons keep their frame. */
+.wideGlyph svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.75;
+}
+
+.roundGlyph svg {
+  width: 14px;
+  height: 14px;
+}
+
+.arrowGlyph svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.75;
+}
+
+/* The address field: HStack(spacing: 6), padding 8, 24 px, surface-raised, radius 6, accent ring at 60 % when focused. */
+.address {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: box-shadow var(--duration-hover) var(--ease-out);
+}
+
+.addressFocused {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.addressIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.addressInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.addressInput:focus-visible {
+  outline: none;
+}
+
+/* ProgressBar: 2 px accent, at least 8 px wide, easing to the new fraction over 0.2 s. */
+.progress {
+  flex: 0 0 auto;
+  height: 2px;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease-out;
+}
+
+/* AgentActivityLine: HStack(spacing: 6), padding 12 × 5, accent-soft at 50 % while live, hairline below. */
+.activity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 5px 12px;
+  box-shadow: inset 0 -1px 0 var(--border);
+  animation: activityIn 200ms ease-out;
+}
+
+.activityLive {
+  background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+}
+
+@keyframes activityIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.activityIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.activityText {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.activityLive .activityText {
+  color: var(--text-primary);
+}
+
+/* The load error: two lines at most, padding 12 × 6, hairline below. The clamp sits on the
+   inner text so the padding never shows a third line. */
+.loadError {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.loadErrorText {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* The ZStack: the page's area (the native webview is laid over it) under the placeholder. */
+.page {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.webHost {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+}

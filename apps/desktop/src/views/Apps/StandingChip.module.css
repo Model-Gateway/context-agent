@@ -1,0 +1,14 @@
+/* StandingChip (Views/Apps/AppsView.swift). */
+
+.connecting {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.label {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}

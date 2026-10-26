@@ -1,0 +1,25 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  transition:
+    background-color var(--duration-hover) var(--ease-out),
+    color 150ms var(--ease-out);
+}
+
+.button:hover {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+}
+
+.copied,
+.copied:hover {
+  color: var(--success);
+  background: var(--surface-raised);
+}

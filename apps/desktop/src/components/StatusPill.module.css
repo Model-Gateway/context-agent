@@ -1,0 +1,28 @@
+.pill {
+  --tint: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 12%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tint);
+  flex: 0 0 auto;
+}
+
+.text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

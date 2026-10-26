@@ -1,0 +1,217 @@
+/*
+ * CodeEditor (Views/Editor/CodeEditor.swift) on CodeMirror 6: the NSTextView's
+ * look from the tokens. CodeMirror's own base theme is scoped by generated
+ * classes, so every rule here goes through `.editor .cm-editor` to outrank it.
+ */
+
+.editor {
+  /* LineNumberRuler's thickness; CodeEditor.tsx sets it from the line count. */
+  --ruler-width: 35.5px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  background: var(--canvas);
+}
+
+.editor :global(.cm-editor) {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--text-primary);
+  /* Theme.Font.nsMono: 12.5 pt monospaced, 15 pt lines like TextKit's. */
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+}
+
+.editor :global(.cm-editor.cm-focused) {
+  outline: none;
+}
+
+.editor :global(.cm-editor) :global(.cm-scroller) {
+  font-family: var(--font-mono);
+  line-height: 15px;
+  overflow: auto;
+}
+
+/* textContainerInset (8, 10) + the text container's 5 pt line fragment padding. */
+.editor :global(.cm-editor) :global(.cm-content) {
+  padding: 10px 0;
+  caret-color: var(--text-primary);
+}
+
+.editor :global(.cm-editor) :global(.cm-line) {
+  padding: 0 13px;
+}
+
+.editor :global(.cm-editor) :global(.cm-cursor),
+.editor :global(.cm-editor) :global(.cm-dropCursor) {
+  border-left: 1px solid var(--text-primary);
+}
+
+/*
+ * Selection: the accent at 25 %, grey while the editor is not focused
+ * (CodeMirror's focused rule is `.cm-focused > .cm-scroller > .cm-selectionLayer
+ * .cm-selectionBackground`, so these follow the same path).
+ */
+.editor :global(.cm-editor) :global(.cm-scroller) :global(.cm-selectionLayer) :global(.cm-selectionBackground) {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+.editor :global(.cm-editor.cm-focused) :global(.cm-scroller) :global(.cm-selectionLayer) :global(.cm-selectionBackground) {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/*
+ * LineNumberRuler: right-aligned numbers 8 px from the ruler's edge, 1.5 pt
+ * smaller than the text in the system font's monospaced digits,
+ * textTertiary, and NSRulerView's hairline separator on that edge (the
+ * faint line between the numbers and the text in docs/images/editor.png).
+ * The canvas background keeps text scrolled sideways from showing through
+ * the gutter, which stays put on horizontal scrolls.
+ */
+.editor :global(.cm-editor) :global(.cm-gutters) {
+  background: var(--canvas);
+  border-right: 1px solid var(--border);
+  color: var(--text-tertiary);
+}
+
+.editor :global(.cm-editor) :global(.cm-lineNumbers) :global(.cm-gutterElement) {
+  min-width: var(--ruler-width);
+  padding: 0 8px 0 12px;
+  font-family: var(--font-ui);
+  font-size: calc(var(--font-size-mono) - 1.5px);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.editor :global(.cm-editor) :global(.cm-gutter) {
+  min-height: 100%;
+}
+
+/* Token colours (SyntaxHighlighter.color(for:)). */
+.editor :global(.ctx-tok-comment) {
+  color: var(--code-comment);
+}
+
+.editor :global(.ctx-tok-string) {
+  color: var(--code-string);
+}
+
+.editor :global(.ctx-tok-keyword) {
+  color: var(--code-keyword);
+}
+
+.editor :global(.ctx-tok-number) {
+  color: var(--code-number);
+}
+
+.editor :global(.ctx-tok-key) {
+  color: var(--text-secondary);
+}
+
+.editor :global(.ctx-tok-type) {
+  color: var(--code-type);
+}
+
+.editor :global(.ctx-tok-function) {
+  color: var(--code-function);
+}
+
+/* Punctuation inside a coloured range that tree-sitter leaves plain (a heading's `#`). */
+.editor :global(.ctx-tok-plain) {
+  color: var(--text-primary);
+}
+
+.editor :global(.ctx-tok-diff-added) {
+  color: var(--success);
+}
+
+.editor :global(.ctx-tok-diff-removed) {
+  color: var(--danger);
+}
+
+/*
+ * Diagnostics: a thick dotted underline in the severity's colour
+ * (NSUnderlineStyle.thick | .patternDot) instead of CodeMirror's wave.
+ */
+.editor :global(.cm-editor) :global(.cm-lintRange) {
+  background-image: none;
+  padding-bottom: 0;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.editor :global(.cm-editor) :global(.cm-lintRange-error) {
+  text-decoration-color: var(--danger);
+}
+
+.editor :global(.cm-editor) :global(.cm-lintRange-warning) {
+  text-decoration-color: var(--warning);
+}
+
+.editor :global(.cm-editor) :global(.cm-lintRange-info),
+.editor :global(.cm-editor) :global(.cm-lintRange-hint) {
+  text-decoration-color: var(--accent);
+}
+
+.editor :global(.cm-editor) :global(.cm-lintPoint)::after {
+  border-bottom-color: var(--danger);
+}
+
+/* The diagnostic's message as a tooltip (the `.toolTip` attribute), drawn like the app's tooltips. */
+.editor :global(.cm-editor) :global(.cm-tooltip) {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-floating);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+}
+
+.editor :global(.cm-editor) :global(.cm-tooltip-lint) {
+  max-width: 420px;
+  padding: 0;
+}
+
+.editor :global(.cm-editor) :global(.cm-diagnostic) {
+  padding: 4px 8px;
+  margin-left: 0;
+  border-left: none;
+  white-space: pre-wrap;
+}
+
+.editor :global(.cm-editor) :global(.cm-diagnosticSource) {
+  display: none;
+}
+
+/* The popup is CompletionPanel (CompletionListView), not CodeMirror's tooltip. */
+.editor :global(.cm-editor) :global(.cm-tooltip-autocomplete) {
+  display: none !important;
+}
+
+/* The find bar (NSTextView usesFindBar, EditorFindBar.tsx): a strip above the text. */
+.editor :global(.cm-editor) :global(.cm-panels) {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.editor :global(.cm-editor) :global(.cm-panels-top) {
+  border-bottom: 1px solid var(--border);
+}
+
+.editor :global(.cm-editor) :global(.cm-searchMatch) {
+  background: color-mix(in srgb, var(--warning) 25%, transparent);
+  outline: none;
+}
+
+.editor :global(.cm-editor) :global(.cm-searchMatch.cm-searchMatch-selected) {
+  background: color-mix(in srgb, var(--warning) 55%, transparent);
+}

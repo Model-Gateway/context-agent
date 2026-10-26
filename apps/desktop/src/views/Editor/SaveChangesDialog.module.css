@@ -1,0 +1,11 @@
+/* The unsaved-changes alert (closeDocument / closeDocuments in EditorState.swift). */
+
+.message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* "Don't Save" stands apart at the leading edge, as in a macOS alert. */
+.dontSave {
+  margin-right: auto;
+}

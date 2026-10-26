@@ -1,0 +1,122 @@
+/* ImageDocumentView, PDFDocumentView, BinaryDocumentView (Views/Editor/MediaViews.swift). */
+
+.media {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  background: var(--canvas);
+}
+
+/*
+ * The scroll view over the Checkerboard: surfaceRaised with white 6 % cells
+ * of 10 px, the first row starting with a light cell.
+ */
+.imageScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background-color: var(--surface-raised);
+  background-image: conic-gradient(transparent 0 25%, rgba(255, 255, 255, 0.06) 0 50%, transparent 0 75%, rgba(255, 255, 255, 0.06) 0);
+  background-size: 20px 20px;
+}
+
+/* .frame(minWidth: geometry.width, minHeight: geometry.height): centred, scrolls once larger. */
+.imageFrame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100%;
+  min-height: 100%;
+  width: max-content;
+  height: max-content;
+}
+
+.image {
+  display: block;
+  max-width: none;
+  flex: 0 0 auto;
+  /* .interpolation(.high) */
+  image-rendering: auto;
+}
+
+.pdf {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  /* PDFView.backgroundColor */
+  background: var(--surface-raised);
+}
+
+/* MediaStatusBar: 28 px, 11.5 pt monospaced, surface, hairline on top. */
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 28px;
+  height: 28px;
+  padding: 0 12px;
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono-small);
+  white-space: nowrap;
+}
+
+.meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+/* Spacer(minLength: 8) */
+.spacer {
+  flex: 1 0 8px;
+}
+
+/* A bordered button in the bar keeps the system font (the bar's text is monospaced). */
+.barButton {
+  font-family: var(--font-ui);
+}
+
+/*
+ * ZoomPicker: NSSegmentedControl at the small control size, 110 px wide —
+ * a 20 px grey track, the selected segment raised in white (a lighter grey
+ * in dark mode), 11 px system labels.
+ */
+.zoom {
+  display: inline-flex;
+  flex: 0 0 110px;
+  width: 110px;
+  height: 20px;
+  padding: 1px;
+  border-radius: 6px;
+  background: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
+  font-family: var(--font-ui);
+  font-size: 11px;
+}
+
+.zoomSegment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 5px;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.zoomSegment:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 0;
+}
+
+.zoomSelected {
+  background: light-dark(#ffffff, rgba(255, 255, 255, 0.24));
+  box-shadow:
+    0 0.5px 1.5px rgba(0, 0, 0, 0.2),
+    0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}

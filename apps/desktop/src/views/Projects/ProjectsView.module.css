@@ -1,0 +1,143 @@
+/* Views/Projects/ProjectsView.swift and the RecentCard of
+   Views/Welcome/WelcomeView.swift. Sizes are the Swift points; text lines
+   are 1.23 of the font size, the height SF Pro gives a SwiftUI Text. */
+
+.root {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--canvas);
+  line-height: 1.23;
+}
+
+/* VStack(alignment: .leading, spacing: 16).padding(24).frame(maxWidth: 1080), centred. */
+.content {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* MARK: Toolbar */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.search {
+  flex: 0 1 280px;
+  width: 280px;
+}
+
+.toolbarSpacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.newProjectLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+}
+
+/* The filter menu's label: 30 high, surface, hairline (accent at 50 % while a filter is on). */
+.filterButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.filterActive {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.filterText {
+  font-size: var(--font-size-secondary);
+}
+
+.filterChevron {
+  color: var(--text-tertiary);
+}
+
+.count {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.empty {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 48px 0;
+}
+
+.empty > * {
+  height: auto;
+}
+
+/* VStack(spacing: 10) { "No projects match"; Clear search and filter }.padding(.vertical, 48) */
+.noMatches {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 48px 0;
+}
+
+.noMatchesTitle {
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  color: var(--text-primary);
+}
+
+/* LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 12)], spacing: 12) */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+/* The shared RecentCard caps itself at 360 px for the Welcome grid
+   (GridItem maximum 360); here the adaptive columns have no maximum, so the
+   card fills its column. The card is the grid item (its ContextMenu and
+   Tooltip wrappers are display: contents) and the only element with an
+   explicit role="button". */
+.grid [role='button'] {
+  max-width: none;
+}
+
+/* MARK: Helpers */
+
+.help {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.help > button:disabled {
+  pointer-events: none;
+}

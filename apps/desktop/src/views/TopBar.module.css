@@ -1,0 +1,136 @@
+/* The 52 pt bar across the window: canvas, hairline below. */
+.bar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  width: 100%;
+  height: var(--top-bar-height);
+  background: var(--canvas);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+/* The arranged controls (`CenteredBarLayout` inside the leading / trailing insets). */
+.content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* Empty space between the tabs and the trailing group: drags the window. */
+.dragFill {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 0;
+}
+
+/* HStack(spacing 8). */
+.trailing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* The search field, centred in the window and slid aside only when a neighbour would overlap. */
+.palette {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+}
+
+.paletteField {
+  position: relative;
+  display: block;
+  padding: 0;
+  border-radius: var(--radius-small);
+  text-align: left;
+}
+
+.paletteLook {
+  display: block;
+  pointer-events: none;
+}
+
+/* What ViewThatFits measures: laid out at ideal width, never shown. */
+.measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  visibility: hidden;
+  pointer-events: none;
+  contain: layout style;
+}
+
+.measureSlot {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* Folder 11 tertiary (a 13 px lucide glyph) + name 13 medium (at most 180, truncated) + branch chip, HStack(spacing 6). */
+.projectChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.projectFolder {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.projectName {
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.approvalAnchor {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* The compact approval mode: 13 pt glyph in a 28 pt square, 6 radius hover highlight. */
+.approvalIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.approvalIcon:hover {
+  background: var(--surface-raised);
+}
+
+/* The inspector toggle and the gear: 16 pt symbols in the 28 pt button; an SF Symbol at 16 pt
+   draws about 17 px wide, so the lucide glyph is scaled up inside the same button. */
+.barIcon svg {
+  width: 19px;
+  height: 19px;
+}

@@ -1,0 +1,218 @@
+/* EmptyChatView.swift: halftone band, then a column (max 760) centred in the
+   remaining height with Spacer(minLength: 24) above and below and a 56 px lift. */
+
+.scroller {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--canvas);
+}
+
+/* VStack(spacing: 0).frame(maxWidth: .infinity, minHeight: viewport). */
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 100%;
+}
+
+.spacer {
+  flex: 1 0 24px;
+}
+
+.lift {
+  flex: 0 0 56px;
+}
+
+/* `.frame(maxWidth: 760).padding(.horizontal, 24)`. */
+.columnWrap {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0 24px;
+}
+
+/* VStack(spacing: 24). */
+.column {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 24px;
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+}
+
+/* VStack(spacing: 14): ✳ over the title. */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--text-primary);
+}
+
+/* Theme.Font.title. */
+.title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-title);
+  line-height: 1.2;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+/* StarterList: VStack(alignment: .leading, spacing: 2), full width. */
+.starters {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+}
+
+/* The skeleton the arriving rows replace, fading out over them (0.2 s, `.transition(.opacity)`). */
+.skeletonLeaving {
+  position: absolute;
+  inset: 0 0 auto;
+  pointer-events: none;
+  animation: skeletonOut 200ms var(--ease-out) forwards;
+}
+
+@keyframes skeletonOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* StarterRow: HStack(spacing: 12), 10 × 8 padding, surface-raised on hover, 8 radius. */
+.starterRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-small);
+  text-align: left;
+  background: transparent;
+  transition: background-color var(--duration-hover) var(--ease-out);
+  animation: starterIn 200ms var(--ease-out);
+}
+
+.starterRow:hover {
+  background: var(--surface-raised);
+}
+
+@keyframes starterIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .starterRow {
+    animation: none;
+  }
+}
+
+/* 14 pt regular glyph in text-secondary, framed 16 × 20. */
+.starterIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 20px;
+  color: var(--text-secondary);
+}
+
+/* Theme.Font.body, one line, truncated at the tail. */
+.starterText {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-body);
+  line-height: 20px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skeletonRows {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+/* HStack(spacing: 12) framed 20 tall, 10 × 8 padding. */
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 36px;
+  padding: 8px 10px;
+}
+
+.skeletonText {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 20px;
+}
+
+/* IndexCard: HStack(spacing: 10), 14 × 10 padding, at least 44 tall, surface, hairline, 12 radius. */
+.indexCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.indexIconReady {
+  flex: 0 0 auto;
+  color: var(--success);
+}
+
+.indexIconError {
+  flex: 0 0 auto;
+  color: var(--danger);
+}
+
+/* Theme.Font.secondary, at most two lines. */
+.indexSummary {
+  min-width: 0;
+  font-size: var(--font-size-secondary);
+  line-height: 16px;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.indexSummaryError {
+  color: var(--danger);
+}
+
+.indexSpacer {
+  flex: 1 1 8px;
+  min-width: 8px;
+}

@@ -1,0 +1,218 @@
+/* MarkdownView.swift: blocks 10 px apart in the Theme fonts; all text selectable. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-body);
+  line-height: 20px;
+  color: var(--text-primary);
+  overflow-wrap: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Inline runs keep their whitespace (`.inlineOnlyPreservingWhitespace`). */
+.inline {
+  white-space: pre-wrap;
+}
+
+.heading {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.h1 {
+  padding-top: 6px;
+  font-size: var(--font-size-title);
+}
+
+.h2 {
+  padding-top: 6px;
+  font-size: 18px;
+}
+
+.h3 {
+  padding-top: 2px;
+  font-size: var(--font-size-heading);
+}
+
+.h4 {
+  padding-top: 2px;
+  font-size: var(--font-size-body);
+}
+
+.paragraph {
+  margin: 0;
+}
+
+.strong {
+  font-weight: 600;
+}
+
+.emphasis {
+  font-style: italic;
+}
+
+.strikethrough {
+  text-decoration: line-through;
+}
+
+.inlineCode {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--code-background);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+}
+
+.link {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* MarkdownListView: marker column 16 px right-aligned, 8 px gap, 4 px between items. */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 4px;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.marker {
+  flex: none;
+  min-width: 16px;
+  text-align: right;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.itemBody {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* MarkdownQuoteView: a 3 px bar, 10 px gap, secondary text. */
+.quote {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  min-width: 0;
+}
+
+.quoteBar {
+  flex: none;
+  align-self: stretch;
+  width: 3px;
+  border-radius: 1.5px;
+  background: var(--border-strong);
+}
+
+.quoteBody {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+/* MarkdownTableView: hairline border, radius 8, raised header row. */
+.tableWrap {
+  overflow-x: auto;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--font-size-secondary);
+  line-height: 18px;
+}
+
+.th,
+.td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.th {
+  font-weight: 600;
+  background: var(--surface-raised);
+}
+
+.table tbody tr:last-child .td {
+  border-bottom: none;
+}
+
+.rule {
+  height: 1px;
+  margin: 4px 0;
+  border: none;
+  background: var(--border);
+}
+
+/* FileReferences.swift: the neutral Chip (raised fill, file icon, secondary text) drawn inline. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 1px;
+  padding: 1px 5px;
+  border: none;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  line-height: 16px;
+  vertical-align: baseline;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.chip:hover {
+  background: var(--border);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chipIcon {
+  display: inline-flex;
+  flex: none;
+}

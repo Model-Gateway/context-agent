@@ -1,0 +1,23 @@
+/* ChatView.swift `DaySeparator`: HStack(spacing: 12) of hairline · caption · hairline, 2 px vertical padding. */
+
+.separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 2px 0;
+}
+
+.line {
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border);
+}
+
+.label {
+  flex: 0 0 auto;
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}

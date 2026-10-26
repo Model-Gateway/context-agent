@@ -1,0 +1,119 @@
+/* RewindSheet.swift: 460 wide, padding 20 (the Sheet card's), spacing 16. */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.content:focus,
+.content:focus-visible {
+  outline: none;
+}
+
+.top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.topIcon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: var(--accent);
+}
+
+.titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--font-size-heading);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* What goes: padding 12 on `surfaceRaised`, 12 px radius, spacing 8. */
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-secondary);
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.labelIcon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+}
+
+.files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-left: 24px;
+}
+
+.path {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  line-height: 1.3;
+  color: var(--text-secondary);
+}
+
+.more {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spinner {
+  margin-left: 4px;
+}
+
+.spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}

@@ -1,0 +1,32 @@
+/* ConnectButtonStyle (Views/Apps/AppsView.swift). */
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 40px;
+  border-radius: 10px;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
+  transition: opacity var(--duration-hover) var(--ease-out);
+}
+
+.prominent {
+  background: var(--text-primary);
+  color: var(--surface-raised);
+}
+
+.outlined {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.button:active:not(:disabled) {
+  opacity: 0.8;
+}
+
+.button:disabled {
+  opacity: 0.5;
+}

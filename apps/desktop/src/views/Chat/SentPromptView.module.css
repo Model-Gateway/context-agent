@@ -1,0 +1,72 @@
+/* SentPromptView.swift: the developer-mode "Full prompt" row. */
+
+/* `.frame(maxWidth: .infinity, alignment: .leading)`. */
+.root {
+  width: 100%;
+  min-width: 0;
+}
+
+.icon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+/* Theme.Font.secondary, text-secondary (SF's 13 pt line, 16). */
+.title {
+  font-size: var(--font-size-secondary);
+  line-height: 16px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Theme.Font.caption, text-tertiary (SF's 12 pt line, 15). */
+.caption {
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* VStack(alignment: .leading, spacing: 4), 12 leading. */
+.content {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding-left: 12px;
+}
+
+.tools {
+  padding: 4px 6px 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.copyRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Theme.Font.mono, text-secondary. */
+.messageTitle {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  line-height: 15px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Theme.Font.mono, text-primary, 10 padding, surface-raised, 8 radius. */
+.messageText {
+  margin: 0;
+  padding: 10px;
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

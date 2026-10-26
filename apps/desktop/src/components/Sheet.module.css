@@ -1,0 +1,111 @@
+/* The sheet hangs just under the top bar, as a macOS sheet hangs from the
+   window's title bar and toolbar. */
+.backdrop {
+  --sheet-top: calc(var(--top-bar-height) + 8px);
+  position: fixed;
+  inset: 0;
+  z-index: 980;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--sheet-top) 24px 24px;
+  background: var(--backdrop);
+}
+
+.fadeIn {
+  animation: fade 150ms var(--ease-out);
+}
+
+.fadeOut {
+  /* Its own keyframes: the same name would not restart the finished fade. */
+  animation: fadeAway 150ms var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+@keyframes fadeAway {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - var(--sheet-top) - 24px);
+  padding: 20px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sheet);
+  color: var(--text-primary);
+  outline: none;
+  transform-origin: top center;
+}
+
+/* Slides down out of the top bar, and back up when it closes. */
+.enter {
+  animation: drop 200ms var(--ease-out);
+}
+
+.leave {
+  animation: lift 150ms var(--ease-out) forwards;
+}
+
+@keyframes lift {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.title {
+  font-size: var(--font-size-heading);
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 8px;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

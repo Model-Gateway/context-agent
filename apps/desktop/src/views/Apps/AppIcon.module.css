@@ -1,0 +1,47 @@
+/* AppIcon (Views/Apps/AppsView.swift). */
+
+.tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--accent);
+}
+
+/* A logo on the tile: a template mark takes textPrimary (`.foregroundStyle(Theme.textPrimary)`). */
+.logoTile {
+  color: var(--text-primary);
+}
+
+/* The mark alone (inside a chip, the connect page's circle): accent. */
+.bare {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+/* `.renderingMode(.template)`: the SVG's alpha filled with the current colour. */
+.mask {
+  display: block;
+  flex: 0 0 auto;
+  background-color: currentColor;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+/* `.renderingMode(.original)`, `.scaledToFit()`. */
+.image {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+  pointer-events: none;
+}

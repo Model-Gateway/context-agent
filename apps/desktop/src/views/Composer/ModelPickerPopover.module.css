@@ -1,0 +1,159 @@
+/* ModelPickerPopover.swift: 320 × 400, search (10 px padding) over a hairline, the list, the status footer. */
+.picker {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  height: 400px;
+  max-height: 100%;
+  min-height: 0;
+  background: var(--surface);
+  line-height: 1.25;
+}
+
+.search {
+  flex: 0 0 auto;
+  padding: 10px;
+}
+
+.divider {
+  flex: 0 0 auto;
+  height: 1px;
+  background: var(--border);
+}
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Not lazy: headers and rows differ in height. */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+}
+
+.header {
+  padding: 8px 8px 3px;
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-small);
+  background: transparent;
+  text-align: left;
+  font-size: var(--font-size-secondary);
+}
+
+.selected {
+  background: var(--surface-raised);
+}
+
+.inert {
+  opacity: 0.55;
+}
+
+.rowIcon {
+  display: inline-flex;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 14px;
+  color: var(--text-tertiary);
+}
+
+.rowTitle {
+  flex: 0 1 auto;
+}
+
+.rowSpacer {
+  flex: 1 1 auto;
+  min-width: 6px;
+}
+
+.plainRun {
+  color: var(--text-primary);
+  font-weight: 400;
+}
+
+.matchedRun {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.emptyRows {
+  padding: 12px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-tertiary);
+}
+
+.placeholder {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+/* The status footer: canvas, hairline on top, caption text. */
+.footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 12px;
+  background: var(--canvas);
+  font-size: var(--font-size-caption);
+}
+
+.footerLine {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+
+.footerIcon {
+  position: relative;
+  top: 1px;
+}
+
+.footerText {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.footerSpinnerLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.footerErrorLine {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.footerSpacer {
+  flex: 1 1 auto;
+  min-width: 4px;
+}
+
+.refresh {
+  color: var(--accent);
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+}

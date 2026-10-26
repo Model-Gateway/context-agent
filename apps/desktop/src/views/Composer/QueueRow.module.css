@@ -1,0 +1,86 @@
+/* QueueRow / SteeringRow: label, then the chips scrolling sideways; 4 px side padding. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.label {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.scroller {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.items {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  padding: 2px 0;
+}
+
+/* QueuedItem: hairline, 8 px radius; surface-raised on hover when editable. */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.itemEditable {
+  padding-right: 2px;
+}
+
+.itemHover {
+  background: var(--surface-raised);
+}
+
+.itemButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.itemButtonEditable {
+  padding-right: 0;
+}
+
+/* A steering item is inert but never dimmed. */
+.itemButton:disabled {
+  opacity: 1;
+}
+
+.attach {
+  display: inline-flex;
+  color: var(--text-secondary);
+}
+
+.itemText {
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
+  white-space: nowrap;
+}

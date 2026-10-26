@@ -19,6 +19,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: .exe
           - os: macos-latest
             target: aarch64-apple-darwin
             ext: ""
@@ -48,4 +51,63 @@ jobs:
         with:
           name: ctx-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/ctx${{ matrix.ext }}
+          if-no-files-found: error
+
+  desktop-windows:
+    name: Context desktop (Windows)
+    runs-on: windows-latest
+    needs: cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            apps/desktop/src-tauri -> apps/desktop/src-tauri/target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Type-check and lint
+        working-directory: apps/desktop
+        run: npm run check
+      - name: Embed the ctx sidecar
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File apps/desktop/scripts/embed-ctx.ps1
+      - name: Build the installer
+        working-directory: apps/desktop
+        run: npm run tauri build -- --config src-tauri/tauri.bundle.conf.json
+      - name: Self-test the app against the mock backend
+        shell: pwsh
+        timeout-minutes: 6
+        env:
+          CTX_BINARY: ${{ github.workspace }}\target\release\ctx.exe
+          CTX_DATA_DIR: ${{ runner.temp }}\ctx-data
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'autotest'
+          $app = 'apps/desktop/src-tauri/target/release/context-desktop.exe'
+          $project = Join-Path $env:GITHUB_WORKSPACE 'tests\repositories\polyglot'
+          $p = Start-Process -FilePath $app -ArgumentList '--mock', '--autotest', $out, '--project', $project -PassThru
+          if (-not $p.WaitForExit(300000)) { $p.Kill(); throw 'the self-test did not finish within 5 minutes' }
+          Get-Content (Join-Path $out 'result.json')
+          if ($p.ExitCode -ne 0) { throw "the self-test failed (exit $($p.ExitCode))" }
+      - name: Upload the self-test result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-desktop-selftest
+          path: ${{ runner.temp }}/autotest
+          if-no-files-found: ignore
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-desktop-windows
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error

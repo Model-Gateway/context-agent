@@ -1,0 +1,195 @@
+/* BillingSettingsSection.swift */
+
+.placeholder {
+  display: flex;
+  width: 100%;
+  height: 320px;
+}
+
+.caption {
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  color: var(--text-tertiary);
+}
+
+.captionSecondary {
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  color: var(--text-secondary);
+}
+
+.symbol {
+  font-size: var(--font-size-secondary);
+  color: var(--text-tertiary);
+}
+
+/* MARK: Balance */
+
+.credits {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.balance {
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.low {
+  color: var(--warning);
+}
+
+.planStack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.planLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.planName {
+  font-size: var(--font-size-secondary);
+  color: var(--text-primary);
+}
+
+.payAsYouGo {
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.error {
+  min-width: 0;
+  font-size: var(--font-size-caption);
+  line-height: 1.3;
+  color: var(--danger);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* MARK: Plans */
+
+.plan {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.planText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.planTitle {
+  font-size: var(--font-size-secondary);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.planSpacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.planButtons {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+/* MARK: Add funds */
+
+.amounts {
+  display: flex;
+  flex-wrap: wrap;
+  /* HStack's centre alignment: each button is as tall as its own label, so
+     a one-line amount is not stretched to the height of one with a discount. */
+  align-items: center;
+  gap: 6px;
+}
+
+/* `.buttonStyle(.bordered)` at the regular size, `.tint(accent)` when chosen. */
+.amount {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 72px;
+  min-height: 24px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  font-size: var(--font-size-secondary);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+  color: var(--text-primary);
+  transition:
+    background-color var(--duration-hover) var(--ease-out),
+    border-color var(--duration-hover) var(--ease-out),
+    color var(--duration-hover) var(--ease-out);
+}
+
+.amount:hover {
+  background: color-mix(in srgb, var(--surface-raised) 75%, var(--border));
+  border-color: var(--border-strong);
+}
+
+.amountSelected,
+.amountSelected:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.discount {
+  font-size: var(--font-size-caption);
+  font-weight: 400;
+  color: var(--success);
+}
+
+.otherAmount {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.addRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}

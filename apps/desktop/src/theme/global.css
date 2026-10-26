@@ -1,0 +1,277 @@
+/*
+ * Global styles: reset, body font, scrollbars, selection, focus ring.
+ * Mirrors what the macOS app gets for free from AppKit (system font,
+ * overlay scrollers, accent selection) on top of the tokens in tokens.css.
+ */
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--line-height);
+  color: var(--text-primary);
+  background: var(--canvas);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* App chrome is not selectable; .selectable restores it (transcript text, code, tool output). */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+.selectable,
+.selectable *,
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+}
+
+.selectable {
+  cursor: text;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+figure,
+blockquote,
+dl,
+dd,
+pre,
+ul,
+ol {
+  margin: 0;
+}
+
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  margin: 0;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: default;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+input,
+textarea {
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+  opacity: 1;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+img,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+/* Icons sit in text runs (file chips, links) as well as in flex rows. */
+svg {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+pre,
+code,
+kbd,
+samp {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+/* Thin overlay scrollbars: 8 px track, a rounded border-strong thumb that
+   shows while the pointer is over the scrolling element. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+:hover::-webkit-scrollbar-thumb,
+:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-tertiary);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+}
+
+/* Selection: accent at 25 %. */
+::selection {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: inherit;
+}
+
+/* Focus ring: a 2 px accent ring, only for keyboard focus. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Focus given back by a closing overlay (components/overlays.ts
+   `restoreFocus`): no ring until the next navigation key, as on macOS. */
+[data-quiet-focus]:focus-visible {
+  outline: none !important;
+}
+
+/* The hairline helper (`.hairline(edges)` in Modifiers.swift). */
+.hairline-top { box-shadow: inset 0 1px 0 var(--border); }
+.hairline-bottom { box-shadow: inset 0 -1px 0 var(--border); }
+.hairline-left { box-shadow: inset 1px 0 0 var(--border); }
+.hairline-right { box-shadow: inset -1px 0 0 var(--border); }
+.hairline-y { box-shadow: inset 0 1px 0 var(--border), inset 0 -1px 0 var(--border); }
+.hairline-all { box-shadow: inset 0 0 0 1px var(--border); }
+
+/* The `.card()` helper (Modifiers.swift): surface, hairline, 12 px radius, 16 px padding. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+}
+
+/* `.hoverHighlight(radius: 8)`: surface-raised rounded background on hover. */
+.hover-highlight {
+  border-radius: var(--radius-small);
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.hover-highlight:hover {
+  background: var(--surface-raised);
+}
+
+/* `.floatingShadow()`: composer, popovers. */
+.floating-shadow {
+  box-shadow: var(--shadow-floating);
+}
+
+/* Screen-reader-only text. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

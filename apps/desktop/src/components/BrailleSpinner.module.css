@@ -1,0 +1,12 @@
+.spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-weight: 400;
+  line-height: 1;
+  font-variant-ligatures: none;
+  user-select: none;
+  -webkit-user-select: none;
+}

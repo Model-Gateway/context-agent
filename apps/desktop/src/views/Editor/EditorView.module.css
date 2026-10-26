@@ -1,0 +1,270 @@
+/* EditorView (Views/Editor/EditorView.swift). */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+/* MARK: Tab strip — horizontal, no scroller, surface with a hairline below. */
+
+.strip {
+  flex: 0 0 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--surface);
+  scrollbar-width: none;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.stripContent {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: max-content;
+  padding: 6px 8px;
+}
+
+/* EditorTabChip: 26 high, 6 px corners, 10 / 6 horizontal padding. */
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 6px 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  transition: background-color var(--duration-hover) var(--ease-out);
+}
+
+.chip:hover {
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.chipSelected,
+.chipSelected:hover {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+.chipIcon {
+  color: var(--text-tertiary);
+}
+
+.chipSelected .chipIcon {
+  color: var(--accent);
+}
+
+.chipName {
+  font-size: var(--font-size-mono);
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.chipSelected .chipName {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chipAccessory {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+}
+
+.chipClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-secondary);
+  animation: appear var(--duration-hover) var(--ease-out);
+}
+
+.dirtyDot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+  animation: appear var(--duration-hover) var(--ease-out);
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* MARK: Document */
+
+.document {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.opening {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.openingText {
+  font-size: var(--font-size-caption);
+  color: var(--text-tertiary);
+}
+
+/* EditorBanner: 14 / 8 padding, the tint at 8 %, hairline below. */
+.banner {
+  --banner-tint: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--banner-tint) 8%, transparent);
+}
+
+.bannerIcon {
+  flex: 0 0 auto;
+  color: var(--banner-tint);
+}
+
+.bannerText {
+  min-width: 0;
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.bannerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* Spacer(minLength: 8) */
+.spacer {
+  flex: 1 0 8px;
+}
+
+/* MARK: Status bar — 28 high, 11.5 pt monospaced, surface, hairline on top. */
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 28px;
+  height: 28px;
+  padding: 0 12px;
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono-small);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.statusSecondary {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chip sets its own font (12 pt medium system), not the bar's monospaced one; the Save button keeps the system font too. */
+.statusChip,
+.statusButton {
+  font-family: var(--font-ui);
+}
+
+.statusTertiary {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.diagnostics {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.errorCount,
+.warningCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.errorCount {
+  color: var(--danger);
+}
+
+.warningCount {
+  color: var(--warning);
+}
+
+/* The hover / symbol entry gives way first (.layoutPriority(-1)). */
+.symbol {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+}
+
+.symbolIcon {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.symbolText {
+  color: var(--text-primary);
+}
+
+/* "path:line", truncated at its head. */
+.symbolPath {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  color: var(--text-tertiary);
+}
+
