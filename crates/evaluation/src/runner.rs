@@ -68,7 +68,10 @@ fn run_validation(dir: &Path, command: &str, timeout: Duration) -> bool {
         cmd.raw_arg(tail);
     }
     ctx_core::platform::hide_console_window(&mut cmd);
-    let child = cmd.current_dir(dir).env("NO_COLOR", "1").env("GIT_TERMINAL_PROMPT", "0").stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+    // No .pyc caches: CPython validates them by whole-second mtime and size,
+    // so a same-size edit landing within a second of the "before" run would
+    // make the "after" run execute the stale bytecode.
+    let child = cmd.current_dir(dir).env("NO_COLOR", "1").env("GIT_TERMINAL_PROMPT", "0").env("PYTHONDONTWRITEBYTECODE", "1").stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
     let Ok(mut child) = child else { return false };
     let started = std::time::Instant::now();
     loop {
