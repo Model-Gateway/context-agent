@@ -36,9 +36,14 @@ function permissionPane(permission: Permission): string {
   return permission === 'screenRecording' ? 'Privacy_ScreenCapture' : 'Privacy_Accessibility'
 }
 
-/** `Permission.service`: the `tccutil` service. */
-function permissionService(permission: Permission): string {
-  return permission === 'screenRecording' ? 'ScreenCapture' : 'Accessibility'
+/**
+ * `Permission.services`: the `tccutil` services. The backend asks for input
+ * with `CGRequestPostEventAccess`, which records its own PostEvent entry
+ * beside Accessibility, so a reset has to clear both or the backend keeps a
+ * stale one.
+ */
+function permissionServices(permission: Permission): readonly string[] {
+  return permission === 'screenRecording' ? ['ScreenCapture'] : ['Accessibility', 'PostEvent']
 }
 
 /** The backend's answer for `permission` (`mcp/permissions`), null before it answered. */
@@ -110,7 +115,10 @@ export function ComputerUsePermissions() {
   /// itself, so the note gives the command, as the Swift app does for a
   /// build without a bundle identifier.
   const reset = (permission: Permission) => {
-    setNote(`Run \`tccutil reset ${permissionService(permission)} ${BUNDLE_ID}\` in Terminal, then grant ${permissionTitle(permission)} again.`)
+    const commands = permissionServices(permission)
+      .map((service) => `tccutil reset ${service} ${BUNDLE_ID}`)
+      .join(' && ')
+    setNote(`Run \`${commands}\` in Terminal, then grant ${permissionTitle(permission)} again.`)
   }
 
   const restart = async () => {

@@ -9,6 +9,7 @@
 /benchmarks/swebench/runs/
 /dist/
 xcuserdata/
+.claude/
 
 # Tauri desktop app (apps/desktop)
 apps/desktop/node_modules/

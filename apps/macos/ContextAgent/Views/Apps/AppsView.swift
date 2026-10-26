@@ -1170,14 +1170,15 @@ private struct ComputerUsePermissions: View {
     /// (re-signed) app leaves behind, then asks again.
     private func reset(_ permission: Permission) {
         guard let bundleId = Bundle.main.bundleIdentifier else {
-            note = "This build has no bundle identifier; run `tccutil reset \(permission.services[0])` in Terminal instead."
+            let commands = permission.services.map { "tccutil reset \($0)" }.joined(separator: " && ")
+            note = "This build has no bundle identifier; run `\(commands)` in Terminal instead."
             return
         }
         working = true
         note = nil
         Task.detached(priority: .userInitiated) {
             var failure: String?
-            for service in permission.services where failure == nil {
+            for service in permission.services {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
                 process.arguments = ["reset", service, bundleId]
@@ -1186,13 +1187,16 @@ private struct ComputerUsePermissions: View {
                 process.standardOutput = pipe
                 do {
                     try process.run()
+                    let output = pipe.fileHandleForReading.readDataToEndOfFile()
                     process.waitUntilExit()
-                    if process.terminationStatus != 0 {
-                        let text = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    if process.terminationStatus != 0, failure == nil {
+                        let text = String(data: output, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                         failure = text.isEmpty ? "tccutil exited with \(process.terminationStatus)" : text
                     }
                 } catch {
-                    failure = error.localizedDescription
+                    if failure == nil {
+                        failure = error.localizedDescription
+                    }
                 }
             }
             await MainActor.run {
