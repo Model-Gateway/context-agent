@@ -1,0 +1,14 @@
+{
+  "name": "ts-web-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fixture: a small React-style TypeScript web app (no dependencies).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/__tests__/",
+    "typecheck": "echo typecheck-skipped"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

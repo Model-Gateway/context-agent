@@ -1,0 +1,17 @@
+PATH
+  remote: .
+  specs:
+    textkit (0.1.0)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  textkit!
+
+BUNDLED WITH
+   1.17.2

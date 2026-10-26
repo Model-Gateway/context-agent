@@ -1,0 +1,22 @@
+# Multi-turn sequence where turn 2 CONTINUES turn 1 on the same file. The follow-up is
+# deliberately terse and only makes sense with the conversation context: the agent
+# must remember which spinner it just added. Validation runs once, after turn 2.
+# Pristine fixture: the node suite passes; both greps exit 1 (no Spinner import, no
+# explicit size prop in LoginButton.tsx; Spinner defaults to 16px).
+id = "ts-login-loading-smaller-spinner"
+repository = "tests/repositories/ts-web-app"
+category = "localized_edit"
+languages = ["typescript", "tsx"]
+prompt = "Add a loading indicator to the login button using the existing Spinner component while authentication is in progress."
+validation = [
+  "node --test src/__tests__/",
+  "grep -Eq '^import .*Spinner' src/components/LoginButton.tsx",
+  "grep -q 'size=' src/components/LoginButton.tsx",
+]
+expected_files = ["src/components/LoginButton.tsx"]
+requires_tools = ["node"]
+timeout_secs = 900
+
+[[turns]]
+prompt = "Make the spinner smaller."
+expected_files = ["src/components/LoginButton.tsx"]

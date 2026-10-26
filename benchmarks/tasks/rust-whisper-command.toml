@@ -1,0 +1,16 @@
+# Pattern-following multi-file change across commands.rs, lib.rs, tests/cli.rs and
+# the README command table. Pristine fixture: `cargo test` passes (12 tests); the
+# behavioural check exits 1 because the binary reports "Unknown command: whisper".
+# `cargo` is not on PATH by default on this machine; add ~/.cargo/bin before running.
+id = "rust-whisper-command"
+repository = "tests/repositories/rust-cli"
+category = "multi_file_change"
+languages = ["rust"]
+prompt = "Add a `whisper` command to the CLI, the counterpart of `shout`: it lower-cases its arguments joined by single spaces and appends three dots, so `rust-cli whisper HEY THERE` prints `hey there...` and empty input prints `...`. Follow the existing pattern (a pure function in the commands module, a dispatch arm in the library, a row in the README command table) and add unit tests plus an integration test that runs the binary."
+validation = [
+  "cargo test --offline",
+  "cargo run --offline --quiet -- whisper HEY THERE | grep -qx 'hey there...'",
+]
+expected_files = ["src/commands.rs", "src/lib.rs", "tests/cli.rs", "README.md"]
+requires_tools = ["cargo"]
+timeout_secs = 900

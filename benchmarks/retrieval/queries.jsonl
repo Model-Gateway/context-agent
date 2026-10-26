@@ -1,0 +1,44 @@
+{"repository": "tests/repositories/ts-web-app", "query": "LoginButton.tsx", "relevant_files": ["src/components/LoginButton.tsx"]}
+{"repository": "tests/repositories/ts-web-app", "query": "useAuth", "relevant_files": ["src/hooks/useAuth.ts"]}
+{"repository": "tests/repositories/ts-web-app", "query": "ApiError", "relevant_files": ["src/api/client.ts"]}
+{"repository": "tests/repositories/ts-web-app", "query": "where is the shared fetch wrapper that every API call goes through", "relevant_files": ["src/api/client.ts"]}
+{"repository": "tests/repositories/ts-web-app", "query": "helper that formats a number of cents as a US dollar string", "relevant_files": ["src/utils/format.ts", "src/utils/format.mjs"]}
+{"repository": "tests/repositories/ts-web-app", "query": "footer text \"All rights reserved\"", "relevant_files": ["src/components/Footer.tsx"]}
+{"repository": "tests/repositories/ts-web-app", "query": "error message \"Sign-in failed\"", "relevant_files": ["src/hooks/useAuth.ts"]}
+{"repository": "tests/repositories/ts-web-app", "query": "page heading \"Acme Dashboard\"", "relevant_files": ["src/App.tsx"]}
+{"repository": "tests/repositories/py-service", "query": "pricing.py", "relevant_files": ["svc/pricing.py"]}
+{"repository": "tests/repositories/py-service", "query": "shipping_fee", "relevant_files": ["svc/pricing.py"]}
+{"repository": "tests/repositories/py-service", "query": "LineItem", "relevant_files": ["svc/models.py"]}
+{"repository": "tests/repositories/py-service", "query": "how is the sales tax rate configured and applied", "relevant_files": ["svc/config.py", "svc/pricing.py"]}
+{"repository": "tests/repositories/py-service", "query": "function that builds the human-readable one-line order quote", "relevant_files": ["svc/handlers.py"]}
+{"repository": "tests/repositories/py-service", "query": "error message \"Discount percentage must be between 0 and 100\"", "relevant_files": ["svc/pricing.py"]}
+{"repository": "tests/repositories/rust-cli", "query": "parse_args", "relevant_files": ["src/parser.rs"]}
+{"repository": "tests/repositories/rust-cli", "query": "cli.rs", "relevant_files": ["tests/cli.rs"]}
+{"repository": "tests/repositories/rust-cli", "query": "where are unknown sub-commands turned into an error", "relevant_files": ["src/lib.rs"]}
+{"repository": "tests/repositories/rust-cli", "query": "usage message \"usage: rust-cli <command> [args...]\"", "relevant_files": ["src/parser.rs"]}
+{"repository": "tests/repositories/go-service", "query": "ErrNotFound", "relevant_files": ["internal/store/store.go"]}
+{"repository": "tests/repositories/go-service", "query": "how does the server decide which address and port to listen on", "relevant_files": ["main.go"]}
+{"repository": "tests/repositories/go-service", "query": "error response \"item not found\"", "relevant_files": ["internal/handlers/handlers.go", "internal/handlers/handlers_test.go"]}
+{"repository": "tests/repositories/java-lib", "query": "CalculatorTest.java", "relevant_files": ["src/test/java/com/example/calc/CalculatorTest.java"]}
+{"repository": "tests/repositories/java-lib", "query": "code that evaluates an infix expression such as 2 + 3", "relevant_files": ["src/main/java/com/example/calc/Parser.java"]}
+{"repository": "tests/repositories/java-lib", "query": "exception message \"Division by zero\"", "relevant_files": ["src/main/java/com/example/calc/Calculator.java"]}
+{"repository": "tests/repositories/c-lib", "query": "vec_grow", "relevant_files": ["src/vec.c"]}
+{"repository": "tests/repositories/c-lib", "query": "what is the initial capacity of the vector and how does it grow", "relevant_files": ["src/vec.c"]}
+{"repository": "tests/repositories/c-lib", "query": "test output \"test_vec: all tests passed\"", "relevant_files": ["tests/test_vec.c"]}
+{"repository": "tests/repositories/cpp-lib", "query": "matrix.hpp", "relevant_files": ["include/matrix.hpp"]}
+{"repository": "tests/repositories/cpp-lib", "query": "Matrix::multiply", "relevant_files": ["include/matrix.hpp", "src/matrix.cpp"]}
+{"repository": "tests/repositories/cpp-lib", "query": "exception text \"Matrix rows must all have the same length\"", "relevant_files": ["src/matrix.cpp"]}
+{"repository": "tests/repositories/ruby-gem", "query": "version.rb", "relevant_files": ["lib/textkit/version.rb"]}
+{"repository": "tests/repositories/ruby-gem", "query": "DEFAULT_OMISSION", "relevant_files": ["lib/textkit/truncate.rb"]}
+{"repository": "tests/repositories/ruby-gem", "query": "generate a URL-safe slug from a title", "relevant_files": ["lib/textkit/slug.rb"]}
+{"repository": "tests/repositories/ruby-gem", "query": "error \"max must be non-negative\"", "relevant_files": ["lib/textkit/truncate.rb"]}
+{"repository": "tests/repositories/php-app", "query": "fromDollars", "relevant_files": ["src/Money.php"]}
+{"repository": "tests/repositories/php-app", "query": "where does adding the same SKU twice merge the quantities", "relevant_files": ["src/Cart.php"]}
+{"repository": "tests/repositories/php-app", "query": "exception message \"Currency mismatch\"", "relevant_files": ["src/Money.php"]}
+{"repository": "tests/repositories/polyglot", "query": "format_price", "relevant_files": ["services/api/app.py", "web/index.mjs"]}
+{"repository": "tests/repositories/polyglot", "query": "ARCHITECTURE.md", "relevant_files": ["docs/ARCHITECTURE.md"]}
+{"repository": "tests/repositories/polyglot", "query": "REPO_VERSION", "relevant_files": ["tools/src/main.rs"]}
+{"repository": "tests/repositories/polyglot", "query": "the JavaScript function that fetches the product catalogue from the API", "relevant_files": ["web/index.mjs"]}
+{"repository": "tests/repositories/polyglot", "query": "how does the front end know where the Python API listens", "relevant_files": ["web/index.mjs"]}
+{"repository": "tests/repositories/polyglot", "query": "which file holds the repo-wide version printed by the release tool", "relevant_files": ["tools/src/main.rs", "docs/ARCHITECTURE.md"]}
+{"repository": "tests/repositories/polyglot", "query": "startup message \"api listening on\"", "relevant_files": ["services/api/app.py"]}

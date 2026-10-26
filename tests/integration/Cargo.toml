@@ -1,0 +1,35 @@
+[package]
+name = "ctx-integration-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[test]]
+name = "multilingual"
+path = "../multilingual/indexing.rs"
+
+[[test]]
+name = "recovery"
+path = "../recovery/continuity.rs"
+
+[[test]]
+name = "retrieval_fixtures"
+path = "tests/retrieval_fixtures.rs"
+
+[dependencies]
+ctx-core = { workspace = true }
+ctx-agent = { workspace = true }
+ctx-providers = { workspace = true }
+ctx-tools = { workspace = true }
+ctx-retrieval = { workspace = true }
+ctx-memory = { workspace = true }
+ctx-storage = { workspace = true }
+ctx-evaluation = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }

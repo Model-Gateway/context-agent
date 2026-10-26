@@ -1,0 +1,32 @@
+[package]
+name = "ctx-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Autonomous agent runtime, session management, validation and recovery for Context."
+
+[dependencies]
+ctx-core = { workspace = true }
+ctx-storage = { workspace = true }
+ctx-security = { workspace = true }
+ctx-telemetry = { workspace = true }
+ctx-providers = { workspace = true }
+ctx-languages = { workspace = true }
+ctx-embeddings = { workspace = true }
+ctx-indexing = { workspace = true }
+ctx-memory = { workspace = true }
+ctx-retrieval = { workspace = true }
+ctx-context = { workspace = true }
+ctx-tools = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+parking_lot = { workspace = true }
+tempfile = { workspace = true }

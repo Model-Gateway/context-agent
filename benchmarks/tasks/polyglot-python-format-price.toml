@@ -1,0 +1,20 @@
+# Retrieval-ambiguity task: the repository defines format_price twice (Python in
+# services/api/app.py, JavaScript in web/index.mjs) with different behaviour. The prompt
+# names the Python one; only app.py should change, and the node suite guards the JS side.
+# The change is additive (keyword argument with a default) so the existing Python tests
+# stay valid and test_app.py does not need to be touched.
+# Pristine fixture: both suites pass; the python -c check exits 1 with
+# "TypeError: format_price() got an unexpected keyword argument 'symbol'".
+id = "polyglot-python-format-price"
+repository = "tests/repositories/polyglot"
+category = "localized_edit"
+languages = ["python"]
+prompt = '''Give the Python format_price an optional keyword argument symbol (default "$") so callers can render other currencies: format_price(1234, symbol="EUR ") returns "EUR 12.34" and format_price(-250, symbol="EUR ") returns "-EUR 2.50". The default output, the sign placement, the TypeError for non-integers and the existing tests must stay exactly as they are; extend the docstring to show the new argument.'''
+validation = [
+  "python3 -m unittest discover -s services/api -p 'test_*.py'",
+  '''python3 -c 'import sys; sys.path.insert(0, "services/api"); import app; assert app.format_price(1234, symbol="EUR ") == "EUR 12.34"; assert app.format_price(-250, symbol="EUR ") == "-EUR 2.50"; assert app.format_price(1234) == "$12.34"'''',
+  "node --test web/*.test.mjs",
+]
+expected_files = ["services/api/app.py"]
+requires_tools = ["python3", "node"]
+timeout_secs = 600

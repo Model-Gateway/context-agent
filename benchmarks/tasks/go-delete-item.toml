@@ -1,0 +1,22 @@
+# Store + handler + test + README change in a stdlib-only Go service.
+# Pristine fixture (go1.26): `go vet` and `go test ./...` pass; both greps exit 1.
+# `go test` writes only to GOCACHE, so nothing is left inside the fixture.
+id = "go-delete-item"
+repository = "tests/repositories/go-service"
+category = "multi_file_change"
+languages = ["go"]
+prompt = '''Add DELETE support to the key/value service: DELETE /items/{key} removes the key and responds 204 with an empty body, or 404 with {"error":"item not found"} when the key does not exist. Add the store method this needs, handle the new method in the items handler, document the route in the router comment and the README, and add handler tests for both the deleted and the missing-key cases.'''
+validation = [
+  "go vet ./...",
+  "go test ./...",
+  "grep -q MethodDelete internal/handlers/handlers.go",
+  "grep -q ') Delete(' internal/store/store.go",
+]
+expected_files = [
+  "internal/store/store.go",
+  "internal/handlers/handlers.go",
+  "internal/handlers/handlers_test.go",
+  "README.md",
+]
+requires_tools = ["go"]
+timeout_secs = 900

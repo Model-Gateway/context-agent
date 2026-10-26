@@ -1,0 +1,43 @@
+/* Shared button styles. Components opt in with className="btn". */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid #c7c7cc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1c1c1e;
+  font: inherit;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #f2f2f7;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.spinner {
+  display: inline-block;
+  position: relative;
+}
+
+.spinner-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spinner-rotate 0.8s linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}

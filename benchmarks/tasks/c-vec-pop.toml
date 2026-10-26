@@ -1,0 +1,16 @@
+# Header + source + test + README change in a C99 library.
+# Pristine fixture: `make test` passes; both greps exit 1 because vec_pop does not exist.
+# `make test` leaves src/vec.o and tests/test_vec behind; run on a scratch copy or `make clean`.
+id = "c-vec-pop"
+repository = "tests/repositories/c-lib"
+category = "multi_file_change"
+languages = ["c"]
+prompt = "Add a vec_pop(vec_t *v, int *out) function to the int vector library that removes the last element and copies it into *out. Follow the library conventions: return 0 on success and -1 when the vector is NULL, out is NULL or the vector is empty, and never abort. Declare it in the public header with a doc comment like its neighbours, implement it next to vec_push, list it in the README API line and cover both the success and the empty case in the test program."
+validation = [
+  "grep -q vec_pop include/vec.h",
+  "grep -q vec_pop tests/test_vec.c",
+  "make test",
+]
+expected_files = ["include/vec.h", "src/vec.c", "tests/test_vec.c", "README.md"]
+requires_tools = ["make", "cc"]
+timeout_secs = 600

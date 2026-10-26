@@ -1,0 +1,43 @@
+[package]
+name = "ctx-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Tool framework and built-in tools (files, search, shell, validation, git, memory, context) for Context."
+
+[dependencies]
+ctx-core = { workspace = true }
+ctx-storage = { workspace = true }
+ctx-security = { workspace = true }
+ctx-indexing = { workspace = true }
+ctx-retrieval = { workspace = true }
+ctx-memory = { workspace = true }
+ctx-languages = { workspace = true }
+ctx-telemetry = { workspace = true }
+ctx-context = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = { workspace = true }
+grep-regex = { workspace = true }
+grep-searcher = { workspace = true }
+grep-matcher = { workspace = true }
+globset = { workspace = true }
+similar = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+ctx-embeddings = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }

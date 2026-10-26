@@ -1,0 +1,116 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/storage",
+    "crates/security",
+    "crates/telemetry",
+    "crates/providers",
+    "crates/languages",
+    "crates/lsp",
+    "crates/embeddings",
+    "crates/indexing",
+    "crates/memory",
+    "crates/retrieval",
+    "crates/context",
+    "crates/tools",
+    "crates/agent",
+    "crates/evaluation",
+    "crates/cli",
+    "tests/integration",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Model-Gateway/context-agent"
+description = "Context: an independent, local-first, model-agnostic coding agent with an intelligent context engine."
+
+[workspace.dependencies]
+# internal crates
+ctx-core = { path = "crates/core" }
+ctx-storage = { path = "crates/storage" }
+ctx-security = { path = "crates/security" }
+ctx-telemetry = { path = "crates/telemetry" }
+ctx-providers = { path = "crates/providers" }
+ctx-languages = { path = "crates/languages" }
+ctx-lsp = { path = "crates/lsp" }
+ctx-embeddings = { path = "crates/embeddings" }
+ctx-indexing = { path = "crates/indexing" }
+ctx-memory = { path = "crates/memory" }
+ctx-retrieval = { path = "crates/retrieval" }
+ctx-context = { path = "crates/context" }
+ctx-tools = { path = "crates/tools" }
+ctx-agent = { path = "crates/agent" }
+ctx-evaluation = { path = "crates/evaluation" }
+
+# async + runtime
+tokio = { version = "1.54", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
+async-trait = "0.1"
+
+# serialization + config
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.9"
+
+# cli / tui
+clap = { version = "4.6", features = ["derive", "env"] }
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
+
+# networking
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls", "http2", "charset"] }
+bytes = "1.12"
+base64 = "0.22"
+
+# storage
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+# code intelligence
+tree-sitter = "0.27"
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-go = "0.25"
+tree-sitter-java = "0.23"
+tree-sitter-c = "0.24"
+tree-sitter-cpp = "0.23"
+tree-sitter-ruby = "0.23"
+tree-sitter-php = "0.25"
+
+# filesystem + search
+ignore = "0.4"
+globset = "0.4"
+notify = "8.2"
+notify-debouncer-full = "0.7"
+grep-searcher = "0.1"
+grep-regex = "0.1"
+grep-matcher = "0.1"
+
+# utilities
+sha2 = "0.11"
+hex = "0.4"
+uuid = { version = "1.28", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2.0"
+anyhow = "1.0"
+regex = "1.13"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+directories = "6.0"
+dunce = "1.0"
+url = "2.5"
+tempfile = "3.27"
+similar = "3.2"
+unicode-width = "0.2"
+parking_lot = "0.12"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

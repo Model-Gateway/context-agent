@@ -1,0 +1,16 @@
+# Smallest possible localized edit (one constant). Useful as a floor for retrieval
+# and as the single-turn twin of the second turn in ts-login-loading-then-footer-year.
+# Pristine fixture: the node suite passes; the 2026 grep exits 1 (COPYRIGHT_YEAR = 2025).
+id = "ts-footer-year"
+repository = "tests/repositories/ts-web-app"
+category = "localized_edit"
+languages = ["typescript", "tsx"]
+prompt = "Update the footer copyright year to 2026."
+validation = [
+  "node --test src/__tests__/",
+  "grep -q 2026 src/components/Footer.tsx",
+  "! grep -q 2025 src/components/Footer.tsx",
+]
+expected_files = ["src/components/Footer.tsx"]
+requires_tools = ["node"]
+timeout_secs = 300

@@ -1,0 +1,16 @@
+# Read-only investigation across three languages. There are no validation commands;
+# the runner must instead confirm the working copy is byte-identical to the pristine
+# fixture (no edits) and score the answer against the facts in docs/ARCHITECTURE.md:
+# fetchProducts issues GET {API_BASE}/products with Accept: application/json,
+# handle_request("/products") in services/api/app.py answers {"products": [...]},
+# and renderProductList re-formats price_cents because the two format_price
+# implementations differ on thousands separators.
+id = "polyglot-web-api-investigation"
+repository = "tests/repositories/polyglot"
+category = "investigation"
+languages = ["javascript", "python", "markdown"]
+prompt = "Explain how the web frontend talks to the API without modifying files. Cover which function issues the request, the exact method and URL, which Python function answers it and what the JSON body looks like, and why the client re-formats prices itself instead of trusting the price string the API sends. Name the files and functions you relied on."
+validation = []
+expected_files = ["web/index.mjs", "services/api/app.py", "docs/ARCHITECTURE.md"]
+requires_tools = []
+timeout_secs = 300

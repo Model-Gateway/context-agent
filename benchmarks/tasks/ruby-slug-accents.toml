@@ -1,0 +1,19 @@
+# Localized fix in lib/textkit/slug.rb plus a new test case.
+# The behavioural check builds "Crème Brûlée" from code points with pack("U*") so the
+# command itself is pure ASCII and works under the C/US-ASCII locale this machine
+# defaults to (a UTF-8 literal inside `ruby -e` would not).
+# Pristine fixture (ruby 2.6.10): the suite passes (10 runs); the behavioural check
+# exits 1 because Slug.generate returns "cr-me-br-l-e"; the grep exits 1.
+id = "ruby-slug-accents"
+repository = "tests/repositories/ruby-gem"
+category = "localized_edit"
+languages = ["ruby"]
+prompt = '''Slug generation mangles accented characters: TextKit::Slug.generate("Crème Brûlée") currently returns "cr-me-br-l-e" instead of "creme-brulee". Make the slug helper transliterate accented Latin letters to their plain ASCII base letters using only the Ruby standard library (the gem has no dependencies and must keep working on Ruby 2.6), fix the now-outdated comment and README note, and add a test for the accented case.'''
+validation = [
+  '''ruby -Ilib -Itest -e 'Dir["test/*_test.rb"].each { |f| require File.expand_path(f) }'''',
+  '''ruby -Ilib -e 'require "textkit"; s = [67,114,232,109,101,32,66,114,251,108,233,101].pack("U*"); exit(TextKit::Slug.generate(s) == "creme-brulee" ? 0 : 1)'''',
+  "grep -q creme-brulee test/slug_test.rb",
+]
+expected_files = ["lib/textkit/slug.rb", "test/slug_test.rb", "README.md"]
+requires_tools = ["ruby"]
+timeout_secs = 600

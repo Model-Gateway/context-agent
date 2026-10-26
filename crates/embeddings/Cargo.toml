@@ -1,0 +1,14 @@
+[package]
+name = "ctx-embeddings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Local embeddings and exact vector search for Context."
+
+[dependencies]
+ctx-core = { workspace = true }
+ctx-storage = { workspace = true }
+serde = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }

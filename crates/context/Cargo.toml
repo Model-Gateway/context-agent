@@ -1,0 +1,18 @@
+[package]
+name = "ctx-context"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Context compiler: cache-aware layering, retention, compaction, and inspection for Context."
+
+[dependencies]
+ctx-core = { workspace = true }
+ctx-retrieval = { workspace = true }
+ctx-memory = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

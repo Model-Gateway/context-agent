@@ -1,0 +1,16 @@
+# Header + source + test + README change in a C++17 library.
+# Pristine fixture: `make test` passes; both greps exit 1 because transpose does not exist.
+# `make test` leaves src/matrix.o and tests/test_matrix behind; run on a scratch copy or `make clean`.
+id = "cpp-matrix-transpose"
+repository = "tests/repositories/cpp-lib"
+category = "multi_file_change"
+languages = ["cpp"]
+prompt = "Add a Matrix::transpose() const member to the linalg Matrix class that returns a new cols() x rows() matrix with the element at (r, c) moved to (c, r). Declare it next to add and multiply with a doc comment, implement it in the source file, mention it in the README and add a test that covers a non-square matrix."
+validation = [
+  "grep -q transpose include/matrix.hpp",
+  "grep -q transpose tests/test_matrix.cpp",
+  "make test",
+]
+expected_files = ["include/matrix.hpp", "src/matrix.cpp", "tests/test_matrix.cpp", "README.md"]
+requires_tools = ["make", "c++"]
+timeout_secs = 600

@@ -1,0 +1,23 @@
+# Calculator + Parser + test + README change. Not executable on the authoring machine
+# (no Maven/JDK): the greps were checked (all exit 1 on the pristine fixture) and
+# `mvn -q test` was reviewed against pom.xml (JUnit 4.13.2, Java 17) but not run.
+# Maven needs network access on first run to fetch JUnit and the surefire plugin.
+id = "java-modulo-operator"
+repository = "tests/repositories/java-lib"
+category = "multi_file_change"
+languages = ["java"]
+prompt = '''Add a modulo operation to the calculator library: Calculator.modulo(double a, double b) returns the remainder of a divided by b and throws ArithmeticException("Modulo by zero") when b is 0, and Parser.evaluate accepts % as a fifth operator so that "7 % 3" evaluates to 1.0. Mention the new operator in the README and add JUnit tests for the helper, the parser and the zero case.'''
+validation = [
+  "grep -q modulo src/main/java/com/example/calc/Calculator.java",
+  '''grep -q 'case "%"' src/main/java/com/example/calc/Parser.java''',
+  "grep -q modulo src/test/java/com/example/calc/CalculatorTest.java",
+  "mvn -q test",
+]
+expected_files = [
+  "src/main/java/com/example/calc/Calculator.java",
+  "src/main/java/com/example/calc/Parser.java",
+  "src/test/java/com/example/calc/CalculatorTest.java",
+  "README.md",
+]
+requires_tools = ["mvn", "java"]
+timeout_secs = 900

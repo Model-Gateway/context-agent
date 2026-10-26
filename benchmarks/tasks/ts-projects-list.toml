@@ -1,0 +1,24 @@
+# Complex feature: two new files plus an edit to App.tsx, following the conventions in
+# the fixture README (components never call fetch; hooks are useXxx.ts; one component
+# per file). Two of the expected_files do not exist in the pristine fixture; retrieval
+# recall is computed over the ones that do (src/App.tsx) and the runner additionally
+# records whether the new files were created.
+# Pristine fixture: the node suite passes; both `test -f` checks and the ProjectList grep
+# exit 1; the apiClient grep exits 2 (file absent) and the negated fetch grep exits 0 for
+# the same reason, which is harmless because the runner stops at the first `test -f`.
+id = "ts-projects-list"
+repository = "tests/repositories/ts-web-app"
+category = "complex_feature"
+languages = ["typescript", "tsx"]
+prompt = "Add a projects list to the dashboard. Create a useProjects hook in src/hooks/ that loads Project[] (id, name and updatedAt as an ISO string) from GET /projects through the shared API client and tracks isLoading and error the same way useAuth does; create a ProjectList component in src/components/ that shows the Spinner while loading, an error message on failure and otherwise one entry per project with its name and formatDate(updatedAt); and render ProjectList inside the body section of App. Follow the README conventions: components never call fetch directly, one component per file, hooks are named useXxx."
+validation = [
+  "node --test src/__tests__/",
+  "test -f src/hooks/useProjects.ts",
+  "test -f src/components/ProjectList.tsx",
+  "grep -q ProjectList src/App.tsx",
+  "grep -q apiClient src/hooks/useProjects.ts",
+  "! grep -q 'fetch(' src/hooks/useProjects.ts src/components/ProjectList.tsx",
+]
+expected_files = ["src/App.tsx", "src/hooks/useProjects.ts", "src/components/ProjectList.tsx"]
+requires_tools = ["node"]
+timeout_secs = 900

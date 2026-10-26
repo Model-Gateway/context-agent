@@ -1,0 +1,18 @@
+[package]
+name = "ctx-memory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Persistent task, project, and episodic memory with provenance for Context."
+
+[dependencies]
+ctx-core = { workspace = true }
+ctx-storage = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

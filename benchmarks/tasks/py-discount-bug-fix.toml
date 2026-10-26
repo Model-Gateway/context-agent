@@ -1,0 +1,12 @@
+# Localized bug fix. Pristine fixture: the suite exits 1 with exactly one failure,
+# test_pricing.PricingTests.test_ten_percent_off (190.0 != 180.0), because
+# apply_discount subtracts the percentage as an absolute amount.
+id = "py-discount-bug-fix"
+repository = "tests/repositories/py-service"
+category = "localized_edit"
+languages = ["python"]
+prompt = "Running the unit tests shows test_ten_percent_off failing: a 10 percent discount on 200.00 comes back as 190.00 instead of 180.00. Find and fix the bug in the pricing service without changing the tests, so that the whole suite passes."
+validation = ["python3 -m unittest discover -s tests -v"]
+expected_files = ["svc/pricing.py"]
+requires_tools = ["python3"]
+timeout_secs = 600

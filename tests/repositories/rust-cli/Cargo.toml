@@ -1,0 +1,18 @@
+[package]
+name = "rust-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Fixture: a tiny command-line tool with a library core and no dependencies."
+
+[lib]
+name = "rust_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rust-cli"
+path = "src/main.rs"
+
+[dependencies]
+
+# Standalone: do not join the enclosing Cargo workspace.
+[workspace]

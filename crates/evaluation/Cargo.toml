@@ -1,0 +1,24 @@
+[package]
+name = "ctx-evaluation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Benchmark framework and retrieval evaluation for Context."
+
+[dependencies]
+ctx-core = { workspace = true }
+ctx-agent = { workspace = true }
+ctx-providers = { workspace = true }
+ctx-retrieval = { workspace = true }
+ctx-tools = { workspace = true }
+ctx-telemetry = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

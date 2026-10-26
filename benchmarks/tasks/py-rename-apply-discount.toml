@@ -1,0 +1,21 @@
+# Multi-file rename. The full unittest suite is deliberately NOT the validation:
+# it only passes once the unrelated discount bug (see py-discount-bug-fix) is also
+# fixed, which would conflate two tasks. These checks pass if and only if the
+# rename is complete and every import still resolves.
+# Pristine fixture: the first grep exits 1 (svc/pricing.py:6 still defines
+# apply_discount) and the import of apply_percentage_discount raises AttributeError.
+id = "py-rename-apply-discount"
+repository = "tests/repositories/py-service"
+category = "multi_file_change"
+languages = ["python"]
+prompt = "Rename the pricing helper apply_discount to apply_percentage_discount everywhere it is defined, imported or called, in both the package and the tests, without leaving an apply_discount alias behind. This is a pure rename: the suite has one known failing test about the discount maths (test_ten_percent_off) and you are not required to fix it, so judge success by the rename being complete and every module still importing rather than by the whole suite passing."
+validation = [
+  "! grep -rn --include='*.py' 'def apply_discount' svc",
+  "! grep -rnw --include='*.py' apply_discount svc tests",
+  "python3 -c 'import svc.pricing; svc.pricing.apply_percentage_discount'",
+  "python3 -c 'import tests.test_pricing'",
+  "python3 -m unittest tests.test_handlers",
+]
+expected_files = ["svc/pricing.py", "svc/handlers.py", "tests/test_pricing.py"]
+requires_tools = ["python3"]
+timeout_secs = 600

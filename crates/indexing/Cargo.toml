@@ -1,0 +1,27 @@
+[package]
+name = "ctx-indexing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Repository discovery, incremental multi-language indexing, and freshness checks for Context."
+
+[dependencies]
+ctx-core = { workspace = true }
+ctx-storage = { workspace = true }
+ctx-languages = { workspace = true }
+ctx-embeddings = { workspace = true }
+ignore = { workspace = true }
+globset = { workspace = true }
+notify = { workspace = true }
+notify-debouncer-full = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

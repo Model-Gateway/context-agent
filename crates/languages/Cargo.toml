@@ -1,0 +1,22 @@
+[package]
+name = "ctx-languages"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Language adapters (tree-sitter parsing, symbol extraction, relationships, structural chunking) for Context."
+
+[dependencies]
+ctx-core = { workspace = true }
+serde = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-rust = { workspace = true }
+tree-sitter-python = { workspace = true }
+tree-sitter-typescript = { workspace = true }
+tree-sitter-javascript = { workspace = true }
+tree-sitter-go = { workspace = true }
+tree-sitter-java = { workspace = true }
+tree-sitter-c = { workspace = true }
+tree-sitter-cpp = { workspace = true }
+tree-sitter-ruby = { workspace = true }
+tree-sitter-php = { workspace = true }

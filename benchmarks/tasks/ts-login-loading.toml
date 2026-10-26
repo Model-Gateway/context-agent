@@ -1,0 +1,15 @@
+# Single-turn localized edit: the canonical "add a spinner" task.
+# Pristine fixture: the node suite passes; the grep fails because LoginButton.tsx
+# mentions Spinner only inside a TODO comment, never in an import line.
+id = "ts-login-loading"
+repository = "tests/repositories/ts-web-app"
+category = "localized_edit"
+languages = ["typescript", "tsx"]
+prompt = "Add a loading indicator to the login button using the existing Spinner component while authentication is in progress."
+validation = [
+  "node --test src/__tests__/",
+  "grep -Eq '^import .*Spinner' src/components/LoginButton.tsx",
+]
+expected_files = ["src/components/LoginButton.tsx"]
+requires_tools = ["node"]
+timeout_secs = 600

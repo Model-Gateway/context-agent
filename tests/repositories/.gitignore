@@ -1,0 +1,10 @@
+# Build artefacts that fixture validation commands may leave behind.
+target/
+*.o
+__pycache__/
+*.pyc
+tests/test_vec
+tests/test_matrix
+node_modules/
+Cargo.lock
+vendor/

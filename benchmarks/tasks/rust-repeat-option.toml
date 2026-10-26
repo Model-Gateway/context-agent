@@ -1,0 +1,18 @@
+# Complex feature: the parser currently rejects every flag, so this needs a new field on
+# Command, parser changes with new error cases, a change to the run path, README and
+# tests at three levels. Pristine fixture: `cargo test` passes; the --times check exits 1
+# (the binary fails with "unexpected flag: --times", so grep -c prints 0); the greet
+# regression guard passes.
+id = "rust-repeat-option"
+repository = "tests/repositories/rust-cli"
+category = "complex_feature"
+languages = ["rust"]
+prompt = "Add a `--times N` option to the CLI so any command's output is printed N times, one copy per line: `rust-cli shout hi --times 2` prints `HI!` twice. The parser currently rejects every flag, so extend it to recognise exactly this option anywhere after the sub-command, store the count on the parsed Command, keep rejecting other flags with the existing UnexpectedFlag error, reject a missing or non-positive N with a clear new ParseError variant, default to 1, and apply the repetition in the library's run path rather than in main. Update the README and add parser, library and binary-level tests."
+validation = [
+  "cargo test --offline",
+  '''test "$(cargo run --offline --quiet -- shout hi --times 2 | grep -c 'HI!')" -eq 2''',
+  "cargo run --offline --quiet -- greet Ada | grep -qx 'Hello, Ada!'",
+]
+expected_files = ["src/parser.rs", "src/lib.rs", "tests/cli.rs", "README.md"]
+requires_tools = ["cargo"]
+timeout_secs = 1200

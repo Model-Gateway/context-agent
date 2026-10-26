@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.DS_Store
+/benchmarks/results/
+/benchmarks/swebench/.venv/
+/benchmarks/swebench/runs/
+/dist/
+xcuserdata/

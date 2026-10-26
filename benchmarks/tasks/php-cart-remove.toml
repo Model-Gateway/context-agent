@@ -1,0 +1,20 @@
+# Cart + test + README change. Not executable on the authoring machine (no php/composer):
+# the greps were checked (exit 1 on the pristine fixture); `composer test` runs the
+# "phpunit" script from composer.json, so `composer install` must come first and needs
+# network access to fetch phpunit/phpunit ^10.5 into the scratch copy (the fixture itself
+# stays dependency-free because validation always runs on a copy).
+id = "php-cart-remove"
+repository = "tests/repositories/php-app"
+category = "multi_file_change"
+languages = ["php"]
+prompt = "Add two methods to the Cart: remove(string $sku): void deletes the line item for that SKU and throws InvalidArgumentException('Unknown SKU') when the cart has no such item, and count(): int returns the total quantity across all line items (0 for an empty cart). Document both in the README and add PHPUnit tests covering removal, the unknown-SKU exception and the count."
+validation = [
+  "php -l src/Cart.php",
+  "grep -q 'function remove' src/Cart.php",
+  "grep -q 'function count' src/Cart.php",
+  "composer install --quiet --no-interaction",
+  "composer test",
+]
+expected_files = ["src/Cart.php", "tests/CartTest.php", "README.md"]
+requires_tools = ["php", "composer"]
+timeout_secs = 900

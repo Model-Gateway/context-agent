@@ -1,0 +1,18 @@
+# Cross-language multi-file change: the version constant and its unit tests live in
+# Rust, the quoted banner lives in Markdown. Pristine fixture: `cargo test` passes
+# (2 tests); the banner check exits 1 ("polyglot 0.1.0"); the negated grep exits 1
+# because docs/ARCHITECTURE.md and the module docs in tools/src/main.rs quote 0.1.0.
+# Leaves tools/target and tools/Cargo.lock behind; `make clean` removes both.
+id = "polyglot-version-bump"
+repository = "tests/repositories/polyglot"
+category = "multi_file_change"
+languages = ["rust", "markdown"]
+prompt = "Cut release 0.2.0 of the monorepo: bump the repo-wide version so that `tools version` prints `polyglot 0.2.0` and the JSON banner reports version 0.2.0, leaving the tools crate's own package version at 0.1.0. Update the Rust unit tests accordingly and refresh every document and doc comment that quotes the old banner."
+validation = [
+  "cargo test --manifest-path tools/Cargo.toml --offline",
+  "cargo run --manifest-path tools/Cargo.toml --offline --quiet -- version | grep -qx 'polyglot 0.2.0'",
+  "! grep -rn 'polyglot 0.1.0' docs README.md tools/src",
+]
+expected_files = ["tools/src/main.rs", "docs/ARCHITECTURE.md"]
+requires_tools = ["cargo"]
+timeout_secs = 900

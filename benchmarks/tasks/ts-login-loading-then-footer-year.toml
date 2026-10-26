@@ -1,0 +1,22 @@
+# Multi-turn sequence where turn 2 is UNRELATED to turn 1: it measures whether the
+# agent re-retrieves for a new topic instead of staying anchored on LoginButton.tsx.
+# Validation runs once, after turn 2, and checks both outcomes.
+# Pristine fixture: the node suite passes; the Spinner grep exits 1; the Footer grep
+# exits 1 (COPYRIGHT_YEAR is 2025).
+id = "ts-login-loading-then-footer-year"
+repository = "tests/repositories/ts-web-app"
+category = "localized_edit"
+languages = ["typescript", "tsx"]
+prompt = "Add a loading indicator to the login button using the existing Spinner component while authentication is in progress."
+validation = [
+  "node --test src/__tests__/",
+  "grep -Eq '^import .*Spinner' src/components/LoginButton.tsx",
+  "grep -q 2026 src/components/Footer.tsx",
+]
+expected_files = ["src/components/LoginButton.tsx"]
+requires_tools = ["node"]
+timeout_secs = 900
+
+[[turns]]
+prompt = "Update the footer copyright year to 2026"
+expected_files = ["src/components/Footer.tsx"]

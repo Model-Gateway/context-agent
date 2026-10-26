@@ -1,0 +1,14 @@
+# Read-only investigation. No validation commands; the runner must confirm the working
+# copy is unchanged and score the answer against the facts: the failing test is
+# tests/test_pricing.py::PricingTests::test_ten_percent_off, the cause is
+# `return round(price - pct, 2)` in svc/pricing.py (apply_discount), and the fix is
+# to multiply by (1 - pct / 100) instead of subtracting pct.
+id = "py-explain-failing-test"
+repository = "tests/repositories/py-service"
+category = "investigation"
+languages = ["python"]
+prompt = "Exactly one test in this service's suite fails. Without modifying any files, explain which test it is, which function and line cause the failure, why the current code produces 190.0 for a 10 percent discount on 200.0, and what the one-line fix would be."
+validation = []
+expected_files = ["svc/pricing.py", "tests/test_pricing.py"]
+requires_tools = ["python3"]
+timeout_secs = 300
