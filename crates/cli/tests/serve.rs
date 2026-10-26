@@ -33,6 +33,12 @@ fn fixture() -> tempfile::TempDir {
     git(root, &["init", "-q"]);
     git(root, &["add", "-A"]);
     git(root, &["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "initial"]);
+    // Check the files out again as a clone has them (CRLF under Git for
+    // Windows' core.autocrlf), so a worktree checkout matches them byte for byte.
+    for file in ["README.md", "src/lib.rs", "src/util.py"] {
+        std::fs::remove_file(root.join(file)).unwrap();
+    }
+    git(root, &["checkout", "--", "."]);
     std::fs::write(root.join("src/lib.rs"), "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\npub fn sub(a: i32, b: i32) -> i32 {\n    a - b\n}\n").unwrap();
     dir
 }
@@ -1392,7 +1398,8 @@ fn worktree_merge_lands_the_branch_in_the_parent() {
     let commits = log["commits"].as_array().unwrap();
     assert_eq!(commits[0]["hash"], sha.as_str(), "{log}");
     assert!(commits.iter().any(|e| e["hash"] == wt_sha.as_str()), "{log}");
-    assert_eq!(std::fs::read_to_string(repo.path().join("docs.md")).unwrap(), "# Docs\n");
+    // The merge checks the file out with the user's line endings (CRLF under Git for Windows).
+    assert_eq!(std::fs::read_to_string(repo.path().join("docs.md")).unwrap().replace("\r\n", "\n"), "# Docs\n");
     assert_eq!(c.result("git/status", json!({"project_id": pid}))["branch"], parent_branch.as_str());
     assert!(!root.exists(), "the worktree checkout is gone");
     assert_eq!(c.request("project/status", json!({"project_id": wid}))["error"]["code"], -32001);
