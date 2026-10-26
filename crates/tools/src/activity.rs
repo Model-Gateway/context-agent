@@ -81,9 +81,21 @@ pub struct OtherSession {
     pub files: Vec<String>,
 }
 
+/// How old a modification time must be before its stamp is trusted. NTFS
+/// takes file times from the system clock, which advances in ~16 ms ticks
+/// (FAT and some network shares are coarser still), so a file rewritten to
+/// the same length shortly after it was seen can keep its stamp. A recent
+/// stamp is not recorded and the file is hashed instead, like git's "racy
+/// clean" entries. Other platforms' file systems keep nanoseconds.
+const RACY_STAMP: std::time::Duration = if cfg!(windows) { std::time::Duration::from_secs(2) } else { std::time::Duration::ZERO };
+
 fn stamp(abs: &Path) -> Option<(SystemTime, u64)> {
     let meta = std::fs::metadata(abs).ok()?;
-    Some((meta.modified().ok()?, meta.len()))
+    let modified = meta.modified().ok()?;
+    if !RACY_STAMP.is_zero() && SystemTime::now().duration_since(modified).map_or(true, |age| age < RACY_STAMP) {
+        return None;
+    }
+    Some((modified, meta.len()))
 }
 
 impl ProjectActivity {
