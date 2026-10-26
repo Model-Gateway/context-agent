@@ -57,7 +57,7 @@ fn fixture(profile: PermissionProfile, approvals: Arc<dyn ApprovalHandler>) -> (
         command_timeout: Duration::from_secs(5),
         redactor: Arc::new(Redactor::default()),
         cancel: CancellationToken::new(),
-        shell: "sh".into(),
+        shell: ctx_core::platform::default_shell_program(),
         max_output_chars: 4_000,
         context_explanation: Arc::new(RwLock::new(None)),
         working_set: Arc::new(RwLock::new(Vec::new())),
