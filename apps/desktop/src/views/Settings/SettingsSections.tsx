@@ -67,7 +67,7 @@ function useForcedMock(): boolean {
 const BACKEND_FOOTER = isMac
   ? 'The ctx binary is auto-detected: the app bundle, $CTX_BINARY, ~/.cargo/bin, Homebrew, /usr/local/bin, then a repository checkout. Choose one to override the search.'
   : isWindows
-    ? 'The ctx binary is auto-detected: next to the app, %CTX_BINARY%, %USERPROFILE%\\.cargo\\bin, %LOCALAPPDATA%\\Programs\\Context, PATH, then a repository checkout. Choose one to override the search.'
+    ? 'The ctx binary is auto-detected: next to the app, %CTX_BINARY%, %USERPROFILE%\\.cargo\\bin, %LOCALAPPDATA%\\Context, %ProgramFiles%\\Context, PATH, then a repository checkout. Choose one to override the search.'
     : 'The ctx binary is auto-detected: next to the app, $CTX_BINARY, ~/.cargo/bin, /usr/local/bin, PATH, then a repository checkout. Choose one to override the search.'
 
 const EDITOR_FOOTER =
