@@ -302,11 +302,28 @@ fn powershell_script(command: &str) -> String {
 pub fn default_shell_program() -> String {
     if let Ok(shell) = std::env::var("CTX_SHELL") {
         if !shell.trim().is_empty() {
-            return shell;
+            return resolve_shell_name(shell);
         }
     }
     static DETECTED: OnceLock<String> = OnceLock::new();
     DETECTED.get_or_init(detect_shell).clone()
+}
+
+/// `CTX_SHELL` as a program. On Windows a bare `bash` / `sh` becomes the
+/// shell detection would pick: `CreateProcess` looks in System32 before
+/// `PATH`, so the bare name would start WSL's `bash.exe`. Anything else,
+/// and every value on Unix, is used as given.
+fn resolve_shell_name(shell: String) -> String {
+    #[cfg(windows)]
+    {
+        let bare = !shell.trim().contains(['/', '\\']);
+        if bare && matches!(file_stem_any(shell.trim()).as_str(), "bash" | "sh") {
+            if let Some(found) = posix_shell() {
+                return found.to_string_lossy().to_string();
+            }
+        }
+    }
+    shell
 }
 
 /// [`default_shell_program`] as a [`Shell`].
@@ -321,13 +338,8 @@ fn detect_shell() -> String {
 
 #[cfg(windows)]
 fn detect_shell() -> String {
-    if let Some(bash) = git_bash() {
-        return bash.to_string_lossy().to_string();
-    }
-    for name in ["sh", "bash"] {
-        if let Some(found) = find_executable(name).filter(|p| !is_wsl_launcher(p)) {
-            return found.to_string_lossy().to_string();
-        }
+    if let Some(posix) = posix_shell() {
+        return posix.to_string_lossy().to_string();
     }
     if let Some(pwsh) = find_executable("pwsh") {
         return pwsh.to_string_lossy().to_string();
@@ -338,6 +350,13 @@ fn detect_shell() -> String {
         return powershell.to_string_lossy().to_string();
     }
     "powershell.exe".into()
+}
+
+/// Git for Windows' bash, else another `sh` / `bash` on `PATH` (MSYS2,
+/// Cygwin), never WSL's.
+#[cfg(windows)]
+fn posix_shell() -> Option<PathBuf> {
+    git_bash().or_else(|| ["sh", "bash"].into_iter().find_map(|name| find_executable(name).filter(|p| !is_wsl_launcher(p))))
 }
 
 /// Git for Windows' `bin\bash.exe` (the launcher that puts its coreutils on
@@ -538,6 +557,20 @@ mod tests {
         std::fs::write(dir.path().join("plain"), "data").unwrap();
         let path = std::env::join_paths([dir.path()]).unwrap();
         assert_eq!(find_executable_in("plain", Some(&path)), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ctx_shell_bash_is_never_wsl() {
+        for name in ["bash", "sh", "bash.exe"] {
+            let resolved = resolve_shell_name(name.into());
+            assert!(!is_wsl_launcher(Path::new(&resolved)), "{name} → {resolved}");
+            if git_bash().is_some() {
+                assert!(Path::new(&resolved).is_absolute(), "{name} → {resolved}");
+            }
+        }
+        assert_eq!(resolve_shell_name("pwsh".into()), "pwsh");
+        assert_eq!(resolve_shell_name(r"C:\tools\bash.exe".into()), r"C:\tools\bash.exe");
     }
 
     #[test]
