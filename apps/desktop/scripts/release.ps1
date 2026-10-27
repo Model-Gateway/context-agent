@@ -156,6 +156,8 @@ if ($sign) {
   }
   Assert-Signed $setup
   Assert-Signed $msi
+  # The app keeps its Cargo binary name (tauri.conf.json sets no mainBinaryName).
+  $binaries = "context-desktop.exe", "ctx.exe"
 
   # What the .msi installs: every executable in it must be signed. An
   # administrative install only unpacks it (and may need an elevated shell).
@@ -164,8 +166,10 @@ if ($sign) {
   $unpack = Start-Process msiexec.exe -ArgumentList "/a", "`"$msi`"", "/qn", "TARGETDIR=`"$msiFiles`"" -Wait -PassThru
   if ($unpack.ExitCode -eq 0) {
     $executables = @(Get-ChildItem -Path $msiFiles -Recurse -Include *.exe, *.dll)
-    foreach ($name in "Context.exe", "ctx.exe") {
-      if (-not ($executables | Where-Object Name -eq $name)) { throw "release.ps1: the msi has no $name" }
+    foreach ($name in $binaries) {
+      if (-not ($executables | Where-Object Name -eq $name)) {
+        throw "release.ps1: the msi has no $name (it has: $(($executables | ForEach-Object Name) -join ', '))"
+      }
     }
     $executables | ForEach-Object { Assert-Signed $_.FullName }
   } else {
@@ -182,14 +186,14 @@ if ($sign) {
     if ($LASTEXITCODE -ne 0) { Write-Warning "7-Zip could not fully unpack the setup exe (exit $LASTEXITCODE)" }
     $found = 0
     foreach ($file in Get-ChildItem -Path $setupFiles -Recurse -Include *.exe, *.dll) {
-      if ("Context.exe", "ctx.exe" -contains $file.Name) {
+      if ($binaries -contains $file.Name) {
         Assert-Signed $file.FullName
         $found++
       } else {
         Write-Host "    --  $($file.FullName.Replace("$setupFiles\", ''))  ($((Get-AuthenticodeSignature -FilePath $file.FullName).Status))"
       }
     }
-    if ($found -lt 2) { Write-Warning "7-Zip did not find both Context.exe and ctx.exe in the setup exe" }
+    if ($found -lt 2) { Write-Warning "7-Zip did not find both $($binaries -join ' and ') in the setup exe" }
   }
 }
 
