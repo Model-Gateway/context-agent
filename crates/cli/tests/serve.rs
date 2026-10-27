@@ -11,6 +11,9 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const TIMEOUT: Duration = Duration::from_secs(120);
+/// How long a run waits for a running indexing pass before it starts
+/// without it (`INDEX_WAIT_GRACE` in the runner).
+const INDEX_WAIT_GRACE: Duration = Duration::from_secs(2);
 
 fn git(repo: &Path, args: &[&str]) {
     let status = Command::new("git").args(args).current_dir(repo).stdout(Stdio::null()).stderr(Stdio::null()).status().expect("git is installed");
@@ -48,11 +51,14 @@ fn fixture() -> tempfile::TempDir {
 struct Client {
     child: Child,
     stdin: ChildStdin,
-    rx: mpsc::Receiver<Result<Value, String>>,
+    /// Each stdout line with the time the reader thread saw it.
+    rx: mpsc::Receiver<(Instant, Result<Value, String>)>,
     notifications: Vec<Value>,
     /// Every frame in arrival order (responses and notifications), for
     /// ordering assertions.
     trace: Vec<Value>,
+    /// When each `trace` frame arrived, for timing assertions.
+    trace_at: Vec<Instant>,
     next_id: i64,
 }
 
@@ -73,12 +79,12 @@ impl Client {
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
                 let parsed = serde_json::from_str::<Value>(&line).ok().filter(|v| v.is_object()).ok_or_else(|| line.clone());
-                if tx.send(parsed).is_err() {
+                if tx.send((Instant::now(), parsed)).is_err() {
                     break;
                 }
             }
         });
-        Self { child, stdin, rx, notifications: Vec::new(), trace: Vec::new(), next_id: 1 }
+        Self { child, stdin, rx, notifications: Vec::new(), trace: Vec::new(), trace_at: Vec::new(), next_id: 1 }
     }
 
     fn recv(&mut self, deadline: Instant) -> Value {
@@ -86,11 +92,12 @@ impl Client {
             let remaining = deadline.saturating_duration_since(Instant::now());
             assert!(!remaining.is_zero(), "timed out waiting for a frame; buffered notifications: {:#?}", self.notifications);
             match self.rx.recv_timeout(remaining) {
-                Ok(Ok(v)) => {
+                Ok((at, Ok(v))) => {
                     self.trace.push(v.clone());
+                    self.trace_at.push(at);
                     return v;
                 }
-                Ok(Err(line)) => panic!("non-JSON output on stdout: {line:?}"),
+                Ok((_, Err(line))) => panic!("non-JSON output on stdout: {line:?}"),
                 Err(mpsc::RecvTimeoutError::Timeout) => continue,
                 Err(mpsc::RecvTimeoutError::Disconnected) => panic!("server closed stdout; notifications: {:#?}", self.notifications),
             }
@@ -165,12 +172,13 @@ impl Client {
         let deadline = Instant::now() + period;
         while let Some(remaining) = deadline.checked_duration_since(Instant::now()).filter(|d| !d.is_zero()) {
             match self.rx.recv_timeout(remaining) {
-                Ok(Ok(v)) => {
+                Ok((at, Ok(v))) => {
                     assert!(v.get("id").map(|i| i.is_null()).unwrap_or(true), "unexpected response {v}");
                     self.trace.push(v.clone());
+                    self.trace_at.push(at);
                     self.notifications.push(v);
                 }
-                Ok(Err(line)) => panic!("non-JSON output on stdout: {line:?}"),
+                Ok((_, Err(line))) => panic!("non-JSON output on stdout: {line:?}"),
                 Err(_) => break,
             }
         }
@@ -179,6 +187,25 @@ impl Client {
     /// Position in the trace of the first frame matching `pred` at or after `from`.
     fn trace_position(&self, from: usize, pred: impl Fn(&Value) -> bool) -> Option<usize> {
         self.trace.iter().enumerate().skip(from).find(|(_, f)| pred(f)).map(|(i, _)| i)
+    }
+
+    /// For a run requested at `sent` (trace position `run_from`) while an
+    /// indexing pass ran: waits for that pass's `index/ready` (at or after
+    /// `ready_from`) and returns its trace position. The run waits for the
+    /// pass for up to the grace, so `index/ready` precedes its
+    /// `task_started` unless the pass outlasted the grace (a slow disk, or a
+    /// virus scanner on Windows, can make 400 files take longer); the run
+    /// then starts, but not before the grace.
+    fn index_ready_before_start(&mut self, project_id: &str, ready_from: usize, run_from: usize, sent: Instant) -> usize {
+        let ready = |f: &Value| is_notification(f, "index/ready", project_id);
+        if self.trace_position(ready_from, ready).is_none() {
+            self.wait_notification(ready);
+        }
+        let ready_at = self.trace_position(ready_from, ready).unwrap();
+        let started_at = self.trace_position(run_from, |f| is_event(f, project_id, "task_started")).expect("task_started");
+        let waited = self.trace_at[started_at] - sent;
+        assert!(ready_at < started_at || waited >= INDEX_WAIT_GRACE, "index/ready@{ready_at} must precede task_started@{started_at} unless the run waited out the grace (it started {waited:?} after it was requested)");
+        ready_at
     }
 
     fn take_events(&mut self, session_id: &str) -> Vec<Value> {
@@ -310,7 +337,7 @@ fn mock_serve_round_trip() {
     let status = c.child.wait().unwrap();
     assert_eq!(status.code(), Some(0), "ctx serve exited with {status}");
     // Whatever arrived after the last response must still be well-formed.
-    while let Ok(frame) = c.rx.try_recv() {
+    while let Ok((_, frame)) = c.rx.try_recv() {
         assert!(frame.is_ok(), "non-JSON output on stdout: {frame:?}");
     }
 }
@@ -732,8 +759,9 @@ fn config_patch_rejects_unknown_keys_and_keeps_switched_models() {
 }
 
 /// While `task/run` waits for the background index, `project/status` keeps
-/// reporting `indexing`; `index/ready` always precedes the run's
-/// `task_started`; a cancel during the wait ends in `task/finished`; closing
+/// reporting `indexing`; `index/ready` precedes the run's `task_started`
+/// unless indexing outlasts the 2 s grace, and then the run starts no
+/// sooner than that; a cancel during the wait ends in `task/finished`; closing
 /// a project mid-rebuild and reopening it yields exactly one `index/ready`;
 /// `task/finished` is ordered before the next accepted `task/run`.
 #[test]
@@ -772,35 +800,27 @@ fn indexing_runs_and_close_reopen_are_ordered() {
         Some(_) => {}
     }
 
+    // The run waits for the first index, for up to the grace.
+    let (run_mark, sent) = (c.trace.len(), Instant::now());
     c.result("task/run", json!({"project_id": pid, "session_id": sid, "prompt": "Summarize"}));
     let status = c.result("project/status", json!({"project_id": pid}));
     assert!(status["indexing"] == true || status["index"]["generation"].as_u64().unwrap() >= 1, "indexing is reported while the run waits for it: {status}");
     assert_eq!(status["running_task"]["session_id"], json!(sid));
     let finished = c.wait_notification(|n| is_notification(n, "task/finished", &pid));
     assert_eq!(finished["params"]["status"], "completed", "{finished}");
-    let ready_at = c.trace_position(0, |f| is_notification(f, "index/ready", &pid)).expect("index/ready");
-    let started_at = c.trace_position(0, |f| is_event(f, &pid, "task_started")).expect("task_started");
-    assert!(ready_at < started_at, "index/ready@{ready_at} must precede task_started@{started_at}");
+    c.index_ready_before_start(&pid, 0, run_mark, sent);
 
-    // Rebuild, then run: the run waits for the rebuild, for up to the
-    // runner's 2 s grace (a slow disk, or a virus scanner on Windows, can
-    // make 400 files take longer; the run then starts without it).
+    // Rebuild, then run: the run waits for the rebuild the same way.
     let mark = c.trace.len();
     assert_eq!(c.result("index/rebuild", json!({"project_id": pid})), json!({}));
+    let (run_mark, sent) = (c.trace.len(), Instant::now());
     c.result("task/run", json!({"project_id": pid, "session_id": sid, "prompt": "Summarize again"}));
     let status = c.result("project/status", json!({"project_id": pid}));
     assert!(status["indexing"] == true || c.trace_position(mark, |f| is_notification(f, "index/ready", &pid)).is_some(), "{status}");
     let finished = c.wait_notification(|n| is_notification(n, "task/finished", &pid));
     assert_eq!(finished["params"]["status"], "completed", "{finished}");
-    let rebuilt = |f: &Value| is_notification(f, "index/ready", &pid) && f["params"]["rebuilt"] == true;
-    if c.trace_position(mark, rebuilt).is_none() {
-        c.wait_notification(rebuilt);
-    }
-    let ready_at = c.trace_position(mark, |f| is_notification(f, "index/ready", &pid)).expect("index/ready");
+    let ready_at = c.index_ready_before_start(&pid, mark, run_mark, sent);
     assert_eq!(c.trace[ready_at]["params"]["rebuilt"], true);
-    let started_at = c.trace_position(mark, |f| is_event(f, &pid, "task_started")).expect("task_started");
-    let rebuild_ms = c.trace[ready_at]["params"]["duration_ms"].as_u64().unwrap();
-    assert!(ready_at < started_at || rebuild_ms >= 2_000, "index/ready@{ready_at} must precede task_started@{started_at} unless the rebuild outlasted the grace ({rebuild_ms} ms)");
 
     // task/finished is queued before the slot is released: the first
     // accepted follow-up run always comes after it on the wire.
@@ -835,7 +855,10 @@ fn indexing_runs_and_close_reopen_are_ordered() {
     let closed_at = c.trace.len();
     let reopened = c.result("project/open", json!({"path": repo.path()}));
     assert_eq!(reopened["project_id"], json!(pid));
-    c.wait_notification(|n| is_notification(n, "index/ready", &pid));
+    // Earlier passes' index/ready may still be buffered: wait for this one.
+    while c.trace_position(closed_at, |f| is_notification(f, "index/ready", &pid)).is_none() {
+        c.wait_notification(|n| is_notification(n, "index/ready", &pid));
+    }
     c.drain_for(Duration::from_secs(2));
     let readies = c.trace.iter().skip(closed_at).filter(|f| is_notification(f, "index/ready", &pid)).count();
     assert_eq!(readies, 1, "one index/ready after close+reopen, none from the orphaned rebuild: {:#?}", c.trace.iter().skip(closed_at).filter(|f| f["method"] == "index/ready").collect::<Vec<_>>());
@@ -848,7 +871,7 @@ fn indexing_runs_and_close_reopen_are_ordered() {
     assert_eq!(c.result("shutdown", json!({})), json!({}));
     assert_eq!(c.child.wait().unwrap().code(), Some(0));
     let mut saw_finished = false;
-    while let Ok(frame) = c.rx.try_recv() {
+    while let Ok((_, frame)) = c.rx.try_recv() {
         let frame = frame.expect("well-formed frame after shutdown");
         saw_finished |= is_notification(&frame, "task/finished", &pid) && frame["params"]["session_id"] == sid.as_str();
     }
@@ -1026,7 +1049,7 @@ fn error_frames_are_redacted_and_requests_are_validated() {
 
     assert_eq!(c.result("shutdown", json!({})), json!({}));
     assert_eq!(c.child.wait().unwrap().code(), Some(0));
-    while let Ok(frame) = c.rx.try_recv() {
+    while let Ok((_, frame)) = c.rx.try_recv() {
         assert!(frame.is_ok(), "non-JSON output on stdout: {frame:?}");
     }
 }
