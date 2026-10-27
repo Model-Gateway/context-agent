@@ -167,7 +167,7 @@ extension StarterSuggestion {
 // MARK: - Index card
 
 /// "Index ready · 310 files · generation 12" (Rebuild on hover), "Indexing
-/// 120/310" with the spinner, or the failure line with a Rebuild button.
+/// 120/310" with the progress ring, or the failure line with a Rebuild button.
 private struct IndexCard: View {
     var project: ProjectState
 
@@ -177,7 +177,7 @@ private struct IndexCard: View {
     var body: some View {
         HStack(spacing: 10) {
             if isIndexing {
-                BrailleSpinner()
+                ProgressRing(fraction: project.indexFraction, size: 14)
             } else {
                 Image(systemName: project.hasIndexError ? Icons.warning : Icons.check)
                     .font(.system(size: 13, weight: .medium))
@@ -214,9 +214,7 @@ private struct IndexCard: View {
         .accessibilityLabel(project.indexSummary)
     }
 
-    private var isIndexing: Bool {
-        project.indexProgress != nil || (project.info.indexing && project.lastIndexReady == nil)
-    }
+    private var isIndexing: Bool { project.isIndexing }
 }
 
 // MARK: - Preview

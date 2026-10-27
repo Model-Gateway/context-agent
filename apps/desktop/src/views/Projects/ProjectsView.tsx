@@ -8,9 +8,9 @@ import { EmptyPlaceholder } from '../../components/EmptyPlaceholder'
 import { Menu, type MenuItem } from '../../components/Menu'
 import { SearchField } from '../../components/SearchField'
 import { Tooltip } from '../../components/Tooltip'
-import { abbreviatedPath, recentProjectExists, useRecentProjects, type RecentProject } from '../../models/recentProject'
+import { abbreviatedPath, recentProjectExists, type RecentProject } from '../../models/recentProject'
 import { useApp } from '../../state/app'
-import { useIsReady } from '../../state/selectors'
+import { useIsReady, useRecentProjectCards } from '../../state/selectors'
 import { Icon } from '../../theme/icons'
 import { RecentCard } from '../Welcome/RecentCard'
 import styles from './ProjectsView.module.css'
@@ -58,7 +58,7 @@ const standardCollator = new Intl.Collator(undefined, { numeric: true, sensitivi
  * at the right.
  */
 export function ProjectsView() {
-  const all = useRecentProjects()
+  const all = useRecentProjectCards()
   const projects = useApp((state) => state.projects)
   const ready = useIsReady()
   const [query, setQuery] = useState('')

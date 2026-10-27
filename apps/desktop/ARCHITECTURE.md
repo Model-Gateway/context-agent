@@ -327,7 +327,10 @@ SF-Symbol sizes the Swift views use (16 default, 12 in chips, 14 in
 buttons). `starter(kind)` and `fileType(path)` are ported.
 
 Loading: `BrailleSpinner` (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ at 80 ms, static ⠿ "Working" under
-`prefers-reduced-motion`). Never a native progress control.
+`prefers-reduced-motion`). Never a native progress control. A project
+opening and building its index shows `ProgressRing` (an SVG arc filled to
+`index/progress` done/total, a turning quarter arc until the total is
+known) on the recent cards and the empty chat's index card.
 
 Accessibility: every `IconButton` has `aria-label` and a tooltip; pills
 carry the status word in text; decorative elements `aria-hidden`. All

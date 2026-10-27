@@ -61,6 +61,10 @@ ring, `.selectable`, `.card`, `.hover-highlight`, `.floating-shadow`,
   the surrounding colour), `className?`, `style?`. ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ at 80 ms, static ⠿
   with Reduce Motion, labelled "Working". Also exports `useReducedMotion()`,
   `brailleFrame(at?)`, `BRAILLE_FRAMES`.
+- **ProgressRing** — `fraction` (0…1, or `null` while the total is not known), `size? = 16`,
+  `lineWidth? = 2`, `tint? = var(--accent)`, `className?`, `style?`. A track and an arc
+  filled to `fraction`; a quarter arc turning once a second while `null` (still with
+  Reduce Motion). For a project opening and indexing; other waits use BrailleSpinner.
 - **InlineDots** — `tint? = var(--text-tertiary)`, `className?`, `style?`.
 - **Skeleton** — the pulse wrapper `Skeleton { label? = "Loading", active? = true,
   children, className?, style? }` with the shapes as members:

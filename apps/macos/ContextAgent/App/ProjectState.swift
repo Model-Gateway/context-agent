@@ -150,6 +150,17 @@ final class ProjectState: Identifiable {
 
     var hasIndexError: Bool { lastIndexReady?.error != nil }
 
+    /// An index pass is running (on a first open it builds the whole index).
+    var isIndexing: Bool {
+        indexProgress != nil || (info.indexing && lastIndexReady == nil)
+    }
+
+    /// How far the running index pass is; nil until it knows its total.
+    var indexFraction: Double? {
+        guard let progress = indexProgress, progress.total > 0 else { return nil }
+        return min(1, Double(progress.done) / Double(progress.total))
+    }
+
     /// "Index ready · 310 files · generation 12" / "Indexing 120/310" / failure.
     var indexSummary: String {
         if let progress = indexProgress, progress.total > 0 {

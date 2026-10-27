@@ -278,7 +278,7 @@ function IndexCard({ project }: { project: ProjectState }) {
   const index = project.info.index
   const progress = project.indexProgress
   const ready = project.lastIndexReady
-  const isIndexing = progress !== null || (project.info.indexing && ready === null)
+  const isIndexing = project.isIndexing
   const rebuildDisabled = project.isRunning || isIndexing
   const rebuildHelp = project.isRunning ? 'Finishes after the running task' : isIndexing ? 'Indexing is already in progress' : 'Re-index the repository from scratch'
   const lastFull = index.last_full_index_at != null ? parseRFC3339(index.last_full_index_at) : null

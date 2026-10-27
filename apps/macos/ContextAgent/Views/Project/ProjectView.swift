@@ -287,9 +287,7 @@ private struct IndexCard: View {
         }
     }
 
-    private var isIndexing: Bool {
-        project.indexProgress != nil || (project.info.indexing && project.lastIndexReady == nil)
-    }
+    private var isIndexing: Bool { project.isIndexing }
 
     @ViewBuilder
     private var status: some View {

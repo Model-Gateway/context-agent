@@ -3,9 +3,10 @@
 import { memo, useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
 import type { StarterSuggestion } from '../../backend/types'
-import { BrailleSpinner, useReducedMotion } from '../../components/BrailleSpinner'
+import { useReducedMotion } from '../../components/BrailleSpinner'
 import { Button } from '../../components/Button'
 import { HalftoneHeader } from '../../components/HalftoneHeader'
+import { ProgressRing } from '../../components/ProgressRing'
 import { Skeleton } from '../../components/Skeleton'
 import { Tooltip } from '../../components/Tooltip'
 import { useApp, useProjectValue } from '../../state/app'
@@ -157,12 +158,13 @@ const StarterRow = memo(function StarterRow({ starter, hintId, onInsert }: { sta
 // MARK: - Index card
 
 /// `IndexCard`: "Index ready · 310 files · generation 12" (Rebuild on
-/// hover), "Indexing 120/310" with the spinner, or the failure line with a
+/// hover), "Indexing 120/310" with the progress ring, or the failure line with a
 /// Rebuild button.
 function IndexCard({ project }: { project: ProjectState }) {
   const summary = useProjectValue(project, (p) => p.indexSummary, '')
   const hasError = useProjectValue(project, (p) => p.hasIndexError, false)
-  const indexing = useProjectValue(project, (p) => p.indexProgress !== null || (p.info.indexing && p.lastIndexReady === null), false)
+  const indexing = useProjectValue(project, (p) => p.isIndexing, false)
+  const fraction = useProjectValue(project, (p) => p.indexFraction, null)
   const [hovering, setHovering] = useState(false)
 
   return (
@@ -174,7 +176,7 @@ function IndexCard({ project }: { project: ProjectState }) {
       aria-label={summary}
     >
       {indexing ? (
-        <BrailleSpinner />
+        <ProgressRing fraction={fraction} size={14} />
       ) : (
         <Icon name={hasError ? 'warning' : 'check'} size={13} strokeWidth={2} className={hasError ? styles.indexIconError : styles.indexIconReady} />
       )}

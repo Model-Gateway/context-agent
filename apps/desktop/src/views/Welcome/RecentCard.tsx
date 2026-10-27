@@ -1,12 +1,13 @@
 import { memo, useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { BrailleSpinner } from '../../components/BrailleSpinner'
 import { Chip } from '../../components/Chip'
 import { ContextMenu } from '../../components/ContextMenu'
 import { IconButton } from '../../components/IconButton'
 import type { MenuItem } from '../../components/Menu'
 import { MiddleTruncate } from '../../components/MiddleTruncate'
 import { revealLabel } from '../../components/platform'
+import { ProgressRing } from '../../components/ProgressRing'
 import { Tooltip } from '../../components/Tooltip'
+import { usePref } from '../../models/preferences'
 import { abbreviatedPath, RecentProjects, recentProjectExists, type RecentProject } from '../../models/recentProject'
 import { TranscriptFormat } from '../../models/transcript'
 import { useApp } from '../../state/app'
@@ -60,16 +61,33 @@ function revealFolder(path: string): void {
   })
 }
 
+/** "Indexing 42%", or "Indexing…" until the pass knows its total. */
+function indexingLabel(fraction: number | null): string {
+  return fraction === null ? 'Indexing…' : `Indexing ${Math.floor(fraction * 100)}%`
+}
+
 /**
  * `RecentCard` (Views/Welcome/WelcomeView.swift), shared with the Projects
  * screen: a recent project as a card with its name, abbreviated path and
  * last-opened time; pinned ones carry a pin; hover reveals Remove; the
- * footer says "Opening…", "Open" or "Missing"; the context menu has Open,
- * Pin / Unpin, Reveal in Finder, Copy Path and Remove from Recents.
+ * footer says "Opening…", "Indexing 42%", "Open" or "Missing", and while
+ * the project opens and builds its index a progress ring takes the
+ * folder's place; the context menu has Open, Pin / Unpin, Reveal in Finder,
+ * Copy Path and Remove from Recents.
  */
 export const RecentCard = memo(function RecentCard({ recent, isOpen }: RecentCardProps) {
   const isOpening = useApp((state) => state.openingProjectPaths.includes(recent.path))
   const ready = useApp((state) => state.connection.kind === 'ready')
+  // The open project while its index pass runs; on a first open that pass
+  // builds the whole index. `undefined` when it is not indexing.
+  const indexFraction = useApp((state) => {
+    if (!isOpen) return undefined
+    const project = state.projects.find((candidate) => candidate.root === recent.path)
+    return project?.isIndexing ? project.indexFraction : undefined
+  })
+  const indexing = indexFraction !== undefined
+  // False for a folder being opened for the first time (not a recent yet): nothing to pin or remove.
+  const isRemembered = usePref('recents').some((item) => item.path === recent.path)
   const exists = useFolderExists(recent.path)
   const [hovering, setHovering] = useState(false)
   /** The pointer is over a control with a tooltip of its own: the card's stands down. */
@@ -97,15 +115,16 @@ export const RecentCard = memo(function RecentCard({ recent, isOpen }: RecentCar
 
   const menu = (): MenuItem[] => [
     { label: 'Open', disabled: !canOpen, onSelect: () => void useApp.getState().openProject(recent.path) },
-    { label: recent.pinned ? 'Unpin' : 'Pin', onSelect: () => RecentProjects.togglePin(recent.path) },
+    { label: recent.pinned ? 'Unpin' : 'Pin', disabled: !isRemembered, onSelect: () => RecentProjects.togglePin(recent.path) },
     { label: revealLabel, disabled: !exists, onSelect: () => revealFolder(recent.path) },
     { label: 'Copy Path', onSelect: () => useApp.getState().copyToPasteboard(recent.path) },
     { type: 'separator' },
-    { label: 'Remove from Recents', destructive: true, onSelect: () => RecentProjects.remove(recent.path) },
+    { label: 'Remove from Recents', destructive: true, disabled: !isRemembered, onSelect: () => RecentProjects.remove(recent.path) },
   ]
 
-  const status = isOpening ? ', opening' : isOpen ? ', open' : ''
+  const status = isOpening ? ', opening' : indexing ? `, ${indexingLabel(indexFraction).toLowerCase()}` : isOpen ? ', open' : ''
   const active = hovering && canOpen
+  const showRemove = hovering && isRemembered
 
   return (
     <ContextMenu items={menu}>
@@ -125,17 +144,24 @@ export const RecentCard = memo(function RecentCard({ recent, isOpen }: RecentCar
           }}
         >
           <div className={styles.titleRow}>
-            <Icon name="folder" size={15} strokeWidth={1.85} className={[styles.folder, exists ? '' : styles.missingFolder].filter(Boolean).join(' ')} />
+            {/* While the project opens and builds its index the folder gives way to the progress ring. */}
+            {isOpening || indexing ? (
+              <span className={styles.ringSlot} aria-hidden>
+                <ProgressRing fraction={isOpening ? null : (indexFraction ?? null)} />
+              </span>
+            ) : (
+              <Icon name="folder" size={15} strokeWidth={1.85} className={[styles.folder, exists ? '' : styles.missingFolder].filter(Boolean).join(' ')} />
+            )}
             <MiddleTruncate text={recent.name} className={styles.name} />
             {recent.pinned ? <Icon name="pinned" size={10} strokeWidth={2} className={styles.pin} aria-label="Pinned" /> : null}
             {/* Always laid out, shown on hover and held to the row's 20 px, so hovering never resizes the card. */}
             <span
-              className={[styles.remove, hovering ? styles.visible : ''].filter(Boolean).join(' ')}
-              aria-hidden={!hovering || undefined}
+              className={[styles.remove, showRemove ? styles.visible : ''].filter(Boolean).join(' ')}
+              aria-hidden={!showRemove || undefined}
               onPointerEnter={() => setOverControl(true)}
               onPointerLeave={() => setOverControl(false)}
             >
-              <IconButton icon="close" label="Remove from recents" size={11} tabIndex={hovering ? 0 : -1} onClick={remove} />
+              <IconButton icon="close" label="Remove from recents" size={11} tabIndex={showRemove ? 0 : -1} onClick={remove} />
             </span>
           </div>
           <MiddleTruncate text={path} className={styles.path} />
@@ -143,10 +169,9 @@ export const RecentCard = memo(function RecentCard({ recent, isOpen }: RecentCar
             <span className={styles.opened}>Opened {TranscriptFormat.relative(recent.lastOpened)}</span>
             <span className={styles.spacer} />
             {isOpening ? (
-              <span className={styles.opening}>
-                <BrailleSpinner size={10} tint="var(--text-tertiary)" />
-                <span>Opening…</span>
-              </span>
+              <span className={styles.busy}>Opening…</span>
+            ) : indexing ? (
+              <span className={styles.busy}>{indexingLabel(indexFraction)}</span>
             ) : isOpen ? (
               <Chip variant="tinted" tint="var(--success)">
                 Open

@@ -3,9 +3,9 @@ import { describe } from '../../backend/errors'
 import { BrailleSpinner } from '../../components/BrailleSpinner'
 import { MiddleTruncate } from '../../components/MiddleTruncate'
 import { Tooltip } from '../../components/Tooltip'
-import { abbreviatedPath, useRecentProjects } from '../../models/recentProject'
+import { abbreviatedPath } from '../../models/recentProject'
 import { useApp, type ConnectionState } from '../../state/app'
-import { useConnectionLabel, useNeedsAPIKey } from '../../state/selectors'
+import { useConnectionLabel, useNeedsAPIKey, useRecentProjectCards } from '../../state/selectors'
 import { Icon } from '../../theme/icons'
 import { LogoView } from '../../theme/logo'
 import { BackendFailurePanel } from './BackendFailurePanel'
@@ -75,7 +75,7 @@ function Hero({ connection }: { connection: ConnectionState }) {
 /// The recent projects as cards, pinned first; "View all" opens the
 /// Projects screen (search, filter, sort).
 function RecentsGrid() {
-  const recents = useRecentProjects()
+  const recents = useRecentProjectCards()
   const projects = useApp((state) => state.projects)
   const openRoots = useMemo(() => new Set(projects.map((project) => project.root)), [projects])
   return (

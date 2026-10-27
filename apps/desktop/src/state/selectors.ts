@@ -14,8 +14,9 @@ import { useMemo } from 'react'
 import { describe as describeFailure, type BackendFailure } from '../backend/errors'
 import { isDiscountDrop, type ApprovalRequest } from '../backend/types'
 import { isProjectCollapsed } from '../models/preferences'
+import { lastPathComponent, useRecentProjects, type RecentProject } from '../models/recentProject'
 import { chatStatusIsRunning } from '../models/reducer'
-import { existingBrowser, useApp, type AppStore, type ConnectionState } from './app'
+import { existingBrowser, restoreRank, useApp, type AppStore, type ConnectionState } from './app'
 import { useBrowserWorkspace } from './browser'
 import type { ChatState } from './chat'
 import type { ProjectState } from './project'
@@ -258,6 +259,30 @@ export function useWorktreeRows(project: ProjectState | null): { visible: Projec
 export function usePendingProjectPaths(): string[] {
   const version = useAppVersion()
   return useMemo(() => pendingProjectPaths(useApp.getState()), [version])
+}
+
+/// `recentProjectCards`: the recents grids' cards (Welcome, Projects): the
+/// remembered projects after the folders being opened for the first time,
+/// so a new project has its card as soon as it is chosen instead of once
+/// `project/open` returns. Folders reopened at launch are left out: a
+/// worktree is not among the recents and gets no card.
+export function useRecentProjectCards(): RecentProject[] {
+  const recents = useRecentProjects()
+  // Joined into a string so the grids re-render only when these folders change.
+  const opening = useApp((state) =>
+    pendingProjectPaths(state)
+      .filter((path) => restoreRank(path) === Number.MAX_SAFE_INTEGER)
+      .join('\n'),
+  )
+  return useMemo(() => {
+    const remembered = new Set(recents.map((recent) => recent.path))
+    const fresh = opening
+      .split('\n')
+      .filter((path) => path.length > 0 && !remembered.has(path))
+      .reverse()
+      .map((path): RecentProject => ({ path, name: lastPathComponent(path), lastOpened: new Date(), pinned: false }))
+    return [...fresh, ...recents]
+  }, [recents, opening])
 }
 
 /** `canRewind(_:)` for `chat`. */

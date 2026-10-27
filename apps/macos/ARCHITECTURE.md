@@ -154,6 +154,7 @@ apps/macos/
       Icons.swift                             # S2  every SF Symbol name used in the app + LogoView (✳)
     Components/
       BrailleSpinner.swift                    # S2  ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ @ 80 ms; reduced-motion static ⠿; InlineDots
+      ProgressRing.swift                      #     circular progress (opening / indexing a project); turning quarter arc until the total is known
       Chip.swift                              # S2  rounded label chips (neutral / tinted / badge)
       IconButton.swift                        # S2  icon buttons with hover, tooltip and accessibility label
       SearchField.swift                       # S2  rounded search field with kbd hint
@@ -271,9 +272,13 @@ Typography (`Theme.Font`): `title` 22 semibold, `heading` 15 semibold,
 Logo: the ✳ asterisk glyph (`Icons.LogoView`), 22 pt, `textPrimary`.
 
 Loading: every async wait shows `BrailleSpinner` (never a system
-`ProgressView`): sidebar rows while running, model picker, index card,
+`ProgressView`): sidebar rows while running, model picker,
 approval/cancel in flight, settings probe, doctor. With
 `accessibilityReduceMotion` the spinner is a static ⠿ labelled "Working".
+A project opening and building its index shows `ProgressRing` instead
+(recent cards, the empty chat's index card): an accent arc filled to
+`index/progress` done/total, a turning quarter arc until the total is
+known (still with Reduce Motion).
 
 Accessibility: every `IconButton` has a non-empty label (tooltip +
 `accessibilityLabel`); status pills and failed tool rows carry the status
@@ -401,7 +406,10 @@ the field becomes a magnifier icon last.
 
 **Welcome**: hero "Context" + one-line pitch, big "Open a project…"
 button, recents grid (name, path, last opened; hover Remove; pinned first;
-context menu Pin/Unpin), the *Connect a model* card when `needsAPIKey`
+context menu Pin/Unpin; a folder opened for the first time gets its card
+at once, and while a project opens and indexes a `ProgressRing` takes the
+folder's place with "Opening…" / "Indexing 42%" in the footer), the
+*Connect a model* card when `needsAPIKey`
 (below), backend status footer, drop target.
 
 **Connect a model card** (Welcome and EmptyChat when `appState.needsAPIKey`):
@@ -1057,6 +1065,7 @@ is a follow-up, not v1.
 
 ```swift
 struct BrailleSpinner: View { init(size: CGFloat = 12, tint: Color = Theme.textSecondary) }
+struct ProgressRing: View { init(fraction: Double?, size: CGFloat = 16, lineWidth: CGFloat = 2, tint: Color = Theme.accent) }
 struct InlineDots: View { init(tint: Color = Theme.textTertiary) }
 struct Chip: View { enum Style { case neutral, tinted(Color), badge }; init(_ text: String, systemImage: String? = nil, style: Style = .neutral) }
 struct IconButton: View { init(_ systemImage: String, label: String, isActive: Bool = false, size: CGFloat = 16, action: @escaping () -> Void) }

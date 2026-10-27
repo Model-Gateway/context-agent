@@ -274,6 +274,18 @@ export class ProjectState {
     return this.lastIndexReady?.error != null
   }
 
+  /** An index pass is running (on a first open it builds the whole index). */
+  get isIndexing(): boolean {
+    return this.indexProgress !== null || (this.info.indexing && this.lastIndexReady === null)
+  }
+
+  /** How far the running index pass is; null until it knows its total. */
+  get indexFraction(): number | null {
+    const progress = this.indexProgress
+    if (!progress || progress.total <= 0) return null
+    return Math.min(1, progress.done / progress.total)
+  }
+
   /** "Index ready · 310 files · generation 12" / "Indexing 120/310" / failure. */
   get indexSummary(): string {
     const progress = this.indexProgress
