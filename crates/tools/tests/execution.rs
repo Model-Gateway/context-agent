@@ -245,6 +245,22 @@ async fn backgrounded_processes_never_wedge_a_command() {
 }
 
 #[tokio::test]
+async fn powershell_runs_beside_bash_without_its_quoting() {
+    let (_dir, ctx, tools) = fixture(PermissionProfile::WorkspaceAutonomous, Arc::new(AutoApprove));
+    // What broke when the script went through bash first: a `$` variable
+    // and PowerShell's doubled single quote.
+    let r = tools.execute(&call("execute_command", json!({"command": "$x = 'it''s'; Write-Output \"[$x]\"", "shell": "powershell"})), &ctx).await;
+    if ctx_core::platform::powershell_alongside().is_none() {
+        // Offered only on Windows next to a POSIX shell; elsewhere the schema has no `shell`.
+        assert!(r.output.is_error, "{}", r.output.content);
+        return;
+    }
+    assert!(!r.output.is_error && r.output.content.contains("[it's]"), "{}", r.output.content);
+    let r = tools.execute(&call("execute_command", json!({"command": "exit 3", "shell": "powershell"})), &ctx).await;
+    assert!(r.output.content.contains("(exit 3,"), "{}", r.output.content);
+}
+
+#[tokio::test]
 async fn validation_override_is_gated_like_any_command() {
     let (_dir, ctx, tools) = fixture(PermissionProfile::WorkspaceAutonomous, Arc::new(DenyAll));
     // Detected validation command: allowed without a prompt.
