@@ -205,6 +205,7 @@ impl Client {
         let ready_at = self.trace_position(ready_from, ready).unwrap();
         let started_at = self.trace_position(run_from, |f| is_event(f, project_id, "task_started")).expect("task_started");
         let waited = self.trace_at[started_at] - sent;
+        eprintln!("DIAG index wait: ready@{ready_at} started@{started_at} run_started_after={waited:?} ready_after={:?} ready={}", self.trace_at[ready_at].saturating_duration_since(sent), self.trace[ready_at]["params"]);
         assert!(ready_at < started_at || waited >= INDEX_WAIT_GRACE, "index/ready@{ready_at} must precede task_started@{started_at} unless the run waited out the grace (it started {waited:?} after it was requested)");
         ready_at
     }
@@ -842,6 +843,7 @@ fn indexing_runs_and_close_reopen_are_ordered() {
         assert_eq!(r["error"]["code"], -32002, "{r}");
     }
     let accepted_at = accepted_at.expect("the second run is accepted once the first ends");
+    eprintln!("DIAG probe: refused {} times, accepted {:?} after the first run was requested; its task/finished arrived {:?} after", c.trace[mark..].iter().filter(|f| f["error"]["code"] == -32002).count(), c.trace_at[accepted_at] - c.trace_at[mark], c.trace_at[c.trace_position(mark, |f| is_notification(f, "task/finished", &pid)).unwrap()] - c.trace_at[mark]);
     let first_finished = c.trace_position(mark, |f| is_notification(f, "task/finished", &pid)).expect("task/finished of the first run");
     assert!(first_finished < accepted_at, "task/finished@{first_finished} must precede the next accepted task/run@{accepted_at}");
     // The first run's task/finished is already buffered; wait until the
