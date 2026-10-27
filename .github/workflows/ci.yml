@@ -76,12 +76,13 @@ jobs:
       - name: Type-check and lint
         working-directory: apps/desktop
         run: npm run check
-      - name: Embed the ctx sidecar
+      # The release script without signing (release-windows.yml signs), so
+      # every change exercises the path a release takes.
+      - name: Build the installers
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File apps/desktop/scripts/embed-ctx.ps1
-      - name: Build the installer
-        working-directory: apps/desktop
-        run: npm run tauri build -- --config src-tauri/tauri.bundle.conf.json
+        env:
+          SKIP_SIGN: "1"
+        run: powershell -ExecutionPolicy Bypass -File apps/desktop/scripts/release.ps1
       - name: Self-test the app against the mock backend
         shell: pwsh
         timeout-minutes: 6

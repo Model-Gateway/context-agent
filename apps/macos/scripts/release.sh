@@ -23,7 +23,9 @@
 #              NOTARY_PROFILE (default: context-notary), SKIP_NOTARIZE=1 to sign only,
 #              NOTES=<file.md> release notes (the update window and the GitHub release),
 #              PUBLISH=1 to create the GitHub release v<version> with the zip, dmg and
-#              appcast.xml (needs a clean checkout of the pushed commit being released),
+#              appcast.xml (needs a clean checkout of the pushed commit being released);
+#              publishing starts .github/workflows/release-windows.yml, which attaches
+#              the signed Windows installers to the same release,
 #              RELEASE_REPO (default: Model-Gateway/context-agent).
 set -euo pipefail
 
