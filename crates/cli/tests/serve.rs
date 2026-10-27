@@ -198,7 +198,8 @@ impl Client {
     /// then starts, but not before the grace.
     fn index_ready_before_start(&mut self, project_id: &str, ready_from: usize, run_from: usize, sent: Instant) -> usize {
         let ready = |f: &Value| is_notification(f, "index/ready", project_id);
-        if self.trace_position(ready_from, ready).is_none() {
+        // An earlier pass's index/ready may still be buffered: wait for this one.
+        while self.trace_position(ready_from, ready).is_none() {
             self.wait_notification(ready);
         }
         let ready_at = self.trace_position(ready_from, ready).unwrap();
@@ -827,8 +828,12 @@ fn indexing_runs_and_close_reopen_are_ordered() {
     c.drain_for(Duration::from_millis(200));
     let mark = c.trace.len();
     c.result("task/run", json!({"project_id": pid, "session_id": sid, "prompt": "Ordering probe"}));
+    // Retry back to back for as long as the first run may take, not a
+    // fixed number of times: its working-tree snapshot and reconcile of 400
+    // files take seconds on a slow disk (the Windows runner).
+    let deadline = Instant::now() + TIMEOUT;
     let mut accepted_at = None;
-    for _ in 0..2000 {
+    while Instant::now() < deadline {
         let r = c.request("task/run", json!({"project_id": pid, "session_id": sid, "prompt": "Ordering probe 2"}));
         if r.get("result").is_some() {
             accepted_at = Some(c.trace.len() - 1);
