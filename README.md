@@ -74,7 +74,7 @@ The app keeps itself up to date: it checks for a new release once a day, downloa
 
 ### Windows
 
-Download `Context_<version>_x64-setup.exe` (or the `.msi`) from [Releases](../../releases). The desktop app bundles `ctx.exe`; the CLI runs natively in Windows Terminal, PowerShell or Git Bash, without WSL. Install [Git for Windows](https://git-scm.com/download/win) as well: the agent runs its commands in its bash when it is there. Details, including building from source: [docs/windows.md](docs/windows.md).
+Download `Context_<version>_x64-setup.exe` (or the `.msi`) from [Releases](../../releases). The desktop app bundles `ctx.exe`; the CLI runs natively in Windows Terminal, PowerShell or Git Bash, without WSL. Install [Git for Windows](https://git-scm.com/download/win) as well: the agent runs its commands in its bash when it is there. The Windows app updates itself like the macOS app (**Check for updates…** in the command palette); copies installed from 0.1.2 or earlier need a later release installed over them once. Details, including building from source: [docs/windows.md](docs/windows.md).
 
 ### From source
 

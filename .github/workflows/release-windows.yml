@@ -1,16 +1,19 @@
 name: Release (Windows)
 
-# Builds the signed Windows installers with apps/desktop/scripts/release.ps1.
-# Publishing a GitHub release (apps/macos/scripts/release.sh PUBLISH=1) starts
-# it, and it attaches the installers to that release. Run it by hand with the
-# tag of an existing release to rebuild its installers, or without a tag for a
-# signed dry run of the chosen branch whose installers are only kept as a
+# Builds the signed Windows installers and the update feed (their .sig files
+# and latest.json) with apps/desktop/scripts/release.ps1. Publishing a GitHub
+# release (apps/macos/scripts/release.sh PUBLISH=1) starts it, and it attaches
+# them to that release, where installed copies find latest.json. Run it by
+# hand with the tag of an existing release to rebuild them, or without a tag
+# for a signed dry run of the chosen branch whose files are only kept as a
 # workflow artifact.
 #
 # The windows-release environment holds the Azure IDs and signing account
-# names as variables. There is no secret: azure/login exchanges GitHub's OIDC
-# token, and the Azure app trusts only tokens for jobs in this environment,
-# which only main and v* tags can deploy to.
+# names as variables, and the updater's minisign key as the secrets
+# TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD. Azure
+# needs no secret: azure/login exchanges GitHub's OIDC token, and the Azure
+# app trusts only tokens for jobs in this environment, which only main and v*
+# tags can deploy to.
 
 on:
   release:
@@ -76,16 +79,20 @@ jobs:
           ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
           ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
           ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           PUBLISH: ${{ env.TAG != '' && '1' || '0' }}
           RELEASE_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = if ($env:TAG) { $env:TAG.TrimStart('v') } else { '' }
           ./apps/desktop/scripts/release.ps1 -Version $version
-      - name: Upload the installers
+      - name: Upload the installers and the update feed
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: context-windows-${{ env.TAG || github.sha }}
-          path: dist/Context_*
+          path: |
+            dist/Context_*
+            dist/latest.json
           if-no-files-found: ignore

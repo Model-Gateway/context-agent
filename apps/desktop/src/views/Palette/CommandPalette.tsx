@@ -11,8 +11,10 @@
 // eight actions here: Find in chat, Copy transcript as Markdown, Export chat
 // as Markdown… (File), Toggle auto save (File → Auto Save), Toggle sidebar
 // (View), Go to Welcome / Projects / Apps (Go), one "Open <name>" per recent
-// project and Clear recent projects (File → Open Recent). They run the same
-// commands as the shortcuts and menus (state/keys.ts).
+// project and Clear recent projects (File → Open Recent), and Check for
+// updates… (Context → Check for Updates…, only in builds that update
+// themselves). They run the same commands as the shortcuts and menus
+// (state/keys.ts).
 
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -30,6 +32,7 @@ import { ChatState } from '../../state/chat'
 import { setEditorAutoSave } from '../../state/editor'
 import { clearRecentProjects, copyTranscript, exportChatAsMarkdown, findInChat } from '../../state/keys'
 import { selectedChat, useAppVersion } from '../../state/selectors'
+import { checkForUpdates, useUpdater } from '../../state/updater'
 import { newWorktreeChat } from '../../state/worktrees'
 import { Icon, type IconName } from '../../theme/icons'
 import styles from './CommandPalette.module.css'
@@ -84,6 +87,7 @@ type PaletteAction =
   | 'toggleInspector'
   | 'runDoctor'
   | 'settings'
+  | 'checkForUpdates'
   | 'findInChat'
   | 'copyTranscript'
   | 'exportChat'
@@ -102,6 +106,7 @@ const PALETTE_ACTIONS: readonly PaletteAction[] = [
   'toggleInspector',
   'runDoctor',
   'settings',
+  'checkForUpdates',
   'findInChat',
   'copyTranscript',
   'exportChat',
@@ -123,6 +128,8 @@ interface ActionInfo {
   needsProject: boolean
   /** Needs a selected chat (the Swift commands toast "Select a chat…" without one). */
   needsChat?: boolean
+  /** Only in builds that update themselves (`Updater.isAvailable`). */
+  needsUpdater?: boolean
 }
 
 const ACTION_INFO: Record<PaletteAction, ActionInfo> = {
@@ -134,6 +141,7 @@ const ACTION_INFO: Record<PaletteAction, ActionInfo> = {
   toggleInspector: { title: 'Toggle inspector', detail: 'Show or hide the Run / Log pane', shortcut: 'mod+shift+I', macShortcut: '⌘⇧I', icon: 'inspector', needsProject: false },
   runDoctor: { title: 'Run doctor', detail: 'Check configuration, repository and provider', shortcut: null, macShortcut: null, icon: 'doctor', needsProject: true },
   settings: { title: 'Settings…', detail: 'General, Model, Permissions, Pricing, Appearance', shortcut: 'mod+,', macShortcut: '⌘,', icon: 'settings', needsProject: false },
+  checkForUpdates: { title: 'Check for updates…', detail: 'Look for a new release of Context on GitHub', shortcut: null, macShortcut: null, icon: 'refresh', needsProject: false, needsUpdater: true },
   findInChat: { title: 'Find in chat', detail: 'Search the messages of the selected chat', shortcut: 'mod+F', macShortcut: '⌘F', icon: 'search', needsProject: true, needsChat: true },
   copyTranscript: { title: 'Copy transcript as Markdown', detail: 'The whole chat on the clipboard', shortcut: 'mod+shift+C', macShortcut: '⌘⇧C', icon: 'copy', needsProject: true, needsChat: true },
   exportChat: { title: 'Export chat as Markdown…', detail: 'Save the whole chat as a Markdown file', shortcut: null, macShortcut: null, icon: 'docDown', needsProject: true, needsChat: true },
@@ -525,6 +533,9 @@ function run(action: PaletteAction): void {
     case 'settings':
       state.openSettings()
       return
+    case 'checkForUpdates':
+      void checkForUpdates()
+      return
     case 'findInChat':
       findInChat()
       return
@@ -645,10 +656,11 @@ function actionRows(query: string): PaletteRow[] {
   const state = useApp.getState()
   const hasProject = state.projects.some((project) => project.id === state.selectedProjectId)
   const hasChat = selectedChat(state) !== null
+  const updates = useUpdater.getState().status?.available === true
   const autoSave = getPref('editorAutoSave')
   const rows = PALETTE_ACTIONS.filter((action) => {
     const info = ACTION_INFO[action]
-    return (!info.needsProject || hasProject) && (!info.needsChat || hasChat)
+    return (!info.needsProject || hasProject) && (!info.needsChat || hasChat) && (!info.needsUpdater || updates)
   }).map((action): PaletteRow => {
     const info = ACTION_INFO[action]
     return {
