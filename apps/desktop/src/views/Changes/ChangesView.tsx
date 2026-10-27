@@ -486,33 +486,30 @@ function BranchRow({
 
   return (
     <div className={styles.branchRow}>
-      <Tooltip content={branchHelp}>
-        <button
-          ref={menuAnchor}
-          type="button"
-          className={styles.branchMenu}
-          disabled={busy}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          <Icon name="branch" size={12} strokeWidth={2} />
-          <span className={styles.branchName}>{status.branch != null ? ChatState.clip(status.branch, 20) : 'detached HEAD'}</span>
-          <Icon name="chevronDown" size={9} strokeWidth={2.5} className={styles.branchChevron} />
-        </button>
-      </Tooltip>
-      <Menu open={menuOpen} onClose={() => setMenuOpen(false)} items={menuOpen ? menuItems() : []} anchorRef={menuAnchor} aria-label="Branches" />
-      {status.upstream != null ? (
-        // `ViewThatFits`: the chip is dropped when the list is too narrow for it.
-        <span className={styles.aheadSlot}>
-          <span className={styles.aheadProbe} aria-hidden />
+      {/* `BranchLeadLayout`: the name truncates so the buttons always fit. */}
+      <span className={styles.branchLead}>
+        <Tooltip content={branchHelp}>
+          <button
+            ref={menuAnchor}
+            type="button"
+            className={styles.branchMenu}
+            disabled={busy}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <Icon name="branch" size={12} strokeWidth={2} />
+            <span className={styles.branchName}>{status.branch ?? 'detached HEAD'}</span>
+            <Icon name="chevronDown" size={9} strokeWidth={2.5} className={styles.branchChevron} />
+          </button>
+        </Tooltip>
+        {status.upstream != null ? (
           <Tooltip content={`${ahead} to push, ${behind} to pull (${status.upstream})`}>
             <Chip className={styles.aheadChip}>{`↑${ahead} ↓${behind}`}</Chip>
           </Tooltip>
-        </span>
-      ) : (
-        <span className={styles.flexSpacer} />
-      )}
+        ) : null}
+      </span>
+      <Menu open={menuOpen} onClose={() => setMenuOpen(false)} items={menuOpen ? menuItems() : []} anchorRef={menuAnchor} aria-label="Branches" />
       <Tooltip content="Fetch all remotes">
         <IconButton icon="fetch" label="Fetch" size={13} noTooltip disabled={busy} onClick={() => void fetch(project)} />
       </Tooltip>

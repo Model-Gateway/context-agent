@@ -717,7 +717,8 @@ The pane, top to bottom:
   Branches; `git/branches` / `git/checkout`), the "↑ahead ↓behind" chip when
   the branch has an upstream, then Fetch, Pull (context menu: Pull (Rebase))
   and Push… (`PushSheet`) icon buttons; everything disabled while an action
-  runs;
+  runs. When the row is narrow the branch name truncates, down to about ten
+  characters, then the chip is dropped, so the buttons always fit;
 - **commit box** (`CommitBox`): `TextEditor` bound to `project.commitMessage`
   with the placeholder "Message (⌘⏎ to commit on main)", ✨ Generate
   (`git/commit_message` → the box; a toast says when the message is the

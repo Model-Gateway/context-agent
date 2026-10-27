@@ -111,15 +111,36 @@
   padding: 0 12px 8px;
 }
 
-/* Menu(.borderlessButton, .controlSize(.small)) "⎇ main ⌄" */
+/* BranchLeadLayout: the menu and the ahead/behind chip share a wrapping line
+   whose second line is clipped away. The menu's basis is its floor (about ten
+   characters of name), so the chip keeps its place while the name truncates
+   down to that; past it the chip wraps away and the menu grows back. Also the
+   row's Spacer(minLength: 4). The 3px padding keeps the focus ring unclipped;
+   the 8px row gap puts the second line below it. */
+.branchLead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: flex-start;
+  gap: 8px 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 28px;
+  margin: -3px 0 -3px -7px;
+  padding: 3px 10px 3px 3px;
+  overflow: hidden;
+}
+
+/* "⎇ main ⌄" */
 .branchMenu {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  flex: 0 0 auto;
+  flex: 1 1 100px;
+  min-width: 0;
+  max-width: max-content;
   height: 22px;
   padding: 0 4px;
-  margin-left: -4px;
   border-radius: 5px;
   font-size: var(--font-size-secondary);
   color: var(--text-primary);
@@ -127,7 +148,11 @@
   white-space: nowrap;
 }
 
-.branchMenu:active:not(:disabled),
+.branchMenu > svg {
+  flex: none;
+}
+
+.branchMenu:hover:not(:disabled),
 .branchMenu[aria-expanded='true'] {
   background: var(--surface-raised);
 }
@@ -137,7 +162,9 @@
 }
 
 .branchName {
-  line-height: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .branchChevron {
@@ -145,27 +172,8 @@
   margin-left: 1px;
 }
 
-/* ViewThatFits(in: .horizontal) { chip; EmptyView() }: a zero-width probe
-   leads the line, so a chip that does not fit wraps onto the hidden second
-   line instead of overflowing. Also the row's Spacer(minLength: 4). */
-.aheadSlot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  flex: 1 1 0;
-  min-width: 0;
-  height: 20px;
-  overflow: hidden;
-  padding-right: 10px;
-}
-
-.aheadProbe {
-  width: 0;
-  height: 20px;
-}
-
 /* The chip keeps its full width (no ellipsis): it either fits or wraps away. */
-.aheadSlot .aheadChip {
+.branchLead .aheadChip {
   max-width: none;
 }
 
