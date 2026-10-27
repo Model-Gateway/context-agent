@@ -26,8 +26,10 @@
 #      apps/desktop). Its public half is plugins.updater.pubkey in
 #      src-tauri/tauri.conf.json; the private key and its password are the
 #      windows-release environment's secrets TAURI_SIGNING_PRIVATE_KEY and
-#      TAURI_SIGNING_PRIVATE_KEY_PASSWORD. Without the private key no installed
-#      copy accepts an update.
+#      TAURI_SIGNING_PRIVATE_KEY_PASSWORD, backed up in the release Mac's login
+#      keychain (service "Context updater signing key (Tauri)", one item per
+#      variable name). Without the private key no installed copy accepts an
+#      update.
 #
 # Usage: powershell -ExecutionPolicy Bypass -File apps\desktop\scripts\release.ps1 [-Version <version>]
 # Environment: ARTIFACT_SIGNING_ENDPOINT (e.g. https://eus.codesigning.azure.net),

@@ -48,7 +48,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENEMkU1MENGMzk1QTRDRDEKUldUUlRGbzV6MUF1emRXbVE4Rld6Y2JQUFROalJZV1Jwdktib0dpK0dya25uZHBWUUVTR0pxYWkK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERGRTcyOTMxRDdDNkFENTUKUldSVnJjYlhNU25uMzZ6cFJLLzFTMmxBVGVJSEc0eEZ1VWk3MVlJUngxbjM2WFk1cnlHZEpIMFUK",
       "endpoints": ["https://github.com/Model-Gateway/context-agent/releases/latest/download/latest.json"],
       "windows": { "installMode": "passive" }
     }
