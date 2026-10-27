@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-agent"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -570,7 +570,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -609,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-context"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "ctx-core",
@@ -622,7 +622,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -643,7 +643,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-embeddings"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ctx-core",
  "ctx-storage",
@@ -654,7 +654,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-evaluation"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "ctx-agent",
@@ -673,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-indexing"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "ctx-core",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-integration-tests"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ctx-agent",
  "ctx-core",
@@ -712,7 +712,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-languages"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ctx-core",
  "serde",
@@ -731,7 +731,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-lsp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "ctx-core",
@@ -746,7 +746,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-memory"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "ctx-core",
@@ -759,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-providers"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -777,7 +777,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-retrieval"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ctx-core",
  "ctx-embeddings",
@@ -795,7 +795,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-security"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ctx-core",
  "globset",
@@ -807,7 +807,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-storage"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "ctx-core",
@@ -821,7 +821,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-telemetry"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "ctx-core",
@@ -837,7 +837,7 @@ dependencies = [
 
 [[package]]
 name = "ctx-tools"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "chrono",
