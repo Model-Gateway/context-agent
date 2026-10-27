@@ -14,7 +14,7 @@ struct ProjectsView: View {
     private let columns = [GridItem(.adaptive(minimum: 240), spacing: 12, alignment: .top)]
 
     var body: some View {
-        let all = appState.recentProjects
+        let all = appState.recentProjectCards
         let shown = visible(all)
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 16) {

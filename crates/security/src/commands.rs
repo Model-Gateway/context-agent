@@ -88,6 +88,12 @@ const NETWORK: &[&str] = &[
 
 const DESTRUCTIVE: &[&str] = &["sudo", "su", "doas", "mkfs", "dd", "shutdown", "reboot", "halt", "poweroff", "crontab", "launchctl", "systemctl"];
 
+/// PowerShell's `Remove-Item` (and its alias `ri`) and cmd's `del` / `erase`
+/// / `rd` / `rmdir`, matched case-insensitively. Their recursive and
+/// wildcard forms (`-Recurse`, `/s`, `*.*`) are spelled too many ways to
+/// tell apart, so every use counts as destructive.
+const WINDOWS_DELETE: &[&str] = &["remove-item", "ri", "del", "erase", "rd", "rmdir"];
+
 fn split_segments(command: &str) -> Vec<String> {
     let mut segments = Vec::new();
     let mut current = String::new();
@@ -296,6 +302,9 @@ impl CommandClassifier {
             if DESTRUCTIVE.contains(&prog.as_str()) {
                 seg_class = CommandClass::Destructive;
                 reasons.push(format!("`{prog}` escalates privileges or modifies the system"));
+            } else if WINDOWS_DELETE.contains(&prog.to_ascii_lowercase().as_str()) {
+                seg_class = CommandClass::Destructive;
+                reasons.push(format!("`{prog}` deletes files"));
             } else if prog == "rm" {
                 seg_class = if args.iter().any(|a| a.starts_with('-') && (a.contains('r') || a.contains('R'))) {
                     reasons.push("recursive delete".into());
@@ -521,6 +530,17 @@ mod tests {
         assert_eq!(class("git -C sub reset --hard HEAD~1"), CommandClass::Destructive);
         assert_eq!(class("git --no-pager log -3"), CommandClass::ReadOnly);
         assert_eq!(class("cat <(ls)"), CommandClass::Unknown);
+    }
+
+    #[test]
+    fn windows_deletes_are_destructive() {
+        assert_eq!(class("Remove-Item -Recurse -Force C:/Windows/Temp/*"), CommandClass::Destructive);
+        assert_eq!(class("Get-ChildItem $env:TEMP | remove-item -Force"), CommandClass::Destructive);
+        assert_eq!(class("ri build"), CommandClass::Destructive);
+        assert_eq!(class("del /s /q *.log"), CommandClass::Destructive);
+        assert_eq!(class("ERASE out.txt"), CommandClass::Destructive);
+        assert_eq!(class("rd /s /q node_modules"), CommandClass::Destructive);
+        assert_eq!(class("rmdir /s /q dist"), CommandClass::Destructive);
     }
 
     #[test]

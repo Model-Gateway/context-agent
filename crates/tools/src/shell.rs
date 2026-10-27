@@ -66,7 +66,12 @@ impl CommandResult {
 /// the timeout: background processes that outlive the shell are left
 /// running and reported through `left_running`.
 pub async fn run_shell(ctx: &ToolContext, command: &str, cwd: &Path, timeout: Duration) -> Result<CommandResult> {
-    let wrapped = ctx.policy.sandbox().wrap_command(&ctx.shell, command);
+    run_shell_in(ctx, &ctx.shell, command, cwd, timeout).await
+}
+
+/// [`run_shell`] in `shell` instead of the session's shell.
+pub async fn run_shell_in(ctx: &ToolContext, shell: &str, command: &str, cwd: &Path, timeout: Duration) -> Result<CommandResult> {
+    let wrapped = ctx.policy.sandbox().wrap_command(shell, command);
     let program = wrapped.program.clone();
     let started = Instant::now();
     let deadline = tokio::time::Instant::now() + timeout;
@@ -303,10 +308,42 @@ fn execute_command_description() -> &'static str {
             ctx_core::platform::ShellKind::Cmd => "`start /b cmd /c \"<command> > %TEMP%\\x.log 2>&1\"`",
             ctx_core::platform::ShellKind::Posix => "`cmd > /tmp/x.log 2>&1 &`",
         };
+        let powershell = if ctx_core::platform::powershell_alongside().is_some() {
+            " For Windows administration (disks, services, the registry, CIM/WMI, event logs) pass `shell: \"powershell\"` and write plain PowerShell. Never wrap a script in `powershell -Command` inside bash: bash rewrites its `$` and quotes first."
+        } else {
+            ""
+        };
         format!(
-            "Run a shell command in the repository (builds, tests, linters, inspection). Output is captured; long-running commands are killed at the timeout. To start a server or watcher, background it with its output redirected ({background}); the call returns once the shell exits and the process keeps running. Destructive or network commands may require user approval.{}",
+            "Run a shell command in the repository (builds, tests, linters, inspection). Output is captured; long-running commands are killed at the timeout. To start a server or watcher, background it with its output redirected ({background}); the call returns once the shell exits and the process keeps running. Destructive or network commands may require user approval.{}{powershell}",
             shell.prompt_note()
         )
+    })
+}
+
+/// The parameter schema, with a `shell` choice when PowerShell runs
+/// alongside the default shell. Built once, like the description.
+fn execute_command_parameters() -> &'static Value {
+    static PARAMETERS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    PARAMETERS.get_or_init(|| {
+        let mut parameters = json!({
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "minLength": 1},
+                "cwd": {"type": "string", "description": "Working directory relative to the repository root"},
+                "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 3600}
+            },
+            "required": ["command"],
+            "additionalProperties": false
+        });
+        if ctx_core::platform::powershell_alongside().is_some() {
+            let default = ctx_core::platform::default_shell().display_name();
+            parameters["properties"]["shell"] = json!({
+                "type": "string",
+                "enum": [default, "powershell"],
+                "description": format!("The shell that runs `command` (default {default})")
+            });
+        }
+        parameters
     })
 }
 
@@ -315,6 +352,16 @@ struct ExecArgs {
     command: String,
     cwd: Option<String>,
     timeout_secs: Option<u64>,
+    shell: Option<String>,
+}
+
+/// The shell program `shell: "powershell"` asks for: the session's shell
+/// when it already is PowerShell, else PowerShell alongside it.
+fn requested_shell(ctx: &ToolContext, shell: Option<&str>) -> Result<String> {
+    if shell != Some("powershell") || ctx_core::platform::Shell::from_program(ctx.shell.as_str()).kind == ctx_core::platform::ShellKind::PowerShell {
+        return Ok(ctx.shell.clone());
+    }
+    ctx_core::platform::powershell_alongside().map(|s| s.program).ok_or_else(|| CtxError::tool("PowerShell is not available on this host"))
 }
 
 #[async_trait]
@@ -328,31 +375,27 @@ impl Tool for ExecuteCommand {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "minLength": 1},
-                "cwd": {"type": "string", "description": "Working directory relative to the repository root"},
-                "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 3600}
-            },
-            "required": ["command"],
-            "additionalProperties": false
-        })
+        execute_command_parameters().clone()
     }
 
     fn action(&self, args: &Value, ctx: &ToolContext) -> Result<Action> {
         let command = args["command"].as_str().unwrap_or_default().to_string();
         let cwd = args["cwd"].as_str().unwrap_or(".");
         let analysis = ctx.policy.classifier().classify(&command);
-        let details = format!("$ {command}\ncwd: {cwd}\nclassification: {} ({})", analysis.class.as_str(), analysis.reasons.join("; "));
+        let shell = match args["shell"].as_str() {
+            Some("powershell") => "\nshell: PowerShell",
+            _ => "",
+        };
+        let details = format!("$ {command}\ncwd: {cwd}{shell}\nclassification: {} ({})", analysis.class.as_str(), analysis.reasons.join("; "));
         Ok(Action { tool: "execute_command".into(), kind: ActionKind::Command { command: command.clone() }, summary: format!("run: {command}"), details })
     }
 
     async fn invoke(&self, args: Value, ctx: &ToolContext) -> Result<ToolOutput> {
         let a: ExecArgs = serde_json::from_value(args)?;
         let cwd = resolve_cwd(ctx, a.cwd.as_deref())?;
+        let shell = requested_shell(ctx, a.shell.as_deref())?;
         let timeout = Duration::from_secs(a.timeout_secs.unwrap_or(ctx.command_timeout.as_secs().max(1)));
-        let result = run_shell(ctx, &a.command, &cwd, timeout).await?;
+        let result = run_shell_in(ctx, &shell, &a.command, &cwd, timeout).await?;
         let status = if result.timed_out { format!("TIMED OUT after {}s", timeout.as_secs()) } else { format!("exit {}", result.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "signal".into())) };
         let mut out = format!("$ {}\n({status}, {} ms)\n{}", a.command, result.duration_ms, result.combined());
         if result.left_running {

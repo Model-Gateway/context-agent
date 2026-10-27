@@ -352,6 +352,25 @@ fn detect_shell() -> String {
     if let Some(posix) = posix_shell() {
         return posix.to_string_lossy().to_string();
     }
+    powershell_program()
+}
+
+/// PowerShell next to a POSIX default shell on Windows, for Windows-only
+/// work (disks, services, the registry, CIM). The script runs directly
+/// instead of passing through bash's quoting inside `powershell -Command`.
+/// `None` on Unix and when the default shell is already PowerShell or cmd.
+pub fn powershell_alongside() -> Option<Shell> {
+    #[cfg(windows)]
+    if default_shell().kind == ShellKind::Posix {
+        static PROGRAM: OnceLock<String> = OnceLock::new();
+        return Some(Shell::from_program(PROGRAM.get_or_init(powershell_program).clone()));
+    }
+    None
+}
+
+/// PowerShell 7 (`pwsh`) on `PATH`, else Windows PowerShell.
+#[cfg(windows)]
+fn powershell_program() -> String {
     if let Some(pwsh) = find_executable("pwsh") {
         return pwsh.to_string_lossy().to_string();
     }

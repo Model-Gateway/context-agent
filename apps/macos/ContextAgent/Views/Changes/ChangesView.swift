@@ -145,6 +145,7 @@ private struct ChangeListPane: View {
     @State private var commitFile: PathItem?
     @State private var discardTarget: DiscardTarget?
     @State private var confirmUndoCommit = false
+    @State private var hoveringBranch = false
 
     private var staged: [GitFileStatus] { status.stagedFiles }
     private var unstaged: [GitFileStatus] { status.unstagedFiles }
@@ -296,58 +297,22 @@ private struct ChangeListPane: View {
     }
 
     /// Branch menu (switch / create), ahead-behind chip, fetch / pull / push.
+    /// A long branch name truncates so the buttons always fit.
     private var branchRow: some View {
         HStack(spacing: 6) {
-            Menu {
-                if let branches = project.branches {
-                    Section("Branches") {
-                        ForEach(branches.local) { branch in
-                            Button {
-                                Task { await appState.checkout(branch.name, create: false, in: project) }
-                            } label: {
-                                if branch.name == branches.current {
-                                    Label(branch.name, systemImage: "checkmark")
-                                } else {
-                                    Text(branch.name)
-                                }
-                            }
-                            .disabled(branch.name == branches.current)
-                        }
-                    }
-                    let remoteOnly = branches.remote.filter { remote in !branches.local.contains { $0.name == remote.short } }
-                    if !remoteOnly.isEmpty {
-                        Section("Remote") {
-                            ForEach(remoteOnly) { remote in
-                                Button(remote.name) {
-                                    Task { await appState.checkout(remote.short, create: false, in: project) }
-                                }
-                            }
-                        }
+            BranchLeadLayout(spacing: 6) {
+                branchMenu
+                if status.upstream != nil {
+                    // Offered no width (dropped) when the list is too narrow for it.
+                    ViewThatFits(in: .horizontal) {
+                        Chip("↑\(status.ahead ?? 0) ↓\(status.behind ?? 0)")
+                            .help("\(status.ahead ?? 0) to push, \(status.behind ?? 0) to pull (\(status.upstream ?? ""))")
+                        EmptyView()
                     }
                 }
-                Divider()
-                Button("New Branch…") { newBranchSheet = true }
-                Button("Refresh Branches") {
-                    Task { await appState.loadBranches(project) }
-                }
-            } label: {
-                // Clipped: the menu is fixed-size and the list can be 220 pt.
-                Label(status.branch.map { ChatState.clip($0, 20) } ?? "detached HEAD", systemImage: Icons.branch)
-                    .font(Theme.Font.secondary)
-                    .lineLimit(1)
             }
-            .menuStyle(.borderlessButton)
-            .controlSize(.small)
-            .fixedSize()
-            .help("\(status.branch ?? "detached HEAD") · \(status.upstream.map { "tracks \($0)" } ?? "no upstream branch")")
-            if status.upstream != nil {
-                // Dropped when the list is too narrow for it.
-                ViewThatFits(in: .horizontal) {
-                    Chip("↑\(status.ahead ?? 0) ↓\(status.behind ?? 0)")
-                        .help("\(status.ahead ?? 0) to push, \(status.behind ?? 0) to pull (\(status.upstream ?? ""))")
-                    EmptyView()
-                }
-            }
+            // Sized before the spacer, which would otherwise take half the row.
+            .layoutPriority(1)
             Spacer(minLength: 4)
             IconButton(Icons.fetch, label: "Fetch", size: 13) {
                 Task { await appState.fetch(in: project) }
@@ -367,6 +332,69 @@ private struct ChangeListPane: View {
         .disabled(project.gitBusy != nil)
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
+    }
+
+    /// "⎇ main ⌄": a SwiftUI label rather than a borderless menu's, so the
+    /// name can truncate (`BranchLeadLayout` never offers more than it needs).
+    private var branchMenu: some View {
+        Menu {
+            if let branches = project.branches {
+                Section("Branches") {
+                    ForEach(branches.local) { branch in
+                        Button {
+                            Task { await appState.checkout(branch.name, create: false, in: project) }
+                        } label: {
+                            if branch.name == branches.current {
+                                Label(branch.name, systemImage: "checkmark")
+                            } else {
+                                Text(branch.name)
+                            }
+                        }
+                        .disabled(branch.name == branches.current)
+                    }
+                }
+                let remoteOnly = branches.remote.filter { remote in !branches.local.contains { $0.name == remote.short } }
+                if !remoteOnly.isEmpty {
+                    Section("Remote") {
+                        ForEach(remoteOnly) { remote in
+                            Button(remote.name) {
+                                Task { await appState.checkout(remote.short, create: false, in: project) }
+                            }
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button("New Branch…") { newBranchSheet = true }
+            Button("Refresh Branches") {
+                Task { await appState.loadBranches(project) }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: Icons.branch)
+                Text(status.branch ?? "detached HEAD")
+                    .lineLimit(1)
+                Image(systemName: Icons.chevronDown)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .font(Theme.Font.secondary)
+            .foregroundStyle(Theme.textPrimary)
+            .padding(.horizontal, 4)
+            .frame(height: 22)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(hoveringBranch ? Theme.surfaceRaised : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .onHover { hoveringBranch = $0 }
+        // The highlight's inset: the icon lines up with the rows below.
+        .padding(.leading, -4)
+        .help("\(status.branch ?? "detached HEAD") · \(status.upstream.map { "tracks \($0)" } ?? "no upstream branch")")
     }
 
     private var cleanRow: some View {
@@ -456,6 +484,42 @@ private struct ChangeListPane: View {
         let target = rows[next]
         withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo("\(target.section)|\(target.file.path)", anchor: nil) }
         select(target.file.path, section: target.section)
+    }
+}
+
+/// The branch menu, then the ahead/behind chip. The branch name truncates
+/// first, down to `floor` points of menu; narrower than that the chip is
+/// offered no width (its `ViewThatFits` drops it) and the name gets it all.
+private struct BranchLeadLayout: Layout {
+    var spacing: CGFloat
+    /// About ten characters of branch name.
+    var floor: CGFloat = 100
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let (menu, chip) = widths(proposal.width, subviews)
+        let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+        return CGSize(width: chip > 0 ? menu + spacing + chip : menu, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let (menu, chip) = widths(bounds.width, subviews)
+        var x = bounds.minX
+        for (subview, width) in zip(subviews, [menu, chip]) {
+            subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(width: width, height: bounds.height))
+            x += width + spacing
+        }
+    }
+
+    /// Menu and chip widths in `width`; a chip width of 0 drops the chip.
+    private func widths(_ width: CGFloat?, _ subviews: Subviews) -> (menu: CGFloat, chip: CGFloat) {
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified).width }
+        let menu = ideal.first ?? 0
+        let chip = ideal.count > 1 ? ideal[1] : 0
+        guard let width else { return (menu, chip) }
+        if chip > 0, width - spacing - chip >= min(menu, floor) {
+            return (min(menu, width - spacing - chip), chip)
+        }
+        return (min(menu, width), 0)
     }
 }
 

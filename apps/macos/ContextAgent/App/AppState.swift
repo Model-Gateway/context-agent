@@ -405,6 +405,21 @@ final class AppState {
 
     var recentProjects: [RecentProject] { recents.sorted }
 
+    /// The recents grids' cards (Welcome, Projects): the remembered projects
+    /// after the folders being opened for the first time, so a new project
+    /// has its card as soon as it is chosen instead of once `project/open`
+    /// returns. Folders reopened at launch are left out: a worktree is not
+    /// among the recents and gets no card.
+    var recentProjectCards: [RecentProject] {
+        let remembered = recentProjects
+        let paths = Set(remembered.map(\.path))
+        let opening = pendingProjectPaths
+            .filter { !paths.contains($0) && restoreRank(of: $0) == Int.max }
+            .reversed()
+            .map { RecentProject(path: $0, name: URL(fileURLWithPath: $0).lastPathComponent, lastOpened: Date()) }
+        return opening + remembered
+    }
+
     /// "ctx 0.1.0 · connected" for the sidebar card.
     var connectionLabel: String {
         switch connection {

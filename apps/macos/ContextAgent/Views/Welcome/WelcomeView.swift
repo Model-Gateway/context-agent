@@ -156,15 +156,17 @@ struct WelcomeView: View {
 
 /// Recent projects as cards: name, abbreviated path, last opened; pinned
 /// first; hover reveals Remove; context menu Pin/Unpin, Reveal in Finder,
-/// Remove. A currently open project is marked "Open". "View all" opens the
-/// Projects screen (search, filter, sort).
+/// Remove. A currently open project is marked "Open"; one opening or
+/// building its index shows a progress ring, and a folder opened for the
+/// first time has its card from the start. "View all" opens the Projects
+/// screen (search, filter, sort).
 private struct RecentsGrid: View {
     @Environment(AppState.self) private var appState
 
     private let columns = [GridItem(.adaptive(minimum: 220, maximum: 360), spacing: 12, alignment: .top)]
 
     var body: some View {
-        let recents = appState.recentProjects
+        let recents = appState.recentProjectCards
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Recent projects")
@@ -218,6 +220,28 @@ struct RecentCard: View {
 
     private var isOpening: Bool { appState.openingProjectPaths.contains(recent.path) }
     private var canOpen: Bool { appState.connection.isReady && recent.exists && !isOpening }
+    /// False for a folder being opened for the first time (not a recent yet):
+    /// nothing to pin or remove.
+    private var isRemembered: Bool { appState.recents.item(for: recent.path) != nil }
+
+    /// The open project while its index pass runs; on a first open that
+    /// pass builds the whole index.
+    private var indexingProject: ProjectState? {
+        guard isOpen, let project = appState.projects.first(where: { $0.root == recent.path }), project.isIndexing else { return nil }
+        return project
+    }
+
+    /// "Indexing 42%", or "Indexing…" until the pass knows its total.
+    private func indexingLabel(_ project: ProjectState) -> String {
+        guard let fraction = project.indexFraction else { return "Indexing…" }
+        return "Indexing \(Int((fraction * 100).rounded(.down)))%"
+    }
+
+    private var statusDescription: String {
+        if isOpening { return ", opening" }
+        if let project = indexingProject { return ", " + indexingLabel(project).lowercased() }
+        return isOpen ? ", open" : ""
+    }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous)
@@ -227,11 +251,21 @@ struct RecentCard: View {
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: Icons.folder)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(recent.exists ? Theme.textSecondary : Theme.textTertiary)
-                        .frame(width: 20, height: 20)
-                        .accessibilityHidden(true)
+                    // While the project opens and builds its index the
+                    // folder gives way to the progress ring.
+                    Group {
+                        if isOpening {
+                            ProgressRing(fraction: nil)
+                        } else if let project = indexingProject {
+                            ProgressRing(fraction: project.indexFraction)
+                        } else {
+                            Image(systemName: Icons.folder)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(recent.exists ? Theme.textSecondary : Theme.textTertiary)
+                        }
+                    }
+                    .frame(width: 20, height: 20)
+                    .accessibilityHidden(true)
                     Text(verbatim: recent.name)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
@@ -250,9 +284,9 @@ struct RecentCard: View {
                         appState.recents.remove(path: recent.path)
                     }
                     .frame(width: 20, height: 20)
-                    .opacity(hovering ? 1 : 0)
-                    .allowsHitTesting(hovering)
-                    .accessibilityHidden(!hovering)
+                    .opacity(hovering && isRemembered ? 1 : 0)
+                    .allowsHitTesting(hovering && isRemembered)
+                    .accessibilityHidden(!hovering || !isRemembered)
                 }
                 Text(verbatim: recent.abbreviatedPath)
                     .font(Theme.Font.mono)
@@ -265,12 +299,13 @@ struct RecentCard: View {
                         .foregroundStyle(Theme.textTertiary)
                     Spacer(minLength: 0)
                     if isOpening {
-                        HStack(spacing: 5) {
-                            BrailleSpinner(size: 10, tint: Theme.textTertiary)
-                            Text("Opening…")
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.textTertiary)
-                        }
+                        Text("Opening…")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    } else if let project = indexingProject {
+                        Text(indexingLabel(project))
+                            .font(Theme.Font.caption.monospacedDigit())
+                            .foregroundStyle(Theme.textSecondary)
                     } else if isOpen {
                         Chip("Open", style: .tinted(Theme.success))
                     } else if !recent.exists {
@@ -298,6 +333,7 @@ struct RecentCard: View {
             Button(recent.pinned ? "Unpin" : "Pin") {
                 appState.recents.togglePin(path: recent.path)
             }
+            .disabled(!isRemembered)
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([recent.url])
             }
@@ -309,8 +345,9 @@ struct RecentCard: View {
             Button("Remove from Recents", role: .destructive) {
                 appState.recents.remove(path: recent.path)
             }
+            .disabled(!isRemembered)
         }
-        .accessibilityLabel("\(recent.name), \(recent.abbreviatedPath)\(recent.pinned ? ", pinned" : "")\(isOpening ? ", opening" : isOpen ? ", open" : "")")
+        .accessibilityLabel("\(recent.name), \(recent.abbreviatedPath)\(recent.pinned ? ", pinned" : "")\(statusDescription)")
     }
 }
 

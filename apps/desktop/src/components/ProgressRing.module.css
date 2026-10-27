@@ -1,0 +1,20 @@
+.ring {
+  display: block;
+  flex: 0 0 auto;
+}
+
+/* .animation(.easeOut(duration: 0.25), value: fraction) */
+.arc {
+  transition: stroke-dasharray 250ms ease-out;
+}
+
+/* The quarter arc turns once a second while the total is not known. */
+.spinning {
+  animation: progress-ring-turn 1s linear infinite;
+}
+
+@keyframes progress-ring-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}

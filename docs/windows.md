@@ -76,6 +76,14 @@ The model is told which shell it has. Commands run without a console
 window, in their own process group, inside a Job Object, so a timeout or
 cancel stops everything a command started.
 
+With a POSIX shell, `execute_command` also takes `shell: "powershell"`
+(PowerShell 7 when installed, else Windows PowerShell) for Windows
+administration such as disk space, services or the registry. The script
+runs in PowerShell directly rather than inside `powershell -Command '…'`
+from bash, whose quoting rewrites `$` and `'` before PowerShell sees them.
+The classifier counts PowerShell's `Remove-Item` and cmd's `del` / `rd`
+(and their aliases) as destructive in either shell.
+
 ## Terminal UI
 
 Use Windows Terminal (the default on Windows 11) or the VS Code terminal for
