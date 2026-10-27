@@ -1,7 +1,8 @@
 // The scripted self-test (`--autotest <dir>`, ARCHITECTURE.md "Self-test
 // mode"), the port of apps/macos/ContextAgent/App/UITestDriver.swift without
 // the screenshots: it drives the store exactly like a user would — wait for
-// the backend, open the `--project` folder, start a new chat, send
+// the backend, check that the updater is off (so a self-test never reaches
+// the network), open the `--project` folder, start a new chat, send
 // "Summarise this repository", wait for `task/finished`, check the
 // transcript (two tool rows and the final reply, in the store and on
 // screen), visit the Changes and Project tabs and come back to the chat —
@@ -18,6 +19,7 @@ import type { TranscriptItem } from './models/transcript'
 import { launchOptions, useApp, type SidebarItem } from './state/app'
 import type { ChatState } from './state/chat'
 import { selectedChat, selectedProject } from './state/selectors'
+import type { UpdaterStatus } from './state/updater'
 
 /** The prompt the test sends. */
 export const SELFTEST_PROMPT = 'Summarise this repository'
@@ -84,6 +86,7 @@ class Session {
     const began = Date.now()
     const script: [string, () => Promise<string | null>][] = [
       ['wait-for-backend', () => this.waitForBackend()],
+      ['updates-off', () => this.updatesOff()],
       ['open-project', () => this.openProject()],
       ['new-chat', () => this.newChat()],
       ['send-prompt', () => this.sendPrompt()],
@@ -138,6 +141,13 @@ class Session {
       await sleep(POLL_MS)
     }
     throw new StepFailure(`backend not ready after ${BACKEND_TIMEOUT_MS / 1000} s`)
+  }
+
+  /// `Updater.isAvailable` is false under `--autotest`: no scheduled check, no feed request.
+  private async updatesOff(): Promise<string> {
+    const status = await invoke<UpdaterStatus>('updater_status')
+    if (status.available) throw new StepFailure('the updater is on under --autotest')
+    return `no update checks · version ${status.version}`
   }
 
   private async openProject(): Promise<string> {

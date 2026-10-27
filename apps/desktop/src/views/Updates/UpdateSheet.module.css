@@ -1,0 +1,35 @@
+/* UpdateSheet.tsx: Sparkle's update windows as a sheet. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.message {
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height);
+  color: var(--text-secondary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The release notes: a bordered, scrolling box like Sparkle's notes view. */
+.notes {
+  max-height: 260px;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: var(--radius-small);
+  border: 1px solid var(--border);
+  background: var(--canvas);
+}

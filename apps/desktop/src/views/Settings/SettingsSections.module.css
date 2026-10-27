@@ -337,6 +337,13 @@
   color: var(--text-tertiary);
 }
 
+.version {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
 .captionWarning {
   font-size: var(--font-size-caption);
   line-height: 1.3;

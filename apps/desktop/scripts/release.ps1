@@ -3,9 +3,16 @@
 # Context_<version>_x64-setup.exe (per-user NSIS) and
 # Context_<version>_x64_en-US.msi (per-machine). Tauri signs the app, its
 # ctx.exe sidecar and the uninstaller before packing them, then signs both
-# installers; the script checks every one of those signatures afterwards. The
-# Windows counterpart of apps/macos/scripts/release.sh. The release workflow
-# (.github/workflows/release-windows.yml) runs it on windows-latest.
+# installers; the script checks every one of those signatures afterwards.
+# With the updater key (TAURI_SIGNING_PRIVATE_KEY, required when signing) it
+# also writes the feed installed copies update from (src-tauri/src/updater.rs):
+# a minisign signature of each finished installer (<installer>.sig, Tauri's
+# createUpdaterArtifacts) and dist\latest.json, which names both installers.
+# The app reads https://github.com/<repo>/releases/latest/download/latest.json,
+# so every GitHub release must carry its latest.json, as it carries the macOS
+# appcast.xml. The Windows counterpart of apps/macos/scripts/release.sh. The
+# release workflow (.github/workflows/release-windows.yml) runs it on
+# windows-latest.
 #
 # One-time setup (Azure portal):
 #   1. An Artifact Signing account, a completed identity validation and a
@@ -15,15 +22,28 @@
 #   3. On the signing machine: SignTool from Windows SDK 10.0.22621.755 or later,
 #      the .NET 8 runtime and the Azure CLI, signed in with `az login`. Signing
 #      authenticates with the Azure CLI's login and nothing else.
+#   4. The updater key pair (`npx tauri signer generate -w <file>` in
+#      apps/desktop). Its public half is plugins.updater.pubkey in
+#      src-tauri/tauri.conf.json; the private key and its password are the
+#      windows-release environment's secrets TAURI_SIGNING_PRIVATE_KEY and
+#      TAURI_SIGNING_PRIVATE_KEY_PASSWORD, backed up in the release Mac's login
+#      keychain (service "Context updater signing key (Tauri)", one item per
+#      variable name). Without the private key no installed copy accepts an
+#      update.
 #
 # Usage: powershell -ExecutionPolicy Bypass -File apps\desktop\scripts\release.ps1 [-Version <version>]
 # Environment: ARTIFACT_SIGNING_ENDPOINT (e.g. https://eus.codesigning.azure.net),
 #              ARTIFACT_SIGNING_ACCOUNT, ARTIFACT_SIGNING_PROFILE (required unless SKIP_SIGN=1),
 #              SKIP_SIGN=1 to build unsigned installers,
 #              SIGNTOOL (default: the newest signtool.exe in the Windows 10 SDK),
-#              PUBLISH=1 to upload the installers to the GitHub release v<version>, which
-#              must already exist (release.sh PUBLISH=1 creates it) and point at this
-#              checkout's commit; needs a clean checkout,
+#              TAURI_SIGNING_PRIVATE_KEY (the updater key, or the path of its file;
+#              required unless SKIP_SIGN=1) and TAURI_SIGNING_PRIVATE_KEY_PASSWORD,
+#              NOTES=<file.md> release notes for latest.json (default with PUBLISH=1:
+#              the GitHub release's notes),
+#              PUBLISH=1 to upload the installers, their .sig files and latest.json to
+#              the GitHub release v<version>, which must already exist (release.sh
+#              PUBLISH=1 creates it) and point at this checkout's commit; needs a
+#              clean checkout,
 #              RELEASE_REPO (default: Model-Gateway/context-agent).
 param([string]$Version)
 $ErrorActionPreference = "Stop"
@@ -37,12 +57,16 @@ if (-not $Version) {
 $slug = if ($env:RELEASE_REPO) { $env:RELEASE_REPO } else { "Model-Gateway/context-agent" }
 $sign = $env:SKIP_SIGN -ne "1"
 $publish = $env:PUBLISH -eq "1"
+$updater = [bool]$env:TAURI_SIGNING_PRIVATE_KEY
 
 function Assert-Exit([string]$What) {
   if ($LASTEXITCODE -ne 0) { throw "release.ps1: $What failed (exit $LASTEXITCODE)" }
 }
 
 if ($publish) {
+  if (-not $updater) {
+    throw "release.ps1: PUBLISH=1 needs TAURI_SIGNING_PRIVATE_KEY: a release without latest.json leaves installed copies without updates"
+  }
   if (git -C $root status --porcelain) {
     throw "release.ps1: PUBLISH=1 needs a clean checkout of the commit being released (try a git worktree)"
   }
@@ -54,11 +78,14 @@ if ($publish) {
   }
 }
 if ($sign) {
-  foreach ($name in "ARTIFACT_SIGNING_ENDPOINT", "ARTIFACT_SIGNING_ACCOUNT", "ARTIFACT_SIGNING_PROFILE") {
+  foreach ($name in "ARTIFACT_SIGNING_ENDPOINT", "ARTIFACT_SIGNING_ACCOUNT", "ARTIFACT_SIGNING_PROFILE", "TAURI_SIGNING_PRIVATE_KEY") {
     if (-not [Environment]::GetEnvironmentVariable($name)) {
       throw "release.ps1: set $name (or SKIP_SIGN=1 for unsigned installers)"
     }
   }
+}
+if ($env:NOTES -and -not (Test-Path $env:NOTES)) {
+  throw "release.ps1: NOTES file not found: $env:NOTES"
 }
 
 $work = Join-Path $here "src-tauri\target\release-signing"
@@ -74,9 +101,11 @@ if ($ctxVersion -ne "ctx $Version") {
 }
 
 # Merged over tauri.conf.json: the release version (installer names, the
-# exe's version resource, the About screen) and, when signing, the command
-# Tauri runs on every binary and installer it produces.
-$config = @{ version = $Version }
+# exe's version resource, the About screen, what the updater compares), the
+# updater signatures when there is a key, and, when signing, the command
+# Tauri runs on every binary and installer it produces. Tauri writes the
+# updater signatures last, over the Authenticode-signed installers.
+$config = @{ version = $Version; bundle = @{ createUpdaterArtifacts = $updater } }
 if ($sign) {
   Write-Host "==> preparing Artifact Signing ($env:ARTIFACT_SIGNING_ACCOUNT/$env:ARTIFACT_SIGNING_PROFILE)"
   $signtool = $env:SIGNTOOL
@@ -118,11 +147,11 @@ if ($sign) {
   } | ConvertTo-Json
   [IO.File]::WriteAllText($metadata, $metadataJson)
 
-  $config.bundle = @{ windows = @{ signCommand = @{
+  $config.bundle.windows = @{ signCommand = @{
     cmd  = $signtool
     args = @("sign", "/v", "/fd", "SHA256", "/tr", "http://timestamp.acs.microsoft.com", "/td", "SHA256",
       "/dlib", $dlib, "/dmdf", $metadata, "/d", "Context", "%1")
-  } } }
+  } }
 }
 $releaseConfig = Join-Path $work "tauri.release.conf.json"
 # WriteAllText writes UTF-8 without a BOM, which the Tauri CLI's JSON parser needs.
@@ -142,6 +171,7 @@ $setup = Join-Path $bundle "nsis\Context_${Version}_x64-setup.exe"
 $msi = Join-Path $bundle "msi\Context_${Version}_x64_en-US.msi"
 foreach ($installer in $setup, $msi) {
   if (-not (Test-Path $installer)) { throw "release.ps1: the build did not produce $installer" }
+  if ($updater -and -not (Test-Path "$installer.sig")) { throw "release.ps1: the build did not produce $installer.sig (the updater signature)" }
 }
 
 if ($sign) {
@@ -197,11 +227,54 @@ if ($sign) {
   }
 }
 
-Copy-Item -Path $setup, $msi -Destination $dist -Force
-$outputs = @(
-  (Join-Path $dist (Split-Path -Leaf $setup)),
-  (Join-Path $dist (Split-Path -Leaf $msi))
-)
+$artifacts = @($setup, $msi)
+if ($updater) { $artifacts += @("$setup.sig", "$msi.sig") }
+Copy-Item -Path $artifacts -Destination $dist -Force
+$outputs = @($artifacts | ForEach-Object { Join-Path $dist (Split-Path -Leaf $_) })
+
+# The update feed: this release only, both installers. An installed copy
+# takes the entry of the installer it came from ("-nsis" / "-msi", which the
+# bundler marks in the app), and "windows-x86_64" otherwise. The plugin
+# checks the downloaded installer against the signature here before running it.
+if ($updater) {
+  Write-Host "==> writing the update feed"
+  $notes = $null
+  if ($env:NOTES) {
+    $notes = [IO.File]::ReadAllText((Resolve-Path $env:NOTES))
+  } elseif ($publish) {
+    # gh prints UTF-8; read it as such (the console's code page would mangle the notes).
+    $encoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    try {
+      $body = gh release view "v$Version" --repo $slug --json body --jq .body
+      Assert-Exit "reading the notes of v$Version on $slug"
+    } finally { [Console]::OutputEncoding = $encoding }
+    $notes = ($body -join "`n").Trim()
+  }
+  if (-not $notes) { $notes = $null }
+  $download = "https://github.com/$slug/releases/download/v$Version"
+  function Get-FeedEntry([string]$Installer) {
+    [ordered]@{
+      signature = ([IO.File]::ReadAllText("$Installer.sig")).Trim()
+      url       = "$download/$(Split-Path -Leaf $Installer)"
+    }
+  }
+  $nsis = Get-FeedEntry $setup
+  $feed = [ordered]@{
+    version   = $Version
+    notes     = $notes
+    pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    platforms = [ordered]@{
+      "windows-x86_64"      = $nsis
+      "windows-x86_64-nsis" = $nsis
+      "windows-x86_64-msi"  = Get-FeedEntry $msi
+    }
+  }
+  $latest = Join-Path $dist "latest.json"
+  [IO.File]::WriteAllText($latest, ($feed | ConvertTo-Json -Depth 4))
+  $outputs += $latest
+  Write-Host "    latest.json: $Version, $($feed.platforms.Keys -join ', ')"
+}
 
 if ($publish) {
   Write-Host "==> uploading to v$Version on $slug"

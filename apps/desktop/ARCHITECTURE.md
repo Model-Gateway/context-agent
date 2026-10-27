@@ -67,6 +67,7 @@ apps/desktop/
     src/browser.rs                         # F6  child webview per project for the Browser tab + the agent's browser tool
     src/fs.rs                              # F1  list_dir (file tree), read_text_file (attachments), reveal, open_with
     src/selftest.rs                        # F1  --mock / --project / --autotest parsing (LaunchOptions)
+    src/updater.rs                         # self-updates (Updater.swift): schedule, feed, download, install on quit; see "Updates"
   src/
     main.tsx  App.tsx                      # F0 / V1 (App.tsx: MainWindow)
     theme/tokens.css                       # F2  every colour / font / metric token as CSS custom properties (light + dark)
@@ -99,6 +100,7 @@ apps/desktop/
     state/git.ts                           # V5  git actions (GitActions.swift)
     state/worktrees.ts                     # V5  WorktreeActions.swift
     state/keys.ts                          # V1  global shortcuts (AppCommands.swift), `mod` = Ctrl on Windows/Linux, ⌘ on macOS
+    state/updater.ts                       # the updater's state and intents (Check for Updates…, Install and Relaunch)
     views/MainWindow.tsx                   # V1  TopBar + Sidebar | Detail | Inspector, toasts, window controls
     views/TopBar.tsx                       # V1
     views/Sidebar/SidebarView.tsx  SidebarRows.tsx          # V1
@@ -117,6 +119,7 @@ apps/desktop/
     views/Settings/SettingsView.tsx  SettingsSections.tsx  BYOKSettingsSection.tsx  SpendingSettingsSection.tsx  BillingSettingsSection.tsx   # V8
     views/Account/AccountView.tsx  UsageHeatmap.tsx  UsageBarChart.tsx                        # V8
     views/Apps/AppsView.tsx                # V9  marketplace, app page, connect page
+    views/Updates/UpdateSheet.tsx          # what Sparkle's windows show: checking, up to date, new release, download, ready
 ```
 
 ## Build and run
@@ -131,7 +134,7 @@ npm run build                # dist/ only
 npm run tauri build          # installer: NSIS .exe + MSI on Windows, .app/.dmg on macOS
 scripts/embed-ctx.sh         # (macOS/Linux) build ctx and copy it to src-tauri/binaries/ for bundling
 scripts/embed-ctx.ps1        # (Windows)
-scripts/release.ps1          # (Windows) release installers signed with Azure Artifact Signing, in the repo's dist/ (see its header; CI: .github/workflows/release-windows.yml)
+scripts/release.ps1          # (Windows) release installers signed with Azure Artifact Signing, plus the update feed, in the repo's dist/ (see its header; CI: .github/workflows/release-windows.yml)
 ```
 
 `tauri.conf.json`: `productName` "Context", identifier
@@ -142,7 +145,62 @@ region in `TopBar`), `titleBarStyle: "Overlay"` + `hiddenTitle: true` on
 macOS so the traffic lights sit over the top bar like the native app.
 `app.security.csp` allows `'self'`, inline styles, `data:` and `asset:`
 images. Plugins: `dialog`, `opener`, `notification`, `clipboard-manager`,
-`process`, `os`, `window-state`.
+`process`, `os`, `window-state`, `updater` (`plugins.updater`: the feed and
+its public key; see "Updates").
+
+### Updates
+
+Installed copies update themselves (`src-tauri/src/updater.rs`, the port of
+`App/Updater.swift`) with `tauri-plugin-updater`. The feed is
+`https://github.com/Model-Gateway/context-agent/releases/latest/download/latest.json`,
+next to the macOS `appcast.xml` on every release. An update is the release's
+NSIS or MSI installer, whichever kind the running copy came from (the
+bundler marks it in the binary; the feed has `windows-x86_64-nsis`,
+`windows-x86_64-msi` and `windows-x86_64`), so the app and `ctx.exe` always
+move together. The plugin checks the installer against its minisign
+signature (`plugins.updater.pubkey` in tauri.conf.json) before running it.
+The behaviour is Sparkle's, with its defaults: a check 15 s after launch once
+a day has passed since the last one, then daily; an update found downloads
+in the background and installs when the app quits (`RunEvent::Exit`, after
+the backend has stopped, so the installer can replace `ctx.exe`; the
+installer runs passively and the app stays closed). With automatic installs
+off, a scheduled check offers the update in the update sheet instead. Check
+for updates… (command palette) and Settings → General → Updates → Check Now
+show the result in the same sheet; Install and Relaunch stops the backend,
+starts the installer with `/R` (it opens the app again) and exits, asking
+first while a task runs (Restart When Done waits for every task). The
+settings Sparkle keeps in its user defaults live in `<app config
+dir>/updater.json` (`automatically_checks`, `automatically_installs`,
+`last_check`, `skipped_version`). Builds the bundler did not mark (`tauri
+dev`, `cargo build`), `--mock` and `--autotest` runs, and macOS and Linux
+builds have no updater: Settings shows the version and says why, the palette
+has no Check for updates…, and nothing reaches the network.
+`CTX_UPDATE_FEED=<url>` points an installed copy at another feed.
+
+`scripts/release.ps1` writes the feed. With `TAURI_SIGNING_PRIVATE_KEY`
+(required when signing) Tauri's `createUpdaterArtifacts` signs each finished,
+Authenticode-signed installer (`<installer>.sig`), and the script writes
+`dist\latest.json` (the release version, the GitHub release's notes or
+`NOTES=<file.md>`, both installers' URLs and signatures); `PUBLISH=1` uploads
+them with the installers. The private key and its password are secrets of the
+`windows-release` GitHub environment. CI builds with a throwaway key, so
+every change runs the same path. The CLI does not record the version in the
+signature, so `requireSignedVersion` stays off.
+
+Commands and events (beside the ones under "Contracts"):
+
+```
+updater_status() -> { available, version, automatically_checks, automatically_installs, last_check, phase }
+      // phase: { kind: "idle" | "checking" } | { kind: "available" | "ready", release }
+      //      | { kind: "downloading", release, received, total }; release: { version, notes, date }
+updater_check() -> status          // Check Now; also offers a skipped version
+updater_download() -> status       // Install Update; resolves once downloaded and verified
+updater_install()                  // Install and Relaunch; exits the app, resolves only with an error
+updater_dismiss({ skip }) -> status       // Skip This Version / Remind Me Later
+updater_set_automatic({ checks?, installs? }) -> status
+"updater:state"  status            // every change, download progress at most every 200 ms
+"updater:found"  release           // a scheduled check found one while automatic installs are off
+```
 
 Launch options (`src-tauri/src/selftest.rs`, mirrored by `LaunchOptions`
 in Swift): `--mock` / `CTX_DESKTOP_MOCK=1`, `--project <path>`, `--binary
@@ -428,7 +486,8 @@ substitutions:
 
 ## Self-test mode
 
-`--autotest <dir>` with `--mock`: `src/selftest.ts` opens the project
+`--autotest <dir>` with `--mock`: `src/selftest.ts` checks that the updater
+is off (`updates-off`), opens the project
 given by `--project` (or the repository root), creates a session, sends
 "Summarise this repository", waits for `task/finished`, checks that the
 transcript holds the two tool rows and the final text, exercises the

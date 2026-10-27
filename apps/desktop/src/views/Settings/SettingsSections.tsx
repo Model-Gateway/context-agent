@@ -29,6 +29,7 @@ import { BUILD_COMMAND, launchOptions, useApp } from '../../state/app'
 import { useAnyProjectRunning, useConnectionLabel } from '../../state/selectors'
 import { setEditorAutoSave } from '../../state/editor'
 import { useGatewayRoutingActive } from '../../state/gateway'
+import { canCheckForUpdates, checkForUpdates, refreshUpdater, setAutomaticUpdates, useUpdater, type UpdaterStatus } from '../../state/updater'
 import { EFFORT_ULTRA, effortLevel, effortLevels } from '../Composer/EffortPopover'
 import { FormButtons, Help, PopUpButton, SegmentedPicker, TextField, Toggle, type PopUpOption } from './SettingsControls'
 import { isWindows, systemName } from './settingsPlatform'
@@ -79,10 +80,10 @@ const NOTIFICATIONS_FOOTER = isMac
   : 'Posted when the app is in the background or another chat is selected.'
 
 /**
- * `GeneralSettingsSection` (SettingsSections.swift): backend binary (detected
- * path, Choose…, Restart backend), status, mock toggle, data directory,
- * editor, Git, context engine, suggestions, developer mode and notification
- * toggles.
+ * `GeneralSettingsSection` (SettingsSections.swift): updates, backend binary
+ * (detected path, Choose…, Restart backend), status, mock toggle, data
+ * directory, editor, Git, context engine, suggestions, developer mode and
+ * notification toggles.
  */
 export function GeneralSettingsSection() {
   const connection = useApp((s) => s.connection)
@@ -130,6 +131,8 @@ export function GeneralSettingsSection() {
 
   return (
     <SettingsPage>
+      <UpdatesSettingsGroup />
+
       <SettingsGroup title="Backend" footer={BACKEND_FOOTER}>
         <SettingsRow label="Binary" alignment="top">
           <div className={styles.stack8}>
@@ -257,6 +260,85 @@ export function GeneralSettingsSection() {
       </SettingsGroup>
     </SettingsPage>
   )
+}
+
+/**
+ * `UpdatesSettingsGroup`: the running version and the updater's settings
+ * (state/updater.ts). Builds that do not update themselves show the version
+ * and say why.
+ */
+function UpdatesSettingsGroup() {
+  const status = useUpdater((state) => state.status)
+  useEffect(() => {
+    void refreshUpdater()
+  }, [])
+  if (status === null) return null
+  const available = status.available
+  return (
+    <SettingsGroup
+      title="Updates"
+      footer={
+        available
+          ? 'Context looks for a new release on GitHub once a day. An update replaces the whole app, the ctx backend included; one downloaded in the background installs when you quit Context.'
+          : 'This build does not update itself: only copies installed from the releases on GitHub do. Rebuild from source to update a development copy.'
+      }
+    >
+      <SettingsRow label="Version" alignment="top">
+        <div className={styles.stack6}>
+          <div className={styles.hstack8}>
+            <span className={`selectable ${styles.version}`}>{status.version}</span>
+            {available ? (
+              <Button size="small" disabled={!canCheckForUpdates(status)} onClick={() => void checkForUpdates()}>
+                Check Now
+              </Button>
+            ) : null}
+          </div>
+          {available ? <span className={styles.caption}>{updateCaption(status)}</span> : null}
+        </div>
+      </SettingsRow>
+      {available ? (
+        <SettingsRow label="Automatic" alignment="top">
+          <div className={styles.stack6}>
+            <Toggle label="Check for updates every day" checked={status.automatically_checks} onChange={(checks) => void setAutomaticUpdates({ checks })} />
+            <Toggle
+              label="Download and install updates"
+              checked={status.automatically_installs}
+              disabled={!status.automatically_checks}
+              onChange={(installs) => void setAutomaticUpdates({ installs })}
+            />
+          </div>
+        </SettingsRow>
+      ) : null}
+    </SettingsGroup>
+  )
+}
+
+/** "Last checked 3 hours ago", or what is under way. */
+function updateCaption(status: UpdaterStatus): string {
+  const phase = status.phase
+  if (phase.kind === 'checking') return 'Checking…'
+  if (phase.kind === 'downloading') return `Downloading Context ${phase.release.version}…`
+  if (phase.kind === 'ready') return `Context ${phase.release.version} installs when you quit Context.`
+  if (status.last_check === null) return 'Not checked yet'
+  return `Last checked ${relativeDate(new Date(status.last_check))}`
+}
+
+/** `date.formatted(.relative(presentation: .named))`: "3 hours ago", "yesterday", "now". */
+function relativeDate(date: Date, now: Date = new Date()): string {
+  const seconds = (date.getTime() - now.getTime()) / 1000
+  const format = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ['year', 31_536_000],
+    ['month', 2_592_000],
+    ['week', 604_800],
+    ['day', 86_400],
+    ['hour', 3600],
+    ['minute', 60],
+  ]
+  for (const [unit, size] of units) {
+    if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit)
+  }
+  return format.format(0, 'second')
 }
 
 /** `EditorApp`: an application that can open source files (Settings → General "Default editor"). */

@@ -14,6 +14,15 @@ Download `Context_<version>_x64-setup.exe` (per-user installer) or the
 else is needed. The installer adds the WebView2 runtime when it is missing
 (it ships with Windows 11 and current Windows 10).
 
+The app keeps itself up to date: once a day it looks for a new release,
+downloads its installer in the background, checks the installer's signature
+and runs it, `ctx.exe` included, when you quit Context. **Check for
+updates…** in the command palette (Ctrl+K) checks right away, and Settings →
+General → Updates turns the automatic parts off. Updates use the kind of
+installer you installed with; the `.msi` installs for every user, so its
+updates ask for administrator approval. Copies installed from 0.1.2 or
+earlier have no updater: install a later release over them once.
+
 ### CLI from source
 
 You need the Rust toolchain for MSVC (`rustup default stable-msvc`) and the

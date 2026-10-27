@@ -15,7 +15,10 @@
 // demo repo from scripts/make-demo-repo.sh, never a real working tree), BRIDGE_DATA_DIR
 // (default: a temporary directory unless BRIDGE_REAL is set), BRIDGE_AUTOTEST
 // (`launch_options.autotest`: every page load runs the self-test and writes
-// result.json into that directory).
+// result.json into that directory), BRIDGE_UPDATE=<version> (plays an
+// installed copy whose feed offers that version, for the Updates settings and
+// the update sheet; the updater is off otherwise, as in every build that is
+// not installed).
 
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -168,7 +171,60 @@ function mimeFor(path) {
   )
 }
 
+// --- updater (src-tauri/src/updater.rs) ---------------------------------------
+
+const offeredVersion = process.env.BRIDGE_UPDATE || null
+const offeredRelease = offeredVersion && {
+  version: offeredVersion,
+  notes: `## Context ${offeredVersion}\n\n- Windows: automatic updates, like the macOS app\n- Faster startup on large repositories`,
+  date: new Date().toISOString(),
+}
+const updater = {
+  available: offeredVersion !== null && !process.env.BRIDGE_AUTOTEST,
+  version: /^version = "(.*)"/m.exec(readFileSync(join(repo, 'Cargo.toml'), 'utf8'))?.[1] ?? '0.0.0',
+  automatically_checks: true,
+  automatically_installs: true,
+  last_check: null,
+  phase: { kind: 'idle' },
+}
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms))
+
+function updaterPhase(phase) {
+  updater.phase = phase
+  emit('updater:state', { ...updater })
+}
+
 const commands = {
+  updater_status: () => ({ ...updater }),
+  updater_check: async () => {
+    if (!updater.available) return fail('This build does not update itself.')
+    updaterPhase({ kind: 'checking' })
+    await sleep(700)
+    updater.last_check = new Date().toISOString()
+    updaterPhase({ kind: 'available', release: offeredRelease })
+    return { ...updater }
+  },
+  updater_download: async () => {
+    if (updater.phase.kind !== 'available') return fail('There is no update to download. Check for updates first.')
+    const total = 24_300_000
+    for (let received = 0; received < total; received += 2_700_000) {
+      updaterPhase({ kind: 'downloading', release: offeredRelease, received, total })
+      await sleep(250)
+    }
+    updaterPhase({ kind: 'ready', release: offeredRelease })
+    return { ...updater }
+  },
+  updater_install: () => fail('The browser preview cannot install updates.'),
+  updater_dismiss: () => {
+    if (updater.phase.kind === 'available') updaterPhase({ kind: 'idle' })
+    return { ...updater }
+  },
+  updater_set_automatic: (a) => {
+    if (typeof a.checks === 'boolean') updater.automatically_checks = a.checks
+    if (typeof a.installs === 'boolean') updater.automatically_installs = a.installs
+    emit('updater:state', { ...updater })
+    return { ...updater }
+  },
   launch_options: () => ({ mock: !real, project: process.env.BRIDGE_PROJECT ?? null, binary: null, autotest: process.env.BRIDGE_AUTOTEST || null }),
   // The end of the self-test (src/selftest.ts): writes <dir>/result.json like
   // the shell's `selftest_finish`, but keeps the preview running.

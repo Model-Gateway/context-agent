@@ -9,12 +9,14 @@ import type { ApprovalDecision } from '../backend/types'
 import { useApp } from '../state/app'
 import { installGlobalKeys } from '../state/keys'
 import { usePendingDiscountDrop, type PendingApproval } from '../state/selectors'
+import { startUpdater } from '../state/updater'
 import { RewindSheet } from './Chat/RewindSheet'
 import { DetailView } from './Detail/DetailView'
 import { InspectorView } from './Inspector/InspectorView'
 import { CommandPalette } from './Palette/CommandPalette'
 import { SidebarView } from './Sidebar/SidebarView'
 import { TopBar } from './TopBar'
+import { UpdateSheet } from './Updates/UpdateSheet'
 import styles from './MainWindow.module.css'
 
 /** `Theme.Metrics.sidebarWidth`. */
@@ -34,8 +36,9 @@ const PANE_ANIMATION_MS = 200
  * default, resizable 260–720 px without leaving the centre under 420 px,
  * double-click restores 320, the width persisted), the side panes sliding
  * in and out over 0.2 s; the toasts (bottom-right), the command palette, the
- * rewind sheet and the "lower discount" alert; folders dropped on the
- * Welcome screen open as projects. Installs the global shortcuts.
+ * rewind sheet, the "lower discount" alert and the update sheet; folders
+ * dropped on the Welcome screen open as projects. Installs the global
+ * shortcuts and starts following the updater.
  */
 export function MainWindow() {
   const sidebarVisible = useApp((state) => state.sidebarVisible)
@@ -48,6 +51,7 @@ export function MainWindow() {
   const dropTargeted = useFolderDrop(onWelcome, detailRef)
 
   useEffect(() => installGlobalKeys(), [])
+  useEffect(() => startUpdater(), [])
 
   const maxInspector = maxInspectorWidth(totalWidth, sidebarVisible)
   const inspectorWidth = Math.min(Math.max(storedInspectorWidth, INSPECTOR_MIN_WIDTH), maxInspector)
@@ -89,6 +93,7 @@ export function MainWindow() {
       <CommandPalette />
       <RewindSheet />
       <DiscountDropAlert />
+      <UpdateSheet />
     </div>
   )
 }
