@@ -170,7 +170,7 @@ struct TranscriptRow: View {
         case .user(let turn):
             UserMessageView(turn: turn, highlight: highlight, chat: chat)
         case .assistant(let turn):
-            AssistantMessageView(turn: turn)
+            AssistantMessageView(turn: turn, projectId: chat.projectId)
         case .tools(let group):
             ToolTimelineView(group: group)
         case .agents(let group):

@@ -70,6 +70,9 @@ final class GatewayState {
     /// Settings → Spending: the model ids ModelGateway serves, one price
     /// limit row each.
     var models: [String] = []
+    /// Assistant messages reported this session (`AssistantTurn.reportKey`),
+    /// so their Report button reads Reported.
+    var reportedResponses: Set<String> = []
 
     @ObservationIgnored var pollTask: Task<Void, Never>?
 
@@ -397,6 +400,21 @@ extension AppState {
             return true
         } catch {
             toasts.show("The code could not be added: \(Self.gatewayMessage(error))", kind: .error)
+            return false
+        }
+    }
+
+    /// Reports a finished assistant message as a bad response; the gateway
+    /// counts it against the provider that served it. True once filed.
+    func reportResponse(projectId: String, turn: AssistantTurn, reason: ResponseReportReason, comment: String) async -> Bool {
+        guard let taskId = turn.taskId, connection.isReady else { return false }
+        do {
+            _ = try await backend.gatewayReport(baseURL: gatewayOrigin, projectId: projectId, taskId: taskId, step: turn.step, reason: reason.rawValue, comment: comment)
+            gateway.reportedResponses.insert(turn.reportKey)
+            toasts.show("Thanks, the response was reported", kind: .success)
+            return true
+        } catch {
+            toasts.show("The response could not be reported: \(Self.gatewayMessage(error))", kind: .error)
             return false
         }
     }

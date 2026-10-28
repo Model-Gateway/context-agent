@@ -384,6 +384,36 @@ struct GatewayReferralSplitResult: Codable, Equatable {
     }
 }
 
+/// Why a response is reported (`gateway/report`'s `reason`).
+enum ResponseReportReason: String, CaseIterable, Identifiable {
+    case incorrect, garbled, truncated
+    case wrongModel = "wrong_model"
+    case other
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .incorrect: "Wrong or made up"
+        case .garbled: "Garbled output"
+        case .truncated: "Cut off"
+        case .wrongModel: "Not the model I picked"
+        case .other: "Something else"
+        }
+    }
+}
+
+/// `gateway/report`'s reply.
+struct GatewayReportResult: Codable, Equatable {
+    var reported: Bool
+    var alreadyReported: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case reported
+        case alreadyReported = "already_reported"
+    }
+}
+
 /// `gateway/referral/attach`'s reply.
 struct GatewayReferralAttachResult: Codable, Equatable {
     var invitedBy: GatewayInvitedBy

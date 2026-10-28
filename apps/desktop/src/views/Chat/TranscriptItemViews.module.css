@@ -201,6 +201,94 @@
   pointer-events: auto;
 }
 
+/* The Report row under a finished answer (AssistantMessageView's `reportRow`):
+   flag + caption, invisible until hovered but keeping its height. */
+.reportRow {
+  display: flex;
+  margin-left: -6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-hover) var(--ease-out);
+}
+
+.reportRow.shown,
+.reportRow:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.reportButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.reportButton:hover:not(:disabled) {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.reportButton.reported {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+/* ReportResponsePopover: VStack(spacing: 12) in a 320 pt popover. */
+.reportPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reportHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reportTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.reportSubtitle {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+.reportComment {
+  resize: vertical;
+  min-height: 54px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.reportComment:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.reportButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .toolbarClock {
   padding-left: 6px;
   font-size: var(--font-size-caption);

@@ -52,6 +52,19 @@ pub(super) struct GatewayBillingParams {
     pub(super) body: serde_json::Map<String, Value>,
 }
 
+/// `gateway/report`: one assistant message of a run, by its task and step.
+#[derive(Deserialize)]
+pub(super) struct GatewayReportParams {
+    pub(super) project_id: String,
+    pub(super) task_id: String,
+    pub(super) step: u32,
+    pub(super) reason: String,
+    #[serde(default)]
+    pub(super) comment: Option<String>,
+    #[serde(default)]
+    pub(super) base_url: Option<String>,
+}
+
 /// `gateway/status`.
 #[derive(Serialize)]
 pub(super) struct GatewayStatus {
@@ -197,6 +210,24 @@ impl Server {
     pub(super) async fn gateway_referral_attach(&self, params: GatewayBillingParams) -> RpcResult<Value> {
         Self::check_base_url(params.base_url.as_deref())?;
         Ok(gateway::attach_referral(&self.layout(), params.base_url.as_deref(), Value::Object(params.body)).await?)
+    }
+
+    /// `gateway/report`: reports the response of a run's step to the gateway
+    /// that served it. The step's last model request that carried a gateway
+    /// request id is the one reported; a step that did not go through the
+    /// gateway is `-32602`.
+    pub(super) async fn gateway_report(&self, params: GatewayReportParams) -> RpcResult<Value> {
+        Self::check_base_url(params.base_url.as_deref())?;
+        let project = self.project(&params.project_id)?;
+        let (task_id, step) = (params.task_id.clone(), params.step);
+        let request_id = blocking(move || {
+            let requests = project.ctx.stores.sessions.model_requests_for_task(&task_id)?;
+            Ok(requests.into_iter().rev().filter(|r| r.step == step).find_map(|r| r.gateway_request_id.filter(|id| !id.is_empty())))
+        })
+        .await?
+        .ok_or_else(|| RpcError::invalid_params("this response did not come through ModelGateway"))?;
+        let body = json!({"request_id": request_id, "reason": params.reason, "comment": params.comment.unwrap_or_default()});
+        Ok(gateway::report(&self.layout(), params.base_url.as_deref(), body).await?)
     }
 
     /// `gateway/signout`: revokes the device's key on the gateway and forgets

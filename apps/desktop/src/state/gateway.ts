@@ -27,6 +27,7 @@ import {
   type GatewayPlan,
   type GatewayReferral,
   type GatewayTopUpQuote,
+  type ResponseReportReason,
   type GatewayUsageReport,
   type JSONObject,
   type ModelSettings,
@@ -34,6 +35,7 @@ import {
 import { toasts, type ToastLevel } from '../components/toasts'
 import { getPref, setPref, usePreferences } from '../models/preferences'
 import { accountInitial, accountName, balanceText as accountBalanceText, formatQuota, usageBreakdownsByRange, type UsageByRange } from '../models/modelGateway'
+import { assistantTurnReportKey, type AssistantTurn } from '../models/transcript'
 import { extendApp, onBackendStarted, touch, useApp, SETTINGS_TAB_ACCOUNT } from './app'
 import { isReady } from './selectors'
 
@@ -104,6 +106,8 @@ export interface GatewayFields {
   keySettingsError: string | null
   /** Settings → Spending: the model ids ModelGateway serves, one price limit row each. */
   models: string[]
+  /** Assistant messages reported this session (`assistantTurnReportKey`), so their Report button reads Reported. */
+  reportedResponses: ReadonlySet<string>
 }
 
 /// Values derived from the fields on every change (selectors may read them
@@ -186,6 +190,7 @@ function initialFields(): GatewayFields {
     keySettings: null,
     keySettingsError: null,
     models: [],
+    reportedResponses: new Set(),
   }
 }
 
@@ -698,6 +703,22 @@ export async function attachGatewayReferralCode(code: string): Promise<boolean> 
     return false
   } finally {
     patch({ referralBusy: false })
+  }
+}
+
+/// `reportResponse(projectId:turn:reason:comment:)`: reports a finished
+/// assistant message as a bad response; the gateway counts it against the
+/// provider that served it. True once filed.
+export async function reportResponse(projectId: string, turn: AssistantTurn, reason: ResponseReportReason, comment: string): Promise<boolean> {
+  if (turn.taskId === null || !connectionReady()) return false
+  try {
+    await backend.gatewayReport(GATEWAY_ORIGIN, projectId, turn.taskId, turn.step, reason, comment)
+    patch({ reportedResponses: new Set([...gw().reportedResponses, assistantTurnReportKey(turn)]) })
+    toast('Thanks, the response was reported', 'success')
+    return true
+  } catch (error) {
+    toast(`The response could not be reported: ${gatewayMessage(error)}`, 'error')
+    return false
   }
 }
 

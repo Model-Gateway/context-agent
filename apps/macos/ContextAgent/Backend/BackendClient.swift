@@ -760,6 +760,15 @@ final class BackendClient {
         try await request("gateway/referral/attach", params: object(["base_url": .string(baseURL), "code": .string(code)]))
     }
 
+    /// Reports one finished assistant message (its task's `step`) to the
+    /// gateway that served it.
+    func gatewayReport(baseURL: String, projectId: String, taskId: String, step: Int, reason: String, comment: String) async throws -> GatewayReportResult {
+        try await request("gateway/report", params: object([
+            "base_url": .string(baseURL), "project_id": .string(projectId), "task_id": .string(taskId),
+            "step": .number(Double(step)), "reason": .string(reason), "comment": .string(comment),
+        ]))
+    }
+
     /// The device key's price limits and spending cap.
     func gatewayKeySettings(baseURL: String) async throws -> GatewayKeySettings {
         try await request("gateway/key", params: object(["base_url": .string(baseURL)]))

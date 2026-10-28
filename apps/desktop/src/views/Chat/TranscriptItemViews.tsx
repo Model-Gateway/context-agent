@@ -23,11 +23,15 @@ import { formatShortcut, isModKey } from '../../components/platform'
 import { Tooltip } from '../../components/Tooltip'
 import type { FileReferenceContext } from '../../markdown/fileReferences'
 import { MarkdownView } from '../../markdown/MarkdownView'
-import { makeNoticeItem, outgoingPrompt, userTurnIsRewindable, type AssistantTurn, type NoticeItem, type UserTurn } from '../../models/transcript'
+import { RESPONSE_REPORT_REASONS, type ResponseReportReason } from '../../backend/types'
+import { Popover } from '../../components/Popover'
+import { assistantTurnReportKey, makeNoticeItem, outgoingPrompt, userTurnIsRewindable, type AssistantTurn, type NoticeItem, type UserTurn } from '../../models/transcript'
 import { useApp, useChatValue } from '../../state/app'
 import type { ChatState } from '../../state/chat'
+import { reportResponse, useGateway, useGatewayRoutingActive } from '../../state/gateway'
 import { useCanRewind } from '../../state/selectors'
 import { Icon } from '../../theme/icons'
+import { RadioGroup } from '../Settings/SettingsControls'
 import { SentPromptView } from './SentPromptView'
 import { ThinkingView } from './ThinkingView'
 import styles from './TranscriptItemViews.module.css'
@@ -287,6 +291,8 @@ function UserImageThumbnail({ path }: { path: string }) {
 
 export interface AssistantMessageViewProps {
   turn: AssistantTurn
+  /** The project of the run; null (previews, sub-agent views) hides Report. */
+  projectId?: string | null
 }
 
 /**
@@ -295,9 +301,10 @@ export interface AssistantMessageViewProps {
  * `CopyButton` for the raw markdown; the context menu offers Copy as
  * Markdown / Copy as plain text. While streaming a Braille spinner trails
  * the text, and a `ThinkingView` sits above the text whenever the turn
- * exposed reasoning.
+ * exposed reasoning. A finished message that went through ModelGateway shows
+ * Report under it on hover (`ReportResponsePopover`).
  */
-export const AssistantMessageView = memo(function AssistantMessageView({ turn }: AssistantMessageViewProps) {
+export const AssistantMessageView = memo(function AssistantMessageView({ turn, projectId = null }: AssistantMessageViewProps) {
   const files = useFileReferences()
   const canRun = useApp((state) => state.selectedProjectId !== null)
   const [hovering, setHovering] = useState(false)
@@ -340,6 +347,9 @@ export const AssistantMessageView = memo(function AssistantMessageView({ turn }:
             {turn.text.length === 0 ? <span className={styles.writingLabel}>Writing…</span> : null}
           </div>
         ) : null}
+        {projectId !== null && turn.taskId !== null && !turn.isStreaming && turn.text.length > 0 ? (
+          <ReportRow turn={turn} projectId={projectId} hovering={hovering} />
+        ) : null}
         {!turn.isStreaming ? (
           // Invisible until hovered, but always in the accessibility tree
           // so Copy as Markdown is reachable without a mouse.
@@ -352,6 +362,79 @@ export const AssistantMessageView = memo(function AssistantMessageView({ turn }:
     </ContextMenu>
   )
 })
+
+/**
+ * The Report row under a finished answer of a run routed through
+ * ModelGateway: invisible until hovered (it keeps its height so the
+ * transcript does not move), but always in the accessibility tree.
+ */
+function ReportRow({ turn, projectId, hovering }: { turn: AssistantTurn; projectId: string; hovering: boolean }) {
+  const routed = useGatewayRoutingActive()
+  const reported = useGateway((state) => state.reportedResponses.has(assistantTurnReportKey(turn)))
+  const [open, setOpen] = useState(false)
+  const anchorRef = useRef<HTMLButtonElement>(null)
+  if (!routed) return null
+  return (
+    <div className={[styles.reportRow, hovering || open || reported ? styles.shown : ''].filter(Boolean).join(' ')}>
+      <Tooltip content="Report a bad response to ModelGateway">
+        <button
+          ref={anchorRef}
+          type="button"
+          className={[styles.reportButton, reported ? styles.reported : ''].filter(Boolean).join(' ')}
+          disabled={reported}
+          onClick={() => setOpen(true)}
+          aria-label={reported ? 'Response reported' : 'Report response'}
+        >
+          <Icon name="report" size={12} />
+          <span>{reported ? 'Reported' : 'Report'}</span>
+        </button>
+      </Tooltip>
+      <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} placement="below" align="start" width={320} padded role="dialog" aria-label="Report response">
+        <ReportResponsePopover turn={turn} projectId={projectId} onClose={() => setOpen(false)} />
+      </Popover>
+    </div>
+  )
+}
+
+/**
+ * `ReportResponsePopover`: why the response was bad and an optional note.
+ * Send files it with `gateway/report`, which counts it against the provider
+ * that served the message, and closes on success.
+ */
+function ReportResponsePopover({ turn, projectId, onClose }: { turn: AssistantTurn; projectId: string; onClose: () => void }) {
+  const [reason, setReason] = useState<ResponseReportReason>('incorrect')
+  const [comment, setComment] = useState('')
+  const [sending, setSending] = useState(false)
+  const send = async () => {
+    setSending(true)
+    const filed = await reportResponse(projectId, turn, reason, comment.trim().slice(0, 1000))
+    setSending(false)
+    if (filed) onClose()
+  }
+  return (
+    <div className={styles.reportPanel}>
+      <div className={styles.reportHeader}>
+        <span className={styles.reportTitle}>Report response</span>
+        <span className={styles.reportSubtitle}>ModelGateway counts it against the provider that served this message.</span>
+      </div>
+      <RadioGroup value={reason} options={RESPONSE_REPORT_REASONS} onChange={setReason} aria-label="Reason" />
+      <textarea
+        className={styles.reportComment}
+        rows={3}
+        value={comment}
+        placeholder="What went wrong? (optional)"
+        onChange={(event) => setComment(event.target.value)}
+        maxLength={1000}
+      />
+      <div className={styles.reportButtons}>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="prominent" loading={sending} onClick={() => void send()}>
+          {sending ? 'Sending…' : 'Send Report'}
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 /** `AppState.runInTerminal`: a code block's play button (stable, so memoised markdown keeps its blocks). */
 function runInTerminal(command: string): void {

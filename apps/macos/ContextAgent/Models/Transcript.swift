@@ -74,11 +74,16 @@ struct AssistantTurn: Identifiable, Equatable {
     /// True while reasoning deltas arrive and no text delta has arrived yet.
     var isThinking: Bool = false
     var step: Int = 0
+    /// The run that produced this message; with `step` it names the model
+    /// request a Report is filed against (`gateway/report`).
+    var taskId: String?
     var thinkingStarted: Date?
     var thinkingDuration: TimeInterval?
     var date: Date = Date()
 
     var isEmpty: Bool { text.isEmpty && reasoning.isEmpty }
+    /// Names the model request behind this message across re-renders.
+    var reportKey: String { "\(taskId ?? "")#\(step)" }
 }
 
 enum ToolCallStatus: Equatable {

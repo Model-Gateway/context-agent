@@ -2236,6 +2236,24 @@ export interface GatewayReferralSplitResult {
   pool_cents: number
 }
 
+/** `ResponseReportReason`: why a response is reported (`gateway/report`'s `reason`). */
+export type ResponseReportReason = 'incorrect' | 'garbled' | 'truncated' | 'wrong_model' | 'other'
+
+/** `ResponseReportReason.allCases` with their titles. */
+export const RESPONSE_REPORT_REASONS: ReadonlyArray<{ value: ResponseReportReason; label: string }> = [
+  { value: 'incorrect', label: 'Wrong or made up' },
+  { value: 'garbled', label: 'Garbled output' },
+  { value: 'truncated', label: 'Cut off' },
+  { value: 'wrong_model', label: 'Not the model I picked' },
+  { value: 'other', label: 'Something else' },
+]
+
+/** `gateway/report`'s reply. */
+export interface GatewayReportResult {
+  reported: boolean
+  already_reported?: boolean
+}
+
 /** `gateway/referral/attach`'s reply. */
 export interface GatewayReferralAttachResult {
   invited_by: GatewayInvitedBy

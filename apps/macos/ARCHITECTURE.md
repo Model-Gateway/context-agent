@@ -476,7 +476,12 @@ status bar when `queued` is non-empty.
   Copy as Markdown / Copy as plain text; while streaming a Braille spinner
   trails the text; a collapsed **Thinking** row above (`DisclosureRow`
   "Thinking ⠋ 1.2s" → muted 13 pt text) auto-collapses on the first text
-  delta.
+  delta. A finished message of a run routed through ModelGateway has a
+  **Report** row under it (flag + caption, shown on hover, its height kept
+  so nothing moves): a popover with a reason (`ResponseReportReason`) and
+  an optional note sends `gateway/report` for the turn's `taskId` + `step`;
+  the gateway counts it against the channel that served it. Reported
+  messages read *Reported* for the rest of the session.
 - **Tool timeline** (reference-tools.png): header "✳ 18 tools, edited 5
   files, ran 2 commands ⌄" with elapsed time at the right
   (`TimelineView(.periodic(by: 1))` while open); rows: 24 pt rounded square

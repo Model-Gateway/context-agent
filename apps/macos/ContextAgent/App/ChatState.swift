@@ -437,7 +437,7 @@ final class ChatState: Identifiable {
                 status = .running(progress)
             }
             commitLive(date: date)
-            live = AssistantTurn(step: step, date: date)
+            live = AssistantTurn(step: step, taskId: currentTaskId, date: date)
             addLog("model request · step \(step) · ~\(estimated) tok", date: date)
 
         case .promptSent(_, let prompt):
@@ -840,7 +840,7 @@ final class ChatState: Identifiable {
 
     private func ensureLive(date: Date) {
         if live == nil {
-            live = AssistantTurn(step: status.progress?.step ?? 0, date: date)
+            live = AssistantTurn(step: status.progress?.step ?? 0, taskId: currentTaskId, date: date)
         }
     }
 
@@ -872,7 +872,7 @@ final class ChatState: Identifiable {
             }
         }
         guard !pendingText.isEmpty || !pendingReasoning.isEmpty else { return }
-        if live == nil { live = AssistantTurn(step: status.progress?.step ?? 0) }
+        if live == nil { live = AssistantTurn(step: status.progress?.step ?? 0, taskId: currentTaskId) }
         if !pendingReasoning.isEmpty {
             live?.reasoning += pendingReasoning
             pendingReasoning = ""

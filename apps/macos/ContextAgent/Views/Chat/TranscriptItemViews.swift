@@ -218,15 +218,20 @@ private struct UserImageThumbnail: View {
 /// carries the timestamp and a `CopyButton` for the raw markdown; the context
 /// menu offers Copy as Markdown / Copy as plain text. While streaming a
 /// Braille spinner trails the text, and a `ThinkingView` sits above the text
-/// whenever the turn exposed reasoning.
+/// whenever the turn exposed reasoning. A finished message that went through
+/// ModelGateway shows Report under it on hover (`ReportResponsePopover`).
 struct AssistantMessageView: View {
     var turn: AssistantTurn
+    /// The project of the run; nil (previews, sub-agent views) hides Report.
+    var projectId: String?
 
     @Environment(AppState.self) private var appState
     @State private var hovering = false
+    @State private var reporting = false
 
-    init(turn: AssistantTurn) {
+    init(turn: AssistantTurn, projectId: String? = nil) {
         self.turn = turn
+        self.projectId = projectId
     }
 
     var body: some View {
@@ -251,6 +256,10 @@ struct AssistantMessageView: View {
                     }
                 }
                 .padding(.top, 2)
+            }
+            if canReport {
+                reportRow
+                    .opacity(hovering || reporting || isReported ? 1 : 0)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -281,6 +290,38 @@ struct AssistantMessageView: View {
 
     private var isStreamingText: Bool { turn.isStreaming && !turn.isThinking }
 
+    /// A finished answer of a run routed through ModelGateway.
+    private var canReport: Bool {
+        projectId != nil && turn.taskId != nil && !turn.isStreaming && !turn.text.isEmpty && appState.gatewayRoutingActive
+    }
+
+    private var isReported: Bool { appState.gateway.reportedResponses.contains(turn.reportKey) }
+
+    /// Invisible until hovered (it keeps its height so the transcript does
+    /// not move), but always in the accessibility tree.
+    private var reportRow: some View {
+        Button {
+            reporting = true
+        } label: {
+            Label(isReported ? "Reported" : "Report", systemImage: isReported ? "flag.fill" : "flag")
+                .font(Theme.Font.caption)
+                .foregroundStyle(isReported ? Theme.textTertiary : Theme.textSecondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isReported)
+        .help("Report a bad response to ModelGateway")
+        .accessibilityLabel(isReported ? "Response reported" : "Report response")
+        .padding(.leading, -6)
+        .popover(isPresented: $reporting, arrowEdge: .bottom) {
+            if let projectId {
+                ReportResponsePopover(turn: turn, projectId: projectId)
+            }
+        }
+    }
+
     /// The spinner trails the text (contract) by riding along as the last
     /// glyph of the markdown; inside an open code fence it would land in the
     /// code block, so there it falls back to its own line.
@@ -298,6 +339,66 @@ struct AssistantMessageView: View {
         }
         .padding(2)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Metrics.radiusSmall, style: .continuous))
+    }
+}
+
+/// Report's popover: why the response was bad (`ResponseReportReason`) and
+/// an optional note. Send files it with `gateway/report`, which counts it
+/// against the provider that served the message, and closes on success.
+private struct ReportResponsePopover: View {
+    let turn: AssistantTurn
+    let projectId: String
+
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+    @State private var reason: ResponseReportReason = .incorrect
+    @State private var comment = ""
+    @State private var sending = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Report response")
+                    .font(Theme.Font.heading)
+                    .foregroundStyle(Theme.textPrimary)
+                Text("ModelGateway counts it against the provider that served this message.")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Picker("Reason", selection: $reason) {
+                ForEach(ResponseReportReason.allCases) { reason in
+                    Text(reason.title).tag(reason)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            TextField("What went wrong? (optional)", text: $comment, axis: .vertical)
+                .lineLimit(3...6)
+                .textFieldStyle(.roundedBorder)
+                .font(Theme.Font.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(sending ? "Sending…" : "Send Report") {
+                    Task { await send() }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(sending)
+            }
+        }
+        .padding(16)
+        .frame(width: 320)
+    }
+
+    private func send() async {
+        sending = true
+        defer { sending = false }
+        let text = String(comment.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1000))
+        if await appState.reportResponse(projectId: projectId, turn: turn, reason: reason, comment: text) {
+            dismiss()
+        }
     }
 }
 

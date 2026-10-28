@@ -266,6 +266,13 @@ pub async fn attach_referral(layout: &DataLayout, base_url: Option<&str>, body: 
     authed(layout, base_url, reqwest::Method::POST, "/api/device/referral/attach", Some(body), "gateway/referral/attach").await
 }
 
+/// `{request_id, reason, comment?}`: reports a finished response by the
+/// request id the gateway gave it; it counts against the route that served
+/// it (`POST /api/device/report`).
+pub async fn report(layout: &DataLayout, base_url: Option<&str>, body: Value) -> GatewayResult<Value> {
+    authed(layout, base_url, reqwest::Method::POST, "/api/device/report", Some(body), "gateway/report").await
+}
+
 /// `{status: "pending"|"approved"|"denied"|"expired", interval?, account?}`.
 /// On approval the gateway's one-time key is written to the credential
 /// store and taken out of the reply.

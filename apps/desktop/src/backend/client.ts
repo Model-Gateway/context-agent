@@ -48,6 +48,8 @@ import {
   type GatewayDevice,
   type GatewayReferral,
   type GatewayReferralAttachResult,
+  type GatewayReportResult,
+  type ResponseReportReason,
   type GatewayReferralSplitResult,
   type GatewayDevicePoll,
   type GatewayDeviceStart,
@@ -883,6 +885,11 @@ export class BackendClient {
   /** Adds a referrer to a new account that signed up without a code. */
   async gatewayAttachReferralCode(baseURL: string, code: string): Promise<GatewayReferralAttachResult> {
     return this.request('gateway/referral/attach', object({ base_url: baseURL, code }))
+  }
+
+  /** Reports one finished assistant message (its task's `step`) to the gateway that served it. */
+  async gatewayReport(baseURL: string, projectId: string, taskId: string, step: number, reason: ResponseReportReason, comment: string): Promise<GatewayReportResult> {
+    return this.request('gateway/report', object({ base_url: baseURL, project_id: projectId, task_id: taskId, step, reason, comment }))
   }
 
   /** The device key's price limits and spending cap. */

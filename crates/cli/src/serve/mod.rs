@@ -839,6 +839,7 @@ impl Server {
             "gateway/referral" => self.gateway_referral(parse(params)?).await,
             "gateway/referral/update" => self.gateway_referral_update(parse(params)?).await,
             "gateway/referral/attach" => self.gateway_referral_attach(parse(params)?).await,
+            "gateway/report" => self.gateway_report(parse(params)?).await,
             "mcp/status" => Ok(json!({"servers": self.mcp.status()})),
             "mcp/reconnect" => self.mcp_reconnect(parse(params)?).await,
             "mcp/catalog" => Ok(json!({"apps": ctx_tools::mcp::catalog()})),

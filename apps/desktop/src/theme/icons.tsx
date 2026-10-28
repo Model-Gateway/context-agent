@@ -112,6 +112,8 @@ import {
 import { Drama, FileDown, House, Laptop, LibraryBig, ListOrdered, Package, Server, SquareMousePointer } from 'lucide-react'
 // The command palette's Toggle sidebar (View → Toggle Sidebar has no symbol in Swift).
 import { PanelLeft } from 'lucide-react'
+// The transcript's Report row (flag).
+import { Flag } from 'lucide-react'
 
 // SF Symbols lucide has no close match for, drawn on lucide's 24-unit grid
 // (2-unit padding, round caps and joins) so they take the same size and
@@ -353,6 +355,7 @@ export const Icons = {
   windowMaximize: Square, // outlined (no FILL entry)
   windowRestore: Copy, // two overlapping squares
   sidebarLeft: PanelLeft, // sidebar.left (palette: Toggle sidebar)
+  report: Flag, // flag
 } as const satisfies Record<string, LucideIcon>
 
 /** A key of the `Icons` catalogue. */

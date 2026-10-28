@@ -498,7 +498,7 @@ export const TranscriptRow = memo(function TranscriptRow({ item, chat, findQuery
       content = <UserMessageView turn={item} highlight={highlight} chat={chat} />
       break
     case 'assistant':
-      content = <AssistantMessageView turn={item} />
+      content = <AssistantMessageView turn={item} projectId={chat.projectId} />
       break
     case 'tools':
       content = <ToolTimelineView group={item} chat={chat} />

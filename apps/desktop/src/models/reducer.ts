@@ -546,7 +546,7 @@ export class TranscriptReducer {
         const progress = chatStatusProgress(t.status)
         if (progress) t.status = { kind: 'running', progress: { ...progress, step: event.step } }
         this.commitLive(date)
-        t.live = makeAssistantTurn({ step: event.step, date })
+        t.live = makeAssistantTurn({ step: event.step, taskId: this._currentTaskId, date })
         this.addLog(`model request · step ${event.step} · ~${event.estimated_prompt_tokens} tok`, date)
         return true
       }
@@ -1186,7 +1186,7 @@ export class TranscriptReducer {
   /** Creates `live` when there is none; true when it did. */
   private ensureLive(date: Date): boolean {
     if (this.target.live !== null) return false
-    this.target.live = makeAssistantTurn({ step: chatStatusProgress(this.target.status)?.step ?? 0, date })
+    this.target.live = makeAssistantTurn({ step: chatStatusProgress(this.target.status)?.step ?? 0, taskId: this._currentTaskId, date })
     return true
   }
 
@@ -1219,7 +1219,7 @@ export class TranscriptReducer {
       }
     }
     if (this.pendingText.length === 0 && this.pendingReasoning.length === 0) return
-    if (this.target.live === null) this.target.live = makeAssistantTurn({ step: chatStatusProgress(this.target.status)?.step ?? 0 })
+    if (this.target.live === null) this.target.live = makeAssistantTurn({ step: chatStatusProgress(this.target.status)?.step ?? 0, taskId: this._currentTaskId })
     const reasoning = this.pendingReasoning
     const text = this.pendingText
     this.pendingReasoning = ''

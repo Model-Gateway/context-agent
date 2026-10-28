@@ -118,6 +118,8 @@ export interface AssistantTurn {
   /** True while reasoning deltas arrive and no text delta has arrived yet. */
   isThinking: boolean
   step: number
+  /** The run that produced this message; with `step` it names the model request a Report is filed against (`gateway/report`). */
+  taskId: string | null
   thinkingStarted: Date | null
   /** Seconds (Swift `TimeInterval`). */
   thinkingDuration: number | null
@@ -134,10 +136,16 @@ export function makeAssistantTurn(fields: Partial<Omit<AssistantTurn, 'kind'>> =
     isStreaming: fields.isStreaming ?? true,
     isThinking: fields.isThinking ?? false,
     step: fields.step ?? 0,
+    taskId: fields.taskId ?? null,
     thinkingStarted: fields.thinkingStarted ?? null,
     thinkingDuration: fields.thinkingDuration ?? null,
     date: fields.date ?? new Date(),
   }
+}
+
+/** `AssistantTurn.reportKey`: names the model request behind the message across re-renders. */
+export function assistantTurnReportKey(turn: AssistantTurn): string {
+  return `${turn.taskId ?? ''}#${turn.step}`
 }
 
 /** `AssistantTurn.isEmpty`. */
