@@ -12,6 +12,8 @@
 //!   and the reveal / open actions.
 //! - `selftest`: `LaunchOptions` (`--mock`, `--project`, `--binary`, `--autotest`)
 //!   and `selftest_finish` (writes the self-test's `result.json`, then exits).
+//! - `updater`: self-updates (`App/Updater.swift`) behind the `updater_*`
+//!   commands and the `updater:*` events.
 //!
 //! Every command returns `Result<T, String>` with a user-presentable error
 //! string (`backend_start` and `rpc_request` reject with JSON, see `backend`).
@@ -20,6 +22,7 @@ pub mod backend;
 pub mod fs;
 pub mod secrets;
 pub mod selftest;
+pub mod updater;
 // F6: the Inspector's Terminal and Browser tabs.
 pub mod browser;
 pub mod terminal;
@@ -41,10 +44,16 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(backend::Backends::default())
         // F6 registers its managed state here:
         .manage(terminal::Terminals::default())
         .manage(browser::Browsers::default())
+        .setup(|app| {
+            app.manage(updater::Updates::new(app.handle()));
+            updater::Updates::start_schedule(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             selftest::launch_options,
             selftest::selftest_finish,
@@ -68,6 +77,12 @@ pub fn run() {
             fs::reveal_in_file_manager,
             fs::open_with_default_app,
             fs::open_url,
+            updater::updater_status,
+            updater::updater_check,
+            updater::updater_download,
+            updater::updater_install,
+            updater::updater_dismiss,
+            updater::updater_set_automatic,
             // F6 registers its commands here:
             terminal::terminal_open,
             terminal::terminal_write,
@@ -93,7 +108,8 @@ pub fn run() {
         if let RunEvent::Exit = event {
             // Like the macOS app on quit: ask every child (the local ctx and
             // each host's ssh) to shut down, then kill it, before the
-            // process goes away, so no `ctx serve` is left behind.
+            // process goes away, so no `ctx serve` is left behind, and the
+            // installer of a downloaded update can replace ctx.exe.
             let backends = app.state::<backend::Backends>().all();
             tauri::async_runtime::block_on(async {
                 let stops: Vec<_> = backends
@@ -107,6 +123,7 @@ pub fn run() {
                 })
                 .await;
             });
+            app.state::<updater::Updates>().install_on_quit();
         }
     });
 }

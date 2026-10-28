@@ -76,13 +76,24 @@ jobs:
       - name: Type-check and lint
         working-directory: apps/desktop
         run: npm run check
+      # A throwaway updater key, so the build also writes the .sig files and
+      # latest.json; installed copies reject what it signs (the app trusts
+      # only the release key in tauri.conf.json).
+      - name: Make a throwaway updater key
+        working-directory: apps/desktop
+        run: npx tauri signer generate --ci -w "${{ runner.temp }}/updater.key"
       # The release script without signing (release-windows.yml signs), so
       # every change exercises the path a release takes.
-      - name: Build the installers
+      - name: Build the installers and the update feed
         shell: pwsh
         env:
           SKIP_SIGN: "1"
-        run: powershell -ExecutionPolicy Bypass -File apps/desktop/scripts/release.ps1
+          TAURI_SIGNING_PRIVATE_KEY: ${{ runner.temp }}/updater.key
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          powershell -ExecutionPolicy Bypass -File apps/desktop/scripts/release.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Content dist/latest.json
       - name: Self-test the app against the mock backend
         shell: pwsh
         timeout-minutes: 6
