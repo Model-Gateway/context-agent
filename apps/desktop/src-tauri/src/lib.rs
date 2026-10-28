@@ -65,6 +65,7 @@ pub fn run() {
             backend::rpc_request,
             backend::backend_candidates,
             backend::ssh_config_hosts,
+            backend::install::ssh_install_ctx,
             secrets::secret_get,
             secrets::secret_set,
             secrets::secret_remove,

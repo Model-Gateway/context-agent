@@ -20,6 +20,7 @@
 //! and emits `backend:exited` unless the exit was requested by `stop`.
 
 pub mod environment;
+pub mod install;
 pub mod launch;
 pub mod locator;
 pub mod rpc;
@@ -762,13 +763,13 @@ pub(crate) fn terminate_pid(_pid: u32) -> bool {
 
 /// Windows: `CREATE_NO_WINDOW`, so the console child never flashes a window.
 #[cfg(windows)]
-fn configure_platform(command: &mut Command) {
+pub(crate) fn configure_platform(command: &mut Command) {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     command.creation_flags(CREATE_NO_WINDOW);
 }
 
 #[cfg(not(windows))]
-fn configure_platform(_command: &mut Command) {}
+pub(crate) fn configure_platform(_command: &mut Command) {}
 
 // MARK: - Commands
 

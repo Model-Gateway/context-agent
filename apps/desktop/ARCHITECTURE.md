@@ -235,6 +235,7 @@ backend_stderr({ backend? }) -> string[]       // last 500 lines
 rpc_request({ backend?, method: string, params?: JSON }) -> JSON   // resolves with `result`, rejects with { code, message, kind? } as a JSON string
 backend_candidates() -> string[]   // the locator's search list, for the failure panel
 ssh_config_hosts() -> string[]     // the `Host` aliases of ~/.ssh/config (Include one level deep, patterns skipped)
+ssh_install_ctx({ host }) -> string  // Install ctx on host: the app version's Linux build into ~/.local/bin over ssh; the new `ctx --version` line, or why not
 
 secret_get({ account }) -> string | null
 secret_set({ account, value }) -> ()
@@ -528,7 +529,11 @@ pieces live:
   every event (`backend:notification` / `exited` / `stderr`) carries the id,
   so the frontend routes it to the right `BackendClient`; the commands take
   `backend` (default `local`). `ssh_config_hosts` reads the `Host` aliases
-  of `~/.ssh/config` for the settings form.
+  of `~/.ssh/config` for the settings form. `ssh_install_ctx({ host })`
+  (src-tauri/src/backend/install.rs, the port of `RemoteInstaller.swift`)
+  is Install ctx on host: `uname -sm` over ssh, the app version's
+  `ctx-<target>.tar.gz` downloaded with `curl`, piped to `sh -c` on the
+  host into `~/.local/bin`; it returns the installed `ctx --version` line.
 - **One connection per host.** `state/remote.ts` is `RemoteConnection`: the
   `SSHHost` as configured when it connected, its own `BackendClient`
   (`id = host.id`), a `state` (disconnected / connecting / ready / failed)
@@ -538,7 +543,9 @@ pieces live:
   host is opened; concurrent callers share one attempt), `disconnectHost`
   (closes its projects with `forget` false), `reconnectHost`, `removeHost`,
   `saveHost`, `testHost` (a saved host on its own connection, a draft on a
-  throwaway client), `chooseRemoteProject`, `listRemoteDirectory`,
+  throwaway client; `needsCtx` when `remoteProblem` says ctx is missing or
+  too old), `installCtx` (then clears a saved host's ctx path and
+  reconnects it), `chooseRemoteProject`, `listRemoteDirectory`,
   `reopenRememberedRemoteProjects` (at launch, each host in parallel, after
   — and independently of — the local start). `handleRemoteExit` fails the
   host's running chats, marks the connection failed and leaves the rows in

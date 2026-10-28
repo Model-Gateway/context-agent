@@ -12,7 +12,7 @@ struct RemoteHostsSettingsSection: View {
 
     var body: some View {
         SettingsPage {
-            SettingsGroup("Hosts", footer: "Context runs ctx serve on the host over ssh and opens projects that live there: files, index, chats, API key and configuration are all the host's, so ctx must be installed there (cargo install --path crates/cli, or copy a release binary to ~/.cargo/bin) and have a model configured. Authentication is ssh's: keys and ssh-agent work, passwords cannot be typed; ~/.ssh/config aliases apply, so a ProxyJump or IdentityFile set there is used.") {
+            SettingsGroup("Hosts", footer: "Context runs ctx serve on the host over ssh and opens projects that live there: files, index, chats, API key and configuration are all the host's, so ctx must be installed there and have a model configured. When it is missing or older than the app, Install ctx on host copies the Linux build of this version (x86_64 or arm64) to ~/.local/bin over ssh: no root, Rust or internet access needed on the host. Authentication is ssh's: keys and ssh-agent work, passwords cannot be typed; ~/.ssh/config aliases apply, so a ProxyJump or IdentityFile set there is used.") {
                 if appState.hosts.hosts.isEmpty {
                     Text("No remote hosts yet.")
                         .font(Theme.Font.secondary)
@@ -56,7 +56,7 @@ struct RemoteHostsSettingsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 SettingsRow("ssh") {
-                    Text(verbatim: "ssh -o BatchMode=yes -T [-p port] [-i key] [-l user] <host> -- env PATH=\"$HOME/.cargo/bin:…:$PATH\" ctx serve")
+                    Text(verbatim: "ssh -o BatchMode=yes -T [-p port] [-i key] [-l user] <host> -- env PATH=\"$HOME/.local/bin:$HOME/.cargo/bin:…:$PATH\" ctx serve")
                         .font(Theme.Font.monoSmall)
                         .foregroundStyle(Theme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -78,6 +78,12 @@ private struct HostSettingsRow: View {
     @State private var confirmRemove = false
 
     private var connection: RemoteConnection? { appState.remotes[host.id] }
+
+    private func install() async {
+        if case .failure(let error) = await appState.installCtx(on: host) {
+            appState.toasts.show("Could not install ctx on \(host.displayName).", kind: .error, details: error.localizedDescription)
+        }
+    }
 
     private var statusTint: Color {
         switch connection?.state {
@@ -132,6 +138,18 @@ private struct HostSettingsRow: View {
             }
             Spacer(minLength: 8)
             HStack(spacing: 6) {
+                if let connection, connection.needsCtx || connection.isOutdated {
+                    Button {
+                        Task { await install() }
+                    } label: {
+                        HStack(spacing: 5) {
+                            if connection.installing { BrailleSpinner(size: 10, tint: Theme.textSecondary) }
+                            Text(connection.isOutdated ? "Update ctx" : "Install ctx")
+                        }
+                    }
+                    .help(connection.isOutdated ? "Replace ctx on the host with the build of this version (\(Updater.version))" : "Copy ctx \(Updater.version) for Linux to \(RemoteInstaller.installDirectory) on the host")
+                    .disabled(connection.installing || appState.projects(on: host.id).contains { $0.isRunning })
+                }
                 if connection?.isReady == true {
                     Button("Disconnect") { Task { await appState.disconnect(host) } }
                         .disabled(appState.projects(on: host.id).contains { $0.isRunning })
@@ -170,7 +188,10 @@ private struct HostEditorSheet: View {
     @State private var extraArguments = ""
     @State private var portText = ""
     @State private var testing = false
+    @State private var installing = false
     @State private var message: SettingsMessage?
+    /// The last Test connection found ctx missing or too old.
+    @State private var needsCtx = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -252,7 +273,19 @@ private struct HostEditorSheet: View {
                         Text("Test connection")
                     }
                 }
-                .disabled(!draft.isValid || testing)
+                .disabled(!draft.isValid || testing || installing)
+                if needsCtx {
+                    Button {
+                        Task { await install() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if installing { BrailleSpinner(size: 11, tint: Theme.textSecondary) }
+                            Text("Install ctx on host")
+                        }
+                    }
+                    .help("Copy ctx \(Updater.version) for Linux to \(RemoteInstaller.installDirectory) on the host over ssh, then test again")
+                    .disabled(!draft.isValid || testing || installing)
+                }
                 Spacer(minLength: 8)
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -309,7 +342,29 @@ private struct HostEditorSheet: View {
         defer { testing = false }
         switch await appState.testHost(draft) {
         case .success(let summary):
+            needsCtx = false
             message = .success("Connected: \(summary)")
+        case .failure(let error):
+            needsCtx = (error as? HostTestFailure)?.needsCtx == true
+            message = .error(error.localizedDescription)
+        }
+    }
+
+    /// Install ctx on host, then the same test as the button's, so the
+    /// message ends on what the app will find when it connects.
+    private func install() async {
+        installing = true
+        message = .info("Installing ctx \(Updater.version) on \(draft.target)…")
+        let result = await appState.installCtx(on: draft)
+        installing = false
+        switch result {
+        case .success(let installed):
+            host.ctxPath = ""
+            needsCtx = false
+            await test()
+            if message?.kind == .success {
+                message = .success("Installed \(installed) in \(RemoteInstaller.installDirectory). \(message?.text ?? "")")
+            }
         case .failure(let error):
             message = .error(error.localizedDescription)
         }

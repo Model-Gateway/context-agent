@@ -13,6 +13,10 @@ import { BackendClient, looksIncompatible } from '../backend/client'
 import { describe as describeFailure, type BackendFailure } from '../backend/errors'
 import type { InitializeResult } from '../backend/types'
 import { hostDisplayName, hostTarget, type SSHHost } from '../models/sshHost'
+import { useUpdater } from './updater'
+
+/** Where Install ctx on host puts the binary (src-tauri/src/backend/install.rs). */
+export const INSTALL_DIRECTORY = '~/.local/bin'
 
 /** `RemoteConnection.State`. */
 export type RemoteState =
@@ -49,6 +53,11 @@ export class RemoteConnection {
   hint: string | null = null
   /** A connect in flight, awaited by every opener that arrives meanwhile. */
   connecting: Promise<boolean> | null = null
+  /// The last attempt failed because ctx is missing on the host or too
+  /// old: Install ctx on host fixes it.
+  needsCtx = false
+  /** Install ctx on host is running. */
+  installing = false
   /** Bumped by every `touch()`. */
   version = 0
 
@@ -73,6 +82,13 @@ export class RemoteConnection {
   /** The host's `initialize` result while connected. */
   get result(): InitializeResult | null {
     return this.state.kind === 'ready' ? this.state.result : null
+  }
+
+  /** Connected to a ctx older than the app's (Update ctx on host). */
+  get isOutdated(): boolean {
+    const result = this.result
+    const appVersion = useUpdater.getState().status?.version
+    return result !== null && !result.mock && appVersion !== undefined && isOlderVersion(result.ctx_version, appVersion)
   }
 
   /** `displayName` of the host. */
@@ -121,20 +137,38 @@ export class RemoteConnection {
   }
 }
 
-/// `AppState.remoteHint(for:stderr:host:)`: what ssh's last words usually
-/// mean, for the sidebar and the toast.
-export function remoteHint(failure: BackendFailure, stderr: readonly string[], host: SSHHost): string | null {
+/** `RemoteInstaller.isOlder(_:than:)`: "0.1.4" < "0.1.5" by numeric components (after `-`/`+` ignored); false when either is not a version. */
+export function isOlderVersion(version: string, other: string): boolean {
+  const parts = (text: string): number[] | null => {
+    const core = text.split(/[-+]/)[0] ?? ''
+    const numbers = core.split('.').map((part) => (/^\d+$/.test(part) ? Number(part) : NaN))
+    return numbers.length === 0 || numbers.some(Number.isNaN) ? null : numbers
+  }
+  const left = parts(version)
+  const right = parts(other)
+  if (!left || !right) return false
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const a = left[index] ?? 0
+    const b = right[index] ?? 0
+    if (a !== b) return a < b
+  }
+  return false
+}
+
+/** `AppState.RemoteProblem`: what went wrong reaching a host, read from ssh's last words. */
+export type RemoteProblem = 'signIn' | 'unresolved' | 'unreachable' | 'hostKey' | 'ctxMissing' | 'ctxTooOld' | 'sshFailed'
+
+/** `RemoteProblem.isCtx`: Install ctx on host is the fix. */
+export function isCtxProblem(problem: RemoteProblem | null): boolean {
+  return problem === 'ctxMissing' || problem === 'ctxTooOld'
+}
+
+/// `AppState.remoteProblem(for:stderr:)`.
+export function remoteProblem(failure: BackendFailure, stderr: readonly string[]): RemoteProblem | null {
   const detail = describeFailure(failure).detail
   const text = (stderr.slice(-12).join('\n') + '\n' + detail).toLowerCase()
-  const user = host.user.trim().length === 0 ? 'the configured user' : host.user.trim()
-  const name = hostDisplayName(host)
-  const target = hostTarget(host)
-  if (text.includes('permission denied') || text.includes('no supported authentication') || text.includes('too many authentication failures')) {
-    return `ssh could not sign in as ${user}. Passwords cannot be typed here: add your key to ssh-agent (ssh-add), set an identity file for the host, or put the host in ~/.ssh/config.`
-  }
-  if (text.includes('could not resolve hostname') || text.includes('name or service not known') || text.includes('nodename nor servname')) {
-    return `The address ${host.address} could not be resolved. Check the host's address, or use a Host alias from ~/.ssh/config.`
-  }
+  if (text.includes('permission denied') || text.includes('no supported authentication') || text.includes('too many authentication failures')) return 'signIn'
+  if (text.includes('could not resolve hostname') || text.includes('name or service not known') || text.includes('nodename nor servname')) return 'unresolved'
   if (
     text.includes('connection refused') ||
     text.includes('connection timed out') ||
@@ -142,21 +176,42 @@ export function remoteHint(failure: BackendFailure, stderr: readonly string[], h
     text.includes('no route to host') ||
     text.includes('network is unreachable')
   ) {
-    return `Nothing answered at ${target}. Check that the machine is reachable (VPN, firewall) and that sshd listens on ${host.port > 0 ? `port ${host.port}` : 'its port'}.`
+    return 'unreachable'
   }
-  if (text.includes('host key verification failed') || text.includes('remote host identification has changed')) {
-    return `ssh refused the host key. Connect once from a terminal (ssh ${target}) to accept it, or fix ~/.ssh/known_hosts.`
-  }
+  if (text.includes('host key verification failed') || text.includes('remote host identification has changed')) return 'hostKey'
   if (text.includes('command not found') || (text.includes('not found') && text.includes('ctx')) || (text.includes('no such file or directory') && text.includes('ctx'))) {
-    return `ctx is not installed on ${name}, or not on its PATH for non-interactive shells. Install it there (cargo install --path crates/cli, or copy the binary to ~/.cargo/bin) or set the ctx path for the host in Settings → Remote hosts.`
+    return 'ctxMissing'
   }
-  if (looksIncompatible(text)) {
-    return `The ctx on ${name} is too old for the desktop protocol. Update it to a build with \`ctx serve\`.`
-  }
-  if (failure.kind === 'exited' && failure.code === 255) {
-    return 'ssh exited with code 255: it could not establish the connection. The output above has the reason; a password prompt, a host-key question or a missing key are the usual ones.'
-  }
+  if (failure.kind === 'exited' && failure.code === 127) return 'ctxMissing'
+  if (looksIncompatible(text) || failure.kind === 'incompatible') return 'ctxTooOld'
+  if (failure.kind === 'exited' && failure.code === 255) return 'sshFailed'
   return null
+}
+
+/// `AppState.remoteHint(for:stderr:host:)`: what ssh's last words usually
+/// mean, for the sidebar and the toast.
+export function remoteHint(failure: BackendFailure, stderr: readonly string[], host: SSHHost): string | null {
+  const user = host.user.trim().length === 0 ? 'the configured user' : host.user.trim()
+  const name = hostDisplayName(host)
+  const target = hostTarget(host)
+  switch (remoteProblem(failure, stderr)) {
+    case 'signIn':
+      return `ssh could not sign in as ${user}. Passwords cannot be typed here: add your key to ssh-agent (ssh-add), set an identity file for the host, or put the host in ~/.ssh/config.`
+    case 'unresolved':
+      return `The address ${host.address} could not be resolved. Check the host's address, or use a Host alias from ~/.ssh/config.`
+    case 'unreachable':
+      return `Nothing answered at ${target}. Check that the machine is reachable (VPN, firewall) and that sshd listens on ${host.port > 0 ? `port ${host.port}` : 'its port'}.`
+    case 'hostKey':
+      return `ssh refused the host key. Connect once from a terminal (ssh ${target}) to accept it, or fix ~/.ssh/known_hosts.`
+    case 'ctxMissing':
+      return `ctx is not installed on ${name}, or not on its PATH for non-interactive shells. Install ctx on host copies the Linux build of this version to ${INSTALL_DIRECTORY} over ssh (no root or Rust needed); or set the host's ctx path in Settings → Remote hosts.`
+    case 'ctxTooOld':
+      return `The ctx on ${name} is too old for this app. Update ctx on host copies the Linux build of this version to ${INSTALL_DIRECTORY} over ssh.`
+    case 'sshFailed':
+      return 'ssh exited with code 255: it could not establish the connection. The output above has the reason; a password prompt, a host-key question or a missing key are the usual ones.'
+    case null:
+      return null
+  }
 }
 
 /** `BackendFailurePanel.summary(for:)` for the remote toasts and rows. */

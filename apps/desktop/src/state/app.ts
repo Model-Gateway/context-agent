@@ -93,7 +93,7 @@ import { BrowserWorkspace } from './browser'
 import { ChatState } from './chat'
 import { isAppActive, notifier, onAppBecameActive } from './notifications'
 import { ProjectState, starterFallback } from './project'
-import { RemoteConnection, remoteFailureSummary, remoteHint, type RemotePickerRequest } from './remote'
+import { isCtxProblem, RemoteConnection, remoteFailureSummary, remoteHint, remoteProblem, type RemotePickerRequest } from './remote'
 import {
   anyProjectRunning,
   apiKeyEnvName,
@@ -276,7 +276,10 @@ export interface AppFields {
 }
 
 /** `testHost`'s answer: what the probe found, or why it failed (with the hint). */
-export type HostTestResult = { ok: true; summary: string } | { ok: false; message: string }
+export type HostTestResult = { ok: true; summary: string } | { ok: false; message: string; needsCtx: boolean }
+
+/** `installCtx`'s answer: the installed version line, or why not. */
+export type CtxInstallResult = { ok: true; installed: string } | { ok: false; message: string }
 
 /** `openProject`'s options. */
 export interface OpenProjectOptions {
@@ -351,6 +354,8 @@ export interface AppActions {
   saveHost: (host: SSHHost) => SSHHost
   /** Test connection: connects exactly as the app will and reports what answered. */
   testHost: (host: SSHHost) => Promise<HostTestResult>
+  /** Install ctx on host: copies this version's Linux build to ~/.local/bin over ssh, then reconnects a saved host. */
+  installCtx: (host: SSHHost) => Promise<CtxInstallResult>
   /** Welcome, the sidebar, mod+shift+O: the remote folder picker (Settings → Remote hosts first when no host is configured). */
   chooseRemoteProject: (host?: SSHHost | null) => void
   setRemotePicker: (request: RemotePickerRequest | null) => void
@@ -2591,6 +2596,7 @@ async function startRemote(connection: RemoteConnection): Promise<boolean> {
   connection.update((c) => {
     c.state = { kind: 'connecting' }
     c.hint = null
+    c.needsCtx = false
   })
   const launch = await launchOptions()
   // The login shell's environment carries SSH_AUTH_SOCK and the user's PATH
@@ -2606,6 +2612,7 @@ async function startRemote(connection: RemoteConnection): Promise<boolean> {
     connection.update((c) => {
       c.state = { kind: 'failed', failure }
       c.hint = remoteHint(failure, c.client.stderrLog, c.host)
+      c.needsCtx = isCtxProblem(remoteProblem(failure, c.client.stderrLog))
     })
     appendRemoteLog(connection, `connection failed: ${remoteFailureSummary(failure)}`, 'error')
     return false
@@ -2623,6 +2630,7 @@ async function disconnectHost(host: SSHHost): Promise<void> {
   connection.update((c) => {
     c.state = { kind: 'disconnected' }
     c.hint = null
+    c.needsCtx = false
   })
 }
 
@@ -2665,6 +2673,7 @@ function handleRemoteExit(connection: RemoteConnection, code: number, tail: stri
   connection.update((c) => {
     c.state = { kind: 'failed', failure }
     c.hint = remoteHint(failure, c.client.stderrLog, c.host)
+    c.needsCtx = isCtxProblem(remoteProblem(failure, c.client.stderrLog))
   })
   appendRemoteLog(connection, `ssh exited (code ${code})`, 'error')
   toast(`Lost the connection to ${name} (ssh exited with code ${code}).`, 'error', tail.length === 0 ? undefined : tail)
@@ -2773,14 +2782,18 @@ async function removeHost(host: SSHHost): Promise<void> {
 /// a throwaway client that is stopped afterwards.
 async function testHost(host: SSHHost): Promise<HostTestResult> {
   const probe = normalizeHost(host)
-  if (!hostIsValid(probe)) return { ok: false, message: "Enter the host's address first." }
+  if (!hostIsValid(probe)) return { ok: false, message: "Enter the host's address first.", needsCtx: false }
   const saved = SSHHosts.host(host.id)
   if (saved && sameHost(saved, probe)) {
     const connection = await connectHost(probe, true)
     if (connection) return { ok: true, summary: connection.statusText }
     const failed = remoteConnections.get(host.id)
     const failure = failed?.failure ?? null
-    return { ok: false, message: [failure ? remoteFailureSummary(failure) : 'Could not connect.', failed?.hint ?? null].filter((part): part is string => part !== null).join('\n') }
+    return {
+      ok: false,
+      message: [failure ? remoteFailureSummary(failure) : 'Could not connect.', failed?.hint ?? null].filter((part): part is string => part !== null).join('\n'),
+      needsCtx: failed?.needsCtx ?? false,
+    }
   }
   const client = new BackendClient(`probe:${probe.id}:${Date.now()}`)
   const launch = await launchOptions()
@@ -2792,8 +2805,39 @@ async function testHost(host: SSHHost): Promise<HostTestResult> {
   } catch (error) {
     const failure = client.lastStartFailure ?? failureOf(error)
     const hint = remoteHint(failure, client.stderrLog, probe)
+    const needsCtx = isCtxProblem(remoteProblem(failure, client.stderrLog))
     await client.remove()
-    return { ok: false, message: [remoteFailureSummary(failure), hint].filter((part): part is string => part !== null).join('\n') }
+    return { ok: false, message: [remoteFailureSummary(failure), hint].filter((part): part is string => part !== null).join('\n'), needsCtx }
+  }
+}
+
+/// `installCtx(on:)`: Install (or update) ctx on the host through the
+/// shell's `ssh_install_ctx` (src-tauri/src/backend/install.rs), then
+/// reconnect a saved host so its projects come back on the new build. A
+/// host whose ctx path points elsewhere gets the path cleared, so the
+/// installed copy is the one that runs. An unsaved draft (the editor's Test
+/// connection) is only installed to.
+async function installCtx(host: SSHHost): Promise<CtxInstallResult> {
+  const connection = SSHHosts.host(host.id) ? remoteFor(host) : null
+  connection?.update((c) => (c.installing = true))
+  try {
+    const installed = await invoke<string>('ssh_install_ctx', { host: normalizeHost(host) })
+    if (connection) {
+      appendRemoteLog(connection, `installed ${installed} in ~/.local/bin`)
+      const saved = SSHHosts.host(host.id)
+      if (saved && saved.ctxPath.trim().length > 0) saveHost({ ...saved, ctxPath: '' })
+      if (connection.isReady || connection.failure !== null) {
+        connection.update((c) => (c.installing = false))
+        await reconnectHost(SSHHosts.host(host.id) ?? host)
+      }
+    }
+    return { ok: true, installed }
+  } catch (error) {
+    const message = errorText(error)
+    if (connection) appendRemoteLog(connection, `installing ctx failed: ${message}`, 'error')
+    return { ok: false, message }
+  } finally {
+    connection?.update((c) => (c.installing = false))
   }
 }
 
@@ -2839,6 +2883,7 @@ const actions: AppActions = {
   removeHost,
   saveHost,
   testHost,
+  installCtx,
   chooseRemoteProject,
   setRemotePicker: (request) => patch({ remotePicker: request }),
   listRemoteDirectory,

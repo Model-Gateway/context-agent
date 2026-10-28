@@ -68,7 +68,7 @@ function emit(event, payload) {
 
 const sshBinary = process.env.CTX_SSH_BINARY || 'ssh'
 /** The remote PATH prefix and ssh options of `src-tauri/src/backend/launch.rs`. */
-const REMOTE_PATH = '$HOME/.cargo/bin:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:$PATH'
+const REMOTE_PATH = '$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:/opt/homebrew/bin:$PATH'
 const SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4', '-o', 'ClearAllForwardings=yes', '-T']
 
 function shellQuote(word) {
@@ -93,6 +93,64 @@ function sshArguments(host) {
 function remoteCommand(host, serveArgs) {
   const words = [host.ctxPath || 'ctx', ...serveArgs].map(shellQuote).join(' ')
   return `env PATH="${REMOTE_PATH}" ${words}`
+}
+
+// --- Install ctx on host (src-tauri/src/backend/install.rs) ---------------------
+
+const INSTALL_SCRIPT = [
+  'set -e',
+  'dir="$HOME/.local/bin"',
+  'mkdir -p "$dir"',
+  'tmp=$(mktemp -d "$dir/.ctx-install.XXXXXX")',
+  `trap 'rm -rf "$tmp"' EXIT`,
+  'tar -xzf - -C "$tmp"',
+  'chmod 755 "$tmp/ctx"',
+  '"$tmp/ctx" --version',
+  'mv -f "$tmp/ctx" "$dir/ctx"',
+].join('\n')
+
+/** `ssh <host> <command>` with `input` on stdin → `{ code, stdout, stderr }`. */
+function sshRun(host, command, input) {
+  return new Promise((done, fail) => {
+    const child = spawn(sshBinary, [...sshArguments(host), command], { stdio: ['pipe', 'pipe', 'pipe'] })
+    const out = []
+    const err = []
+    child.stdout.on('data', (chunk) => out.push(chunk))
+    child.stderr.on('data', (chunk) => err.push(chunk))
+    child.on('error', fail)
+    child.on('close', (code) => done({ code: code ?? -1, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() }))
+    child.stdin.on('error', () => undefined)
+    child.stdin.end(input ?? undefined)
+  })
+}
+
+function installFailure(output, doing) {
+  const tail = output.stderr.trim().split('\n').slice(-6).join('\n')
+  return `Could not ${doing} (ssh exited with code ${output.code}).` + (tail ? `\n${tail}` : '')
+}
+
+/** `ssh_install_ctx({ host })`: probe, download (or read a file:// URL), unpack on the host. Throws a string, like the shell's command. */
+async function installCtx(host) {
+  const probe = await sshRun(host, 'uname -sm')
+  if (probe.code !== 0) throw installFailure(probe, 'ask the host what it runs')
+  const [system, machine] = probe.stdout.trim().toLowerCase().split(/\s+/)
+  const target = system !== 'linux' ? null : { x86_64: 'x86_64-unknown-linux-musl', amd64: 'x86_64-unknown-linux-musl', aarch64: 'aarch64-unknown-linux-musl', arm64: 'aarch64-unknown-linux-musl' }[machine]
+  if (!target) throw `There is no ctx build for ${probe.stdout.trim() || 'this host'}. Automatic install covers Linux on x86_64 and arm64.`
+  const name = `ctx-${target}.tar.gz`
+  const base = process.env.CTX_REMOTE_RELEASE_URL?.trim()
+  const url = base ? `${base.replace(/\/+$/, '')}/${name}` : `https://github.com/Model-Gateway/context-agent/releases/download/v${updater.version}/${name}`
+  let archive
+  if (url.startsWith('file:')) {
+    archive = readFileSync(fileURLToPath(url))
+  } else {
+    const response = await fetch(url)
+    if (response.status === 404) throw `The v${updater.version} release has no Linux build of ctx (${name}). Update Context, or install ctx on the host yourself.`
+    if (!response.ok) throw `Downloading ${url} failed (HTTP ${response.status}).`
+    archive = Buffer.from(await response.arrayBuffer())
+  }
+  const result = await sshRun(host, `sh -c ${shellQuote(INSTALL_SCRIPT)}`, archive)
+  if (result.code !== 0) throw installFailure(result, 'install ctx in ~/.local/bin')
+  return result.stdout.trim().split('\n').pop() || `ctx ${updater.version}`
 }
 
 /** @type {Map<string, { child, generation, pending: Map, stderrRing: string[], stopping: boolean, binary: string }>} */
@@ -341,6 +399,7 @@ const commands = {
   backend_stderr: (a) => backends.get(backendId(a))?.stderrRing ?? [],
   backend_candidates: () => [binary],
   ssh_config_hosts: () => sshConfigHosts(),
+  ssh_install_ctx: (a) => installCtx(a.host),
   rpc_request: (a) => rpc(backendId(a), a.method, a.params),
   secret_get: (a) => secrets.get(a.account) ?? null,
   secret_set: (a) => (secrets.set(a.account, a.value), null),

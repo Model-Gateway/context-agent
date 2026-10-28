@@ -39,6 +39,11 @@ final class RemoteConnection: Identifiable {
     var hint: String?
     /// A connect in flight, awaited by every opener that arrives meanwhile.
     @ObservationIgnored var connecting: Task<Bool, Never>?
+    /// The last attempt failed because ctx is missing on the host or too
+    /// old: Install ctx on host fixes it.
+    var needsCtx = false
+    /// Install ctx on host is running.
+    var installing = false
 
     var id: UUID { host.id }
 
@@ -48,6 +53,12 @@ final class RemoteConnection: Identifiable {
     }
 
     var isReady: Bool { state.isReady }
+
+    /// Connected to a ctx older than the app's (Update ctx on host).
+    var isOutdated: Bool {
+        guard case .ready(let result) = state, !result.mock else { return false }
+        return RemoteInstaller.isOlder(result.ctxVersion, than: Updater.version)
+    }
 
     /// "ctx 0.1.0 · connected", "Connecting…", "Disconnected", or the failure title.
     var label: String {
@@ -65,6 +76,14 @@ final class RemoteConnection: Identifiable {
         let who = info.user.isEmpty ? info.hostname : "\(info.user)@\(info.hostname)"
         return "\(who) · \(info.os)"
     }
+}
+
+/// Why Test connection failed, and whether Install ctx on host would fix it.
+struct HostTestFailure: LocalizedError {
+    var message: String
+    var needsCtx: Bool
+
+    var errorDescription: String? { message }
 }
 
 /// The remote folder picker sheet (Views/Remote/RemoteFolderPicker.swift):
@@ -122,6 +141,7 @@ extension AppState {
     private func startRemote(_ connection: RemoteConnection) async -> Bool {
         connection.state = .connecting
         connection.hint = nil
+        connection.needsCtx = false
         // The login shell's environment carries SSH_AUTH_SOCK and the
         // user's PATH (a Homebrew ssh, say); no key is passed along.
         let environment = await BackendEnvironment.build(apiKeyEnv: nil)
@@ -134,6 +154,7 @@ extension AppState {
             let failure = Self.failure(from: connection.client.lastStartFailure, error: error)
             connection.state = .failed(failure)
             connection.hint = Self.remoteHint(for: failure, stderr: connection.client.stderrLog, host: connection.host)
+            connection.needsCtx = Self.remoteProblem(for: failure, stderr: connection.client.stderrLog)?.isCtx == true
             appendRemoteLog(connection, "connection failed: \(BackendFailurePanel.summary(for: failure))", level: "error")
             return false
         }
@@ -149,6 +170,7 @@ extension AppState {
         await connection.client.stop()
         connection.state = .disconnected
         connection.hint = nil
+        connection.needsCtx = false
     }
 
     /// Reconnects a host after a failure or a dropped link and reopens the
@@ -186,6 +208,7 @@ extension AppState {
         let failure = BackendFailure.exited(code: code, tail: tail)
         connection.state = .failed(failure)
         connection.hint = Self.remoteHint(for: failure, stderr: connection.client.stderrLog, host: connection.host)
+        connection.needsCtx = Self.remoteProblem(for: failure, stderr: connection.client.stderrLog)?.isCtx == true
         appendRemoteLog(connection, "ssh exited (code \(code))", level: "error")
         toasts.show("Lost the connection to \(connection.host.displayName) (ssh exited with code \(code)).", kind: .error, details: tail.isEmpty ? nil : tail)
         refreshAttention()
@@ -195,31 +218,93 @@ extension AppState {
         handle(.log(LogNotification(level: level, message: message)), remote: connection)
     }
 
-    /// What ssh's last words usually mean, for the sidebar and the toast.
-    static func remoteHint(for failure: BackendFailure, stderr: [String], host: SSHHost) -> String? {
+    /// What went wrong reaching a host, read from ssh's last words.
+    enum RemoteProblem: Equatable {
+        case signIn, unresolved, unreachable, hostKey, ctxMissing, ctxTooOld, sshFailed
+
+        /// Install ctx on host is the fix.
+        var isCtx: Bool { self == .ctxMissing || self == .ctxTooOld }
+    }
+
+    static func remoteProblem(for failure: BackendFailure, stderr: [String]) -> RemoteProblem? {
         let text = (stderr.suffix(12).joined(separator: "\n") + "\n" + failure.detail).lowercased()
         if text.contains("permission denied") || text.contains("no supported authentication") || text.contains("too many authentication failures") {
-            return "ssh could not sign in as \(host.user.isEmpty ? "the configured user" : host.user). Passwords cannot be typed here: add your key to ssh-agent (ssh-add), set an identity file for the host, or put the host in ~/.ssh/config."
+            return .signIn
         }
         if text.contains("could not resolve hostname") || text.contains("name or service not known") || text.contains("nodename nor servname") {
-            return "The address \(host.address) could not be resolved. Check the host's address, or use a Host alias from ~/.ssh/config."
+            return .unresolved
         }
         if text.contains("connection refused") || text.contains("connection timed out") || text.contains("operation timed out") || text.contains("no route to host") || text.contains("network is unreachable") {
-            return "Nothing answered at \(host.target). Check that the machine is reachable (VPN, firewall) and that sshd listens on \(host.port > 0 ? "port \(host.port)" : "its port")."
+            return .unreachable
         }
         if text.contains("host key verification failed") || text.contains("remote host identification has changed") {
-            return "ssh refused the host key. Connect once from Terminal (ssh \(host.target)) to accept it, or fix ~/.ssh/known_hosts."
+            return .hostKey
         }
         if text.contains("command not found") || text.contains("not found") && text.contains("ctx") || text.contains("no such file or directory") && text.contains("ctx") {
-            return "ctx is not installed on \(host.displayName), or not on its PATH for non-interactive shells. Install it there (cargo install --path crates/cli, or copy the binary to ~/.cargo/bin) or set the ctx path for the host in Settings → Remote hosts."
+            return .ctxMissing
         }
+        if case .exited(127, _) = failure { return .ctxMissing }
         if text.contains("unrecognized subcommand") || text.contains("unexpected argument") {
-            return "The ctx on \(host.displayName) is too old for the desktop protocol. Update it to a build with `ctx serve`."
+            return .ctxTooOld
         }
+        if case .incompatible = failure { return .ctxTooOld }
         if case .exited(let code, _) = failure, code == 255 {
-            return "ssh exited with code 255: it could not establish the connection. The output above has the reason; a password prompt, a host-key question or a missing key are the usual ones."
+            return .sshFailed
         }
         return nil
+    }
+
+    /// What ssh's last words usually mean, for the sidebar and the toast.
+    static func remoteHint(for failure: BackendFailure, stderr: [String], host: SSHHost) -> String? {
+        switch remoteProblem(for: failure, stderr: stderr) {
+        case .signIn:
+            return "ssh could not sign in as \(host.user.isEmpty ? "the configured user" : host.user). Passwords cannot be typed here: add your key to ssh-agent (ssh-add), set an identity file for the host, or put the host in ~/.ssh/config."
+        case .unresolved:
+            return "The address \(host.address) could not be resolved. Check the host's address, or use a Host alias from ~/.ssh/config."
+        case .unreachable:
+            return "Nothing answered at \(host.target). Check that the machine is reachable (VPN, firewall) and that sshd listens on \(host.port > 0 ? "port \(host.port)" : "its port")."
+        case .hostKey:
+            return "ssh refused the host key. Connect once from Terminal (ssh \(host.target)) to accept it, or fix ~/.ssh/known_hosts."
+        case .ctxMissing:
+            return "ctx is not installed on \(host.displayName), or not on its PATH for non-interactive shells. Install ctx on host copies the Linux build of this version to \(RemoteInstaller.installDirectory) over ssh (no root or Rust needed); or set the host's ctx path in Settings → Remote hosts."
+        case .ctxTooOld:
+            return "The ctx on \(host.displayName) is too old for this app. Update ctx on host copies the Linux build of this version to \(RemoteInstaller.installDirectory) over ssh."
+        case .sshFailed:
+            return "ssh exited with code 255: it could not establish the connection. The output above has the reason; a password prompt, a host-key question or a missing key are the usual ones."
+        case nil:
+            return nil
+        }
+    }
+
+    /// Install (or update) ctx on the host (`RemoteInstaller`), then
+    /// reconnect a saved host so its projects come back on the new build.
+    /// A host whose ctx path points elsewhere gets the path cleared, so the
+    /// installed copy is the one that runs. An unsaved draft (the editor's
+    /// Test connection) is only installed to.
+    func installCtx(on host: SSHHost) async -> Result<String, Error> {
+        let connection = hosts.host(host.id) == nil ? nil : remote(for: host)
+        connection?.installing = true
+        defer { connection?.installing = false }
+        let environment = await BackendEnvironment.build(apiKeyEnv: nil)
+        do {
+            let installed = try await RemoteInstaller.install(on: host, version: Updater.version, environment: environment)
+            if let connection {
+                appendRemoteLog(connection, "installed \(installed) in \(RemoteInstaller.installDirectory)")
+                if var saved = hosts.host(host.id), !saved.ctxPath.isEmpty {
+                    saved.ctxPath = ""
+                    saveHost(saved)
+                }
+                if connection.isReady || connection.state.failure != nil {
+                    await reconnect(hosts.host(host.id) ?? host)
+                }
+            }
+            return .success(installed)
+        } catch {
+            if let connection {
+                appendRemoteLog(connection, "installing ctx failed: \(error.localizedDescription)", level: "error")
+            }
+            return .failure(error)
+        }
     }
 
     // MARK: - Opening projects on hosts
@@ -314,8 +399,8 @@ extension AppState {
         if hosts.host(host.id) == probe, let connection = await connect(probe, quietly: true) {
             return .success(connection.hostSummary.map { "\(connection.label) · \($0)" } ?? connection.label)
         }
-        if hosts.host(host.id) == probe, let failure = remotes[host.id]?.state.failure {
-            return .failure(BackendError.transport([BackendFailurePanel.summary(for: failure), remotes[host.id]?.hint].compactMap { $0 }.joined(separator: "\n")))
+        if hosts.host(host.id) == probe, let connection = remotes[host.id], let failure = connection.state.failure {
+            return .failure(HostTestFailure(message: [BackendFailurePanel.summary(for: failure), connection.hint].compactMap { $0 }.joined(separator: "\n"), needsCtx: connection.needsCtx))
         }
         let client = BackendClient()
         defer { Task { await client.stop() } }
@@ -328,8 +413,9 @@ extension AppState {
         } catch {
             let failure = Self.failure(from: client.lastStartFailure, error: error)
             let hint = Self.remoteHint(for: failure, stderr: client.stderrLog, host: probe)
+            let needsCtx = Self.remoteProblem(for: failure, stderr: client.stderrLog)?.isCtx == true
             await client.stop()
-            return .failure(BackendError.transport([BackendFailurePanel.summary(for: failure), hint].compactMap { $0 }.joined(separator: "\n")))
+            return .failure(HostTestFailure(message: [BackendFailurePanel.summary(for: failure), hint].compactMap { $0 }.joined(separator: "\n"), needsCtx: needsCtx))
         }
     }
 }

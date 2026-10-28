@@ -1,0 +1,79 @@
+name: Release (Linux ctx)
+
+# Builds static (musl) Linux binaries of ctx for x86_64 and arm64 and attaches
+# them to the release as ctx-<target>.tar.gz. The desktop apps' "Install ctx
+# on host" (docs/remote-hosts.md) downloads the one matching the host from
+# the release of the app's own version and copies it over ssh, so a remote
+# host needs neither Rust nor a checkout. Publishing a GitHub release
+# (apps/macos/scripts/release.sh PUBLISH=1) starts it. Run it by hand with
+# the tag of an existing release to add or rebuild them, or without a tag
+# for a dry run whose files are only kept as a workflow artifact.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of an existing release to attach them to (e.g. v0.1.5); empty for a dry run
+        required: false
+        default: ""
+
+permissions:
+  contents: write # gh release upload
+
+concurrency:
+  group: release-linux-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+jobs:
+  ctx:
+    name: ctx (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG || github.ref }}
+      # Alpine's toolchain is musl-native, so the C parts (tree-sitter
+      # grammars, ring) build with its gcc and the result is fully static:
+      # it runs on any Linux of the runner's architecture, old glibc or none.
+      # Stripped, since the apps download it for every install.
+      - name: Build ctx
+        run: |
+          docker run --rm -v "$PWD":/src -w /src -e CARGO_TARGET_DIR=/src/target/musl -e CARGO_PROFILE_RELEASE_STRIP=symbols \
+            rust:1-alpine sh -c 'apk add --no-cache musl-dev build-base perl && cargo build --release --locked -p ctx-cli'
+      - name: Check the binary
+        run: |
+          bin=target/musl/release/ctx
+          file "$bin"
+          file "$bin" | grep -q "statically linked"
+          "$bin" --version
+          "$bin" --help > /dev/null
+          if [ -n "$TAG" ]; then
+            "$bin" --version | grep -q " ${TAG#v}\b"
+          fi
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar -czf "dist/ctx-${{ matrix.target }}.tar.gz" -C target/musl/release ctx
+          (cd dist && sha256sum "ctx-${{ matrix.target }}.tar.gz" > "ctx-${{ matrix.target }}.tar.gz.sha256")
+      - name: Attach to the release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/ctx-${{ matrix.target }}.tar.gz dist/ctx-${{ matrix.target }}.tar.gz.sha256 --clobber --repo "${{ github.repository }}"
+      - name: Upload the archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctx-${{ matrix.target }}-${{ env.TAG || github.sha }}
+          path: dist/ctx-*
+          if-no-files-found: error

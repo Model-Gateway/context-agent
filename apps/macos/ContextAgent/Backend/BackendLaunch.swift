@@ -18,8 +18,10 @@ enum BackendLaunch: Equatable {
     }
 
     /// Directories a non-interactive remote shell may lack on its PATH but
-    /// where `ctx` is usually installed.
-    static let remotePath = "$HOME/.cargo/bin:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
+    /// where `ctx` is usually installed. `~/.local/bin` comes first: it is
+    /// where Install ctx on host puts the build matching the app
+    /// (`RemoteInstaller`), which must win over an older `cargo install`.
+    static let remotePath = "$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
 
     /// `ssh` options every connection gets: no password prompts (there is
     /// nobody to answer them; keys and the agent work), a bounded connect,

@@ -74,7 +74,10 @@ impl SshHost {
 
 /// Directories a non-interactive remote shell may lack on its PATH but
 /// where `ctx` is usually installed (`BackendLaunch.remotePath`).
-pub const REMOTE_PATH: &str = "$HOME/.cargo/bin:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:$PATH";
+/// `~/.local/bin` comes first: it is where Install ctx on host puts the
+/// build matching the app ([`super::install`]), which must win over an
+/// older `cargo install`.
+pub const REMOTE_PATH: &str = "$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:/opt/homebrew/bin:$PATH";
 
 /// `ssh` options every connection gets (`BackendLaunch.sshOptions`): no
 /// password prompts (there is nobody to answer them; keys and the agent

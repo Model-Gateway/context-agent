@@ -1254,7 +1254,7 @@ the child process.
   `SSHHostStore` (Settings → Remote hosts, `ssh-hosts.json` next to the
   recents), its own `BackendClient` started with `BackendLaunch.ssh(host)`
   — `ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -T
-  [-p port] [-i key] [-l user] <extras> -- <address> 'env PATH="$HOME/.cargo/bin:…:$PATH" ctx serve'`
+  [-p port] [-i key] [-l user] <extras> -- <address> 'env PATH="$HOME/.local/bin:$HOME/.cargo/bin:…:$PATH" ctx serve'`
   (Backend/BackendLaunch.swift; `CTX_SSH_BINARY` replaces `/usr/bin/ssh`
   for tests) — a `state` (disconnected / connecting / ready / failed) and a
   `hint` (what ssh's last words mean: keys, PATH, the address, the host
@@ -1265,6 +1265,16 @@ the child process.
   `handleRemoteExit` fails the host's running chats, marks the connection
   failed and leaves the rows in place for Reconnect — never an automatic
   retry (a dropped VPN would spawn ssh every second).
+- **Install ctx on host.** `remoteProblem(for:stderr:)` classifies a
+  failure (`remoteHint` words it); `.ctxMissing` / `.ctxTooOld` set
+  `RemoteConnection.needsCtx`, and a connection to a ctx older than the app
+  is `isOutdated`. Either offers Install / Update ctx (the host editor after
+  Test connection, the Settings row, the sidebar host menu), which is
+  `AppState.installCtx(on:)` → `RemoteInstaller.install`
+  (Backend/RemoteInstaller.swift): `uname -sm` over ssh, the release's
+  `ctx-<target>.tar.gz` downloaded here, piped to `sh -c` on the host
+  into `~/.local/bin`; then a saved host's ctx path is cleared and it
+  reconnects. docs/remote-hosts.md "Installing ctx".
 - **A remote project is a `ProjectState` with a `backend` and a `host`.**
   Every request about a project goes through `project.backend` (the
   `ProjectState` loads take no backend argument any more; AppState's

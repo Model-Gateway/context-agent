@@ -15,10 +15,13 @@ import { IconButton } from '../../components/IconButton'
 import { InlineMessage, type InlineMessageData } from '../../components/InlineMessage'
 import { Menu, type MenuItem } from '../../components/Menu'
 import { Sheet } from '../../components/Sheet'
+import { toasts } from '../../components/toasts'
 import { isMac, modLabel } from '../../components/platform'
 import { hostDisplayName, hostIsValid, hostTarget, newSSHHost, normalizeHost, sshConfigAliases, useSSHHosts, type SSHHost } from '../../models/sshHost'
 import { remoteConnection, useApp } from '../../state/app'
+import { INSTALL_DIRECTORY } from '../../state/remote'
 import { projectsOn } from '../../state/selectors'
+import { useUpdater } from '../../state/updater'
 import { Icon } from '../../theme/icons'
 import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsSections'
 import shared from './SettingsSections.module.css'
@@ -26,12 +29,12 @@ import { TextField } from './SettingsControls'
 import styles from './RemoteHostsSettingsSection.module.css'
 
 const HOSTS_FOOTER =
-  'Context runs ctx serve on the host over ssh and opens projects that live there: files, index, chats, API key and configuration are all the host’s, so ctx must be installed there (cargo install --path crates/cli, or copy a release binary to ~/.cargo/bin) and have a model configured. Authentication is ssh’s: keys and ssh-agent work, passwords cannot be typed; ~/.ssh/config aliases apply, so a ProxyJump or IdentityFile set there is used.'
+  'Context runs ctx serve on the host over ssh and opens projects that live there: files, index, chats, API key and configuration are all the host’s, so ctx must be installed there and have a model configured. When it is missing or older than the app, Install ctx on host copies the Linux build of this version (x86_64 or arm64) to ~/.local/bin over ssh: no root, Rust or internet access needed on the host. Authentication is ssh’s: keys and ssh-agent work, passwords cannot be typed; ~/.ssh/config aliases apply, so a ProxyJump or IdentityFile set there is used.'
 
 const HOW_FOOTER =
   'Projects on a host appear in the sidebar’s Remote section under the host and are remembered across launches. The Terminal tab opens ssh shells in the project’s folder; images and PDFs of a remote project are not shown in the Editor; attachments you send are uploaded with the message.'
 
-const SSH_LINE = 'ssh -o BatchMode=yes -T [-p port] [-i key] [-l user] <host> -- env PATH="$HOME/.cargo/bin:…:$PATH" ctx serve'
+const SSH_LINE = 'ssh -o BatchMode=yes -T [-p port] [-i key] [-l user] <host> -- env PATH="$HOME/.local/bin:$HOME/.cargo/bin:…:$PATH" ctx serve'
 
 /** The `Host` aliases of ~/.ssh/config, read once per mount. */
 function useConfigAliases(): string[] {
@@ -116,6 +119,14 @@ function HostSettingsRow({ host, divider, onEdit }: { host: SSHHost; divider: bo
   const target = hostTarget(host)
   const kind = connection?.state.kind ?? 'none'
   const tint = kind === 'ready' ? 'var(--success)' : kind === 'failed' ? 'var(--danger)' : kind === 'connecting' ? 'var(--warning)' : 'var(--text-tertiary)'
+  const appVersion = useUpdater((state) => state.status?.version ?? null)
+  const outdated = connection?.isOutdated ?? false
+  const installing = connection?.installing ?? false
+
+  const install = async () => {
+    const result = await useApp.getState().installCtx(host)
+    if (!result.ok) toasts.push({ message: `Could not install ctx on ${name}.`, level: 'error', details: result.message })
+  }
 
   const remove = async () => {
     const confirmed = await confirm({
@@ -145,6 +156,17 @@ function HostSettingsRow({ host, divider, onEdit }: { host: SSHHost; divider: bo
         {connection && kind === 'failed' && connection.hint !== null ? <p className={`selectable ${styles.rowHint}`}>{connection.hint}</p> : null}
       </div>
       <div className={styles.rowButtons}>
+        {connection && (connection.needsCtx || outdated) ? (
+          <Button
+            size="small"
+            loading={installing}
+            disabled={anyRunning}
+            title={outdated ? `Replace ctx on the host with the build of this version${appVersion ? ` (${appVersion})` : ''}` : `Copy ctx${appVersion ? ` ${appVersion}` : ''} for Linux to ${INSTALL_DIRECTORY} on the host`}
+            onClick={() => void install()}
+          >
+            {outdated ? 'Update ctx' : 'Install ctx'}
+          </Button>
+        ) : null}
         {kind === 'ready' ? (
           <Button size="small" disabled={anyRunning} title={anyRunning ? 'Finish or cancel the running tasks first' : undefined} onClick={() => void useApp.getState().disconnectHost(host)}>
             Disconnect
@@ -177,7 +199,11 @@ function HostEditorSheet({ host: initial, isNew, onClose }: { host: SSHHost; isN
   const [portText, setPortText] = useState(initial.port > 0 ? String(initial.port) : '')
   const [extraArguments, setExtraArguments] = useState(initial.extraArguments.join(' '))
   const [testing, setTesting] = useState(false)
+  const [installing, setInstalling] = useState(false)
   const [message, setMessage] = useState<InlineMessageData | null>(null)
+  /** The last Test connection found ctx missing or too old. */
+  const [needsCtx, setNeedsCtx] = useState(false)
+  const appVersion = useUpdater((state) => state.status?.version ?? null)
   const aliases = useConfigAliases()
   const aliasButtonRef = useRef<HTMLButtonElement>(null)
   const [aliasMenuOpen, setAliasMenuOpen] = useState(false)
@@ -204,16 +230,35 @@ function HostEditorSheet({ host: initial, isNew, onClose }: { host: SSHHost; isN
     }
   }
 
-  const test = async () => {
-    const probe = draft()
+  const test = async (probe: SSHHost = draft()): Promise<InlineMessageData> => {
     setTesting(true)
     setMessage({ kind: 'info', text: `Connecting to ${hostTarget(probe)} and starting ctx serve…` })
     try {
       const result = await useApp.getState().testHost(probe)
-      setMessage(result.ok ? { kind: 'success', text: `Connected: ${result.summary}` } : { kind: 'error', text: result.message })
+      setNeedsCtx(!result.ok && result.needsCtx)
+      const shown: InlineMessageData = result.ok ? { kind: 'success', text: `Connected: ${result.summary}` } : { kind: 'error', text: result.message }
+      setMessage(shown)
+      return shown
     } finally {
       setTesting(false)
     }
+  }
+
+  /** Install ctx on host, then the same test as the button's, so the message ends on what the app will find when it connects. */
+  const install = async () => {
+    const probe = draft()
+    setInstalling(true)
+    setMessage({ kind: 'info', text: `Installing ctx${appVersion ? ` ${appVersion}` : ''} on ${hostTarget(probe)}…` })
+    const result = await useApp.getState().installCtx(probe)
+    setInstalling(false)
+    if (!result.ok) {
+      setMessage({ kind: 'error', text: result.message })
+      return
+    }
+    set('ctxPath', '')
+    setNeedsCtx(false)
+    const tested = await test({ ...probe, ctxPath: '' })
+    if (tested.kind === 'success') setMessage({ kind: 'success', text: `Installed ${result.installed} in ${INSTALL_DIRECTORY}. ${tested.text}` })
   }
 
   const save = () => {
@@ -237,9 +282,20 @@ function HostEditorSheet({ host: initial, isNew, onClose }: { host: SSHHost; isN
       initialFocus={addressRef}
       footer={
         <>
-          <Button variant="bordered" disabled={!valid || testing} loading={testing} onClick={() => void test()}>
+          <Button variant="bordered" disabled={!valid || testing || installing} loading={testing} onClick={() => void test()}>
             Test connection
           </Button>
+          {needsCtx ? (
+            <Button
+              variant="bordered"
+              disabled={!valid || testing}
+              loading={installing}
+              title={`Copy ctx${appVersion ? ` ${appVersion}` : ''} for Linux to ${INSTALL_DIRECTORY} on the host over ssh, then test again`}
+              onClick={() => void install()}
+            >
+              Install ctx on host
+            </Button>
+          ) : null}
           <span className={styles.footerSpacer} />
           <Button variant="bordered" onClick={onClose}>
             Cancel

@@ -11,6 +11,7 @@ import { ContextMenu } from '../../components/ContextMenu'
 import { IconButton } from '../../components/IconButton'
 import type { MenuItem } from '../../components/Menu'
 import { Sheet } from '../../components/Sheet'
+import { toasts } from '../../components/toasts'
 import { Tooltip } from '../../components/Tooltip'
 import { pinnedRecentProjects, recentProjectId, type RecentProject } from '../../models/recentProject'
 import { usePref } from '../../models/preferences'
@@ -201,6 +202,19 @@ export const HostRow = memo(function HostRow({ host, connection, openCount }: { 
     } else {
       items.push({ label: connection?.failure ? 'Reconnect' : 'Connect', disabled: isConnecting, onSelect: () => void useApp.getState().reconnectHost(host) })
     }
+    if (connection && (connection.needsCtx || connection.isOutdated)) {
+      items.push({
+        label: connection.isOutdated ? 'Update ctx on Host' : 'Install ctx on Host',
+        disabled: connection.installing || anyRunning,
+        onSelect: () =>
+          void useApp
+            .getState()
+            .installCtx(host)
+            .then((result) => {
+              if (!result.ok) toasts.push({ message: `Could not install ctx on ${name}.`, level: 'error', details: result.message })
+            }),
+      })
+    }
     items.push(
       { type: 'separator' },
       { label: 'Edit in Settings…', onSelect: () => useApp.getState().openSettings(SETTINGS_TAB_REMOTE_HOSTS) },
@@ -229,7 +243,7 @@ export const HostRow = memo(function HostRow({ host, connection, openCount }: { 
             </span>
             <span className={rows.title}>{name}</span>
             <span className={rows.spacer} />
-            {isConnecting ? (
+            {isConnecting || connection?.installing ? (
               <BrailleSpinner size={11} tint="var(--text-tertiary)" />
             ) : hovering ? (
               <span className={styles.plus} aria-hidden="true">

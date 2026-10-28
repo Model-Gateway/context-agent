@@ -103,7 +103,7 @@ struct HostRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 4)
-                if isConnecting {
+                if isConnecting || connection?.installing == true {
                     BrailleSpinner(size: 11, tint: Theme.textTertiary)
                 } else if hovering {
                     Image(systemName: Icons.newChat)
@@ -139,6 +139,16 @@ struct HostRow: View {
                     Task { await appState.reconnect(host) }
                 }
                 .disabled(isConnecting)
+            }
+            if let connection, connection.needsCtx || connection.isOutdated {
+                Button(connection.isOutdated ? "Update ctx on Host" : "Install ctx on Host") {
+                    Task {
+                        if case .failure(let error) = await appState.installCtx(on: host) {
+                            appState.toasts.show("Could not install ctx on \(host.displayName).", kind: .error, details: error.localizedDescription)
+                        }
+                    }
+                }
+                .disabled(connection.installing || appState.projects(on: host.id).contains { $0.isRunning })
             }
             Divider()
             Button("Edit in Settings…") {
