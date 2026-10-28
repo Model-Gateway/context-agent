@@ -5,7 +5,7 @@ use crate::compaction::TaskCheckpoint;
 use crate::explain::{ContextExplanation, ExcludedExplanation, MemoryExplanation, SourceExplanation};
 use crate::policy::{policy_hash, SYSTEM_POLICY};
 use crate::retention::prune_conversation;
-use ctx_core::{estimate_tokens, AgentMessage, CacheHint, ContextConfig, ContextPayload, ContextSection, ContextSectionKind, ContextStats, ModelRequest, ToolDefinition, TrustLevel};
+use ctx_core::{estimate_tokens, AgentMessage, CacheHint, ContextConfig, ContextPayload, ContextSection, ContextSectionKind, ContextStats, ModelRequest, ToolDefinition, ToolGroupStats, TrustLevel};
 use ctx_memory::TaskState;
 use ctx_retrieval::RetrievalResult;
 
@@ -51,8 +51,23 @@ impl ContextCompiler {
 
         // ----- stable prefix -----------------------------------------------
         let policy = AgentMessage::policy(SYSTEM_POLICY);
-        let tools_tokens: usize = input.tools.iter().map(|t| estimate_tokens(&t.name) + estimate_tokens(&t.description) + estimate_tokens(&t.parameters.to_string())).sum();
-        let stable_prefix_tokens = estimate_tokens(SYSTEM_POLICY) + tools_tokens;
+        let system_prompt_tokens = estimate_tokens(SYSTEM_POLICY);
+        let mut tool_groups: Vec<ToolGroupStats> = Vec::new();
+        for tool in &input.tools {
+            let tokens = estimate_tokens(&tool.name) + estimate_tokens(&tool.description) + estimate_tokens(&tool.parameters.to_string());
+            // `mcp__<server>__<tool>` (ctx_tools::mcp::qualified_name).
+            let server = tool.name.strip_prefix("mcp__").and_then(|rest| rest.split_once("__")).map(|(server, _)| server.to_string());
+            match tool_groups.iter_mut().find(|g| g.server == server) {
+                Some(group) => {
+                    group.tools += 1;
+                    group.tokens += tokens;
+                }
+                None => tool_groups.push(ToolGroupStats { server, tools: 1, tokens }),
+            }
+        }
+        tool_groups.sort_by_key(|g| g.server.is_some());
+        let tools_tokens: usize = tool_groups.iter().map(|g| g.tokens).sum();
+        let stable_prefix_tokens = system_prompt_tokens + tools_tokens;
 
         // ----- dynamic trusted instructions ---------------------------------
         let mut instructions = String::new();
@@ -213,6 +228,11 @@ impl ContextCompiler {
             retrieval_budget_tokens: budget.retrieval,
             context_window: input.model_window,
             compacted: input.checkpoint.is_some(),
+            system_prompt_tokens,
+            tool_tokens: tools_tokens,
+            tool_groups,
+            instructions_tokens,
+            compaction_threshold_tokens: (input.model_window as f64 * config.compaction_threshold as f64) as usize,
         };
         let needs_compaction = budget.over_threshold(config, estimated_prompt_tokens) || conversation_tokens > input.model_window / 2;
         if needs_compaction {

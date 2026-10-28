@@ -790,7 +790,7 @@ Tagged with `"event"`; every variant has `task_id`.
 |---|---|
 | `task_started` | `objective`, `continued` |
 | `state_changed` | `from`, `to` ∈ `IDLE PREPARING INVESTIGATING IMPLEMENTING VALIDATING RECOVERING COMPLETED BLOCKED CANCELLED FAILED` |
-| `context_compiled` | `stats: {estimated_prompt_tokens, stable_prefix_tokens, repository_snippets, repository_tokens, memory_records, memory_tokens, conversation_messages, conversation_tokens, retrieval_budget_tokens, context_window, compacted}` |
+| `context_compiled` | `stats: {estimated_prompt_tokens, stable_prefix_tokens, repository_snippets, repository_tokens, memory_records, memory_tokens, conversation_messages, conversation_tokens, retrieval_budget_tokens, context_window, compacted, system_prompt_tokens, tool_tokens, tool_groups: [{server (null for the built-in tools), tools, tokens}], instructions_tokens, compaction_threshold_tokens}`; `stable_prefix_tokens` = `system_prompt_tokens` + `tool_tokens`; the last five are absent from events persisted by ctx 0.1.4 and earlier (read as 0 / empty) |
 | `model_request_started` | `step`, `estimated_prompt_tokens` |
 | `prompt_sent` | `step`, `messages: [{kind ∈ policy task_instructions context user assistant tool_result, text, estimated_tokens, images}]`, `tools: [name]` (not persisted; only with `task/run.options.debug_prompt`) |
 | `model_text_delta` | `text` (not persisted) |

@@ -116,59 +116,202 @@ function TaskStatusPill({ chat }: { chat: ChatState }) {
 
 // MARK: - Context
 
-/** `ContextStatsCard`: the window usage bar and the prompt's composition, or why there is none yet. */
+/**
+ * `ContextStatsCard`: the context window as one stacked bar — the last
+ * compiled prompt's slices, the autocompact buffer pinned to the end and the
+ * free space between — with a legend row per slice (tokens and share of the
+ * window) and the MCP tools broken down by server; or why there is none yet.
+ */
 function ContextStatsCard({ chat }: { chat: ChatState }) {
   const stats = chat.contextStats
-  return (
-    <InspectorCard title="Context">
-      {stats ? (
-        <>
-          <UsageBar stats={stats} />
-          <StatRow
-            label="Prompt estimate"
-            value={`${TranscriptFormat.tokens(stats.estimated_prompt_tokens)} / ${TranscriptFormat.tokens(stats.context_window)}`}
-          />
-          <StatRow label="Stable prefix" value={TranscriptFormat.tokens(stats.stable_prefix_tokens)} />
-          <StatRow
-            label="Repository"
-            value={`${stats.repository_snippets} snippet${stats.repository_snippets === 1 ? '' : 's'} · ${TranscriptFormat.tokens(stats.repository_tokens)}`}
-          />
-          <StatRow
-            label="Memory"
-            value={`${stats.memory_records} record${stats.memory_records === 1 ? '' : 's'} · ${TranscriptFormat.tokens(stats.memory_tokens)}`}
-          />
-          <StatRow label="Conversation" value={`${stats.conversation_messages} msg · ${TranscriptFormat.tokens(stats.conversation_tokens)}`} />
-          <StatRow label="Retrieval budget" value={TranscriptFormat.tokens(stats.retrieval_budget_tokens)} />
-          {stats.compacted ? (
-            <div className={styles.chipRow}>
-              <Tooltip content="The conversation was compacted to fit the context window">
-                <Chip icon="collapseAll" variant="tinted" tint="var(--warning)">
-                  compacted
-                </Chip>
-              </Tooltip>
-            </div>
-          ) : null}
-        </>
-      ) : (
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [serversExpanded, setServersExpanded] = useState(false)
+  if (!stats) {
+    return (
+      <InspectorCard title="Context">
         <p className={styles.note}>
           {chatStatusIsRunning(chat.status)
             ? 'Waiting for the first context compilation…'
             : 'No context statistics yet. They appear once a run compiles its prompt.'}
         </p>
-      )}
+      </InspectorCard>
+    )
+  }
+  const layout = contextLayout(stats)
+  const usedPercent = layout.window > 0 ? Math.round((stats.estimated_prompt_tokens / layout.window) * 100) : 0
+  const nearCompaction = stats.estimated_prompt_tokens >= layout.window - contextBufferTokens(stats)
+  const dim = (id: string) => (hovered !== null && hovered !== id ? styles.dimmed : '')
+  const legend: ContextSlice[] = [
+    ...layout.slices,
+    ...(layout.buffer > 0 ? [{ id: 'buffer', label: 'Autocompact buffer', tokens: layout.buffer, color: CONTEXT_BUFFER_COLOR }] : []),
+    { id: 'free', label: 'Free space', tokens: layout.free, color: 'var(--surface-raised)' },
+  ]
+  return (
+    <InspectorCard title="Context">
+      <div
+        className={styles.contextHeader}
+        role="text"
+        aria-label={`Context ${usedPercent} percent used, ${TranscriptFormat.tokens(stats.estimated_prompt_tokens)} of ${TranscriptFormat.tokens(stats.context_window)} tokens`}
+      >
+        <span className={styles.contextUsed} style={nearCompaction ? { color: 'var(--warning)' } : undefined}>
+          {usedPercent}% used
+        </span>
+        <span className={`${styles.contextTotal} selectable`}>
+          {TranscriptFormat.tokens(stats.estimated_prompt_tokens)} / {TranscriptFormat.tokens(stats.context_window)}
+        </span>
+      </div>
+      <div className={styles.contextBar} aria-hidden>
+        <div className={styles.contextSlices}>
+          {layout.slices.map((slice) => (
+            <div
+              key={slice.id}
+              className={`${styles.contextSlice} ${dim(slice.id)}`}
+              style={{ width: `max(2px, calc(${(slice.tokens / layout.window) * 100}% - 1px))`, background: slice.color }}
+              title={`${slice.label} · ${TranscriptFormat.tokens(slice.tokens)}`}
+            />
+          ))}
+        </div>
+        {layout.buffer > 0 ? (
+          <div
+            className={`${styles.contextBuffer} ${dim('buffer')}`}
+            style={{ width: `${(layout.buffer / layout.window) * 100}%`, background: CONTEXT_BUFFER_COLOR }}
+          />
+        ) : null}
+      </div>
+      <div className={styles.contextLegend}>
+        {legend.map((slice) => {
+          const quiet = slice.id === 'free' || slice.id === 'buffer'
+          const row = (
+            <div
+              key={slice.id}
+              className={styles.legendRow}
+              onMouseEnter={() => setHovered(slice.id)}
+              onMouseLeave={() => setHovered((current) => (current === slice.id ? null : current))}
+              role="text"
+              aria-label={`${slice.label}${slice.detail ? `, ${slice.detail}` : ''}: ${TranscriptFormat.tokens(slice.tokens)} tokens, ${contextPercent(slice.tokens, layout.window)}`}
+            >
+              <span className={`${styles.legendSwatch} ${slice.id === 'free' ? styles.legendSwatchFree : ''}`} style={{ background: slice.color }} />
+              <span className={quiet ? styles.legendLabelQuiet : styles.legendLabel}>{slice.label}</span>
+              {slice.detail ? <span className={styles.legendDetail}>{slice.detail}</span> : null}
+              <span className={styles.legendSpacer} />
+              <span className={styles.legendTokens}>{TranscriptFormat.tokens(slice.tokens)}</span>
+              <span className={quiet ? styles.legendPercentQuiet : styles.legendPercent}>{contextPercent(slice.tokens, layout.window)}</span>
+            </div>
+          )
+          return slice.id === 'buffer' ? (
+            <Tooltip key={slice.id} content={`The conversation is compacted once the prompt reaches ${TranscriptFormat.tokens(layout.window - contextBufferTokens(stats))} tokens`}>
+              {row}
+            </Tooltip>
+          ) : (
+            row
+          )
+        })}
+      </div>
+      {layout.servers.length > 0 ? (
+        <div className={styles.serverList}>
+          <button
+            type="button"
+            className={`${styles.serverToggle} ${serversExpanded ? styles.serverToggleOpen : ''}`}
+            onClick={() => setServersExpanded((open) => !open)}
+            aria-expanded={serversExpanded}
+            aria-label={`MCP servers, ${layout.servers.length}`}
+          >
+            <Icon name="chevronRight" size={9} strokeWidth={2.5} className={`${styles.serverChevron} ${serversExpanded ? styles.serverChevronOpen : ''}`} />
+            <span className={styles.legendLabel}>MCP servers</span>
+            <span className={styles.legendSpacer} />
+            <span className={styles.legendTokens}>{layout.servers.reduce((sum, group) => sum + group.tools, 0)} tools</span>
+          </button>
+          {serversExpanded
+            ? layout.servers.map((group) => (
+                <div key={group.server} className={styles.serverRow}>
+                  <MiddleText text={group.server ?? ''} className={styles.serverName} />
+                  <span className={styles.legendDetail}>
+                    · {group.tools} tool{group.tools === 1 ? '' : 's'}
+                  </span>
+                  <span className={styles.legendSpacer} />
+                  <span className={styles.legendTokens}>{TranscriptFormat.tokens(group.tokens)}</span>
+                </div>
+              ))
+            : null}
+        </div>
+      ) : null}
+      <div className={styles.contextFooter}>
+        <Tooltip content="The most repository source this prompt could include">
+          <span className={styles.note}>Retrieval budget {TranscriptFormat.tokens(stats.retrieval_budget_tokens)}</span>
+        </Tooltip>
+        <span className={styles.legendSpacer} />
+        {stats.compacted ? (
+          <Tooltip content="The conversation was compacted to fit the context window">
+            <Chip icon="collapseAll" variant="tinted" tint="var(--warning)">
+              compacted
+            </Chip>
+          </Tooltip>
+        ) : null}
+      </div>
     </InspectorCard>
   )
 }
 
-/** The 6 px capsule: accent, `warning` past 70 %, `danger` past 90 %. */
-function UsageBar({ stats }: { stats: ContextStats }) {
-  const fraction = stats.context_window > 0 ? Math.min(1, stats.estimated_prompt_tokens / stats.context_window) : 0
-  const tint = fraction > 0.9 ? 'var(--danger)' : fraction > 0.7 ? 'var(--warning)' : 'var(--accent)'
-  return (
-    <div className={styles.usageBar} role="img" aria-label={`Context window usage ${Math.trunc(fraction * 100)} percent`}>
-      <div className={styles.usageFill} style={{ width: `max(4px, ${fraction * 100}%)`, background: tint }} />
-    </div>
-  )
+/** One slice of the window in `ContextStatsCard` (`ContextLayout.Slice`). */
+interface ContextSlice {
+  id: string
+  label: string
+  detail?: string
+  tokens: number
+  color: string
+}
+
+const CONTEXT_BUFFER_COLOR = 'light-dark(#b9bcc3, #4a4c52)'
+
+/** The window past the compaction threshold; the default threshold (75 %) when ctx predates reporting it. */
+function contextBufferTokens(stats: ContextStats): number {
+  const threshold = stats.compaction_threshold_tokens > 0 ? stats.compaction_threshold_tokens : Math.floor((stats.context_window * 3) / 4)
+  return Math.max(0, stats.context_window - threshold)
+}
+
+/** `ContextLayout`: the prompt's slices in legend order, then the buffer and the free space, which add up to the window. */
+function contextLayout(stats: ContextStats) {
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+  const slices: ContextSlice[] = [
+    { id: 'conversation', label: 'Conversation', detail: plural(stats.conversation_messages, 'message'), tokens: stats.conversation_tokens, color: 'light-dark(#6e76ee, #8c92ff)' },
+    { id: 'repository', label: 'Repository', detail: plural(stats.repository_snippets, 'snippet'), tokens: stats.repository_tokens, color: 'light-dark(#2e95d3, #5db6ee)' },
+  ]
+  const servers = stats.tool_groups.filter((group) => group.server !== null)
+  const memory: ContextSlice = { id: 'memory', label: 'Memory', detail: plural(stats.memory_records, 'record'), tokens: stats.memory_tokens, color: 'light-dark(#1c8c86, #3db8ae)' }
+  let accounted = stats.conversation_tokens + stats.repository_tokens + stats.memory_tokens
+  if (stats.system_prompt_tokens > 0 || stats.tool_tokens > 0) {
+    const mcpTokens = servers.reduce((sum, group) => sum + group.tokens, 0)
+    const builtin = stats.tool_groups.find((group) => group.server === null)
+    if (mcpTokens > 0) {
+      slices.push({ id: 'mcp', label: 'MCP tools', detail: plural(servers.length, 'server'), tokens: mcpTokens, color: 'light-dark(#e08a2e, #f2ae62)' })
+    }
+    slices.push({ id: 'tools', label: 'Built-in tools', detail: builtin ? plural(builtin.tools, 'tool') : undefined, tokens: stats.tool_tokens - mcpTokens, color: 'light-dark(#23a266, #5bd497)' })
+    slices.push(memory)
+    slices.push({ id: 'instructions', label: 'Instructions', tokens: stats.instructions_tokens, color: 'light-dark(#9b5de5, #b98cff)' })
+    slices.push({ id: 'system', label: 'System prompt', tokens: stats.system_prompt_tokens, color: 'light-dark(#3f6f91, #6f9dc0)' })
+    accounted += stats.stable_prefix_tokens + stats.instructions_tokens
+  } else {
+    // Events from before ctx split the stable prefix.
+    slices.push(memory)
+    slices.push({ id: 'system', label: 'System prompt & tools', tokens: stats.stable_prefix_tokens, color: 'light-dark(#3f6f91, #6f9dc0)' })
+    accounted += stats.stable_prefix_tokens
+  }
+  // Retrieval summary, checkpoint and runtime notes around the snippets.
+  const other = stats.estimated_prompt_tokens - accounted
+  if (other > 0) {
+    slices.push({ id: 'other', label: 'Summaries & notes', tokens: other, color: 'light-dark(#9a9ea6, #7a7e86)' })
+  }
+  const window = Math.max(stats.context_window, stats.estimated_prompt_tokens)
+  const used = stats.estimated_prompt_tokens
+  const buffer = Math.max(0, Math.min(contextBufferTokens(stats), window - used))
+  return { window, slices: slices.filter((slice) => slice.tokens > 0), buffer, free: Math.max(0, window - used - buffer), servers }
+}
+
+/** 19.4%, <0.1% for a sliver, 0% for nothing. */
+function contextPercent(tokens: number, window: number): string {
+  if (window <= 0 || tokens <= 0) return '0%'
+  const value = (tokens / window) * 100
+  return value < 0.1 ? '<0.1%' : `${value.toFixed(1)}%`
 }
 
 // MARK: - Counters

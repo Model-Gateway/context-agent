@@ -301,6 +301,13 @@ struct ContextStats: Codable, Equatable {
     var retrievalBudgetTokens: Int
     var contextWindow: Int
     var compacted: Bool
+    /// The split of `stablePrefixTokens`, the instructions and the compaction
+    /// point; zero (empty) in events persisted before ctx reported them.
+    var systemPromptTokens: Int = 0
+    var toolTokens: Int = 0
+    var toolGroups: [ToolGroupStats] = []
+    var instructionsTokens: Int = 0
+    var compactionThresholdTokens: Int = 0
 
     enum CodingKeys: String, CodingKey {
         case estimatedPromptTokens = "estimated_prompt_tokens"
@@ -314,7 +321,42 @@ struct ContextStats: Codable, Equatable {
         case retrievalBudgetTokens = "retrieval_budget_tokens"
         case contextWindow = "context_window"
         case compacted
+        case systemPromptTokens = "system_prompt_tokens"
+        case toolTokens = "tool_tokens"
+        case toolGroups = "tool_groups"
+        case instructionsTokens = "instructions_tokens"
+        case compactionThresholdTokens = "compaction_threshold_tokens"
     }
+}
+
+extension ContextStats {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        estimatedPromptTokens = try c.decode(Int.self, forKey: .estimatedPromptTokens)
+        stablePrefixTokens = try c.decode(Int.self, forKey: .stablePrefixTokens)
+        repositorySnippets = try c.decode(Int.self, forKey: .repositorySnippets)
+        repositoryTokens = try c.decode(Int.self, forKey: .repositoryTokens)
+        memoryRecords = try c.decode(Int.self, forKey: .memoryRecords)
+        memoryTokens = try c.decode(Int.self, forKey: .memoryTokens)
+        conversationMessages = try c.decode(Int.self, forKey: .conversationMessages)
+        conversationTokens = try c.decode(Int.self, forKey: .conversationTokens)
+        retrievalBudgetTokens = try c.decode(Int.self, forKey: .retrievalBudgetTokens)
+        contextWindow = try c.decode(Int.self, forKey: .contextWindow)
+        compacted = try c.decode(Bool.self, forKey: .compacted)
+        systemPromptTokens = try c.decodeIfPresent(Int.self, forKey: .systemPromptTokens) ?? 0
+        toolTokens = try c.decodeIfPresent(Int.self, forKey: .toolTokens) ?? 0
+        toolGroups = try c.decodeIfPresent([ToolGroupStats].self, forKey: .toolGroups) ?? []
+        instructionsTokens = try c.decodeIfPresent(Int.self, forKey: .instructionsTokens) ?? 0
+        compactionThresholdTokens = try c.decodeIfPresent(Int.self, forKey: .compactionThresholdTokens) ?? 0
+    }
+}
+
+/// One source of tool definitions in `ContextStats.toolGroups`.
+struct ToolGroupStats: Codable, Equatable, Hashable {
+    /// The MCP server; nil for the built-in tools.
+    var server: String?
+    var tools: Int
+    var tokens: Int
 }
 
 /// What a sub-agent may do (`AgentMode` in the backend).

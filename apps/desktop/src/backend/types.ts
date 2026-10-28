@@ -290,6 +290,21 @@ export interface ContextStats {
   retrieval_budget_tokens: number
   context_window: number
   compacted: boolean
+  /** The split of `stable_prefix_tokens`, the instructions and the compaction
+   *  point; zero (empty) in events persisted before ctx reported them. */
+  system_prompt_tokens: number
+  tool_tokens: number
+  tool_groups: ToolGroupStats[]
+  instructions_tokens: number
+  compaction_threshold_tokens: number
+}
+
+/** One source of tool definitions in `ContextStats.tool_groups`. */
+export interface ToolGroupStats {
+  /** The MCP server; null for the built-in tools. */
+  server: string | null
+  tools: number
+  tokens: number
 }
 
 /** `AgentMode`: what a sub-agent may do. */
@@ -598,6 +613,14 @@ function decodeContextStats(object: JSONObject): ContextStats {
     retrieval_budget_tokens: int('retrieval_budget_tokens'),
     context_window: int('context_window'),
     compacted: requireBool(object, 'compacted', 'ContextStats'),
+    system_prompt_tokens: jsonInt(object.system_prompt_tokens) ?? 0,
+    tool_tokens: jsonInt(object.tool_tokens) ?? 0,
+    tool_groups: (jsonArray(object.tool_groups) ?? []).flatMap((raw) => {
+      const group = jsonObject(raw)
+      return group ? [{ server: jsonString(group.server), tools: jsonInt(group.tools) ?? 0, tokens: jsonInt(group.tokens) ?? 0 }] : []
+    }),
+    instructions_tokens: jsonInt(object.instructions_tokens) ?? 0,
+    compaction_threshold_tokens: jsonInt(object.compaction_threshold_tokens) ?? 0,
   }
 }
 

@@ -74,22 +74,193 @@
 }
 
 /* ContextStatsCard */
-.usageBar {
+.contextHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.contextUsed {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--text-primary);
+}
+
+.contextTotal {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Used slices from the left, the buffer pinned to the right, the track between. */
+.contextBar {
   position: relative;
-  height: 6px;
+  height: 10px;
   border-radius: 3px;
   background: var(--surface-raised);
   overflow: hidden;
 }
 
-.usageFill {
-  height: 100%;
-  border-radius: 3px;
+.contextSlices {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 1px;
 }
 
-.chipRow {
+.contextSlice {
+  flex: 0 0 auto;
+  height: 100%;
+  transition: opacity var(--duration-hover) var(--ease-out);
+}
+
+.contextBuffer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  transition: opacity var(--duration-hover) var(--ease-out);
+}
+
+.dimmed {
+  opacity: 0.3;
+}
+
+.contextLegend {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.legendRow {
   display: flex;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+}
+
+.legendSwatch {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.legendSwatchFree {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.legendLabel,
+.legendLabelQuiet {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.legendLabelQuiet {
+  color: var(--text-tertiary);
+}
+
+.legendDetail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+}
+
+.legendSpacer {
+  flex: 1 1 6px;
+  min-width: 6px;
+}
+
+.legendTokens {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.legendPercent,
+.legendPercentQuiet {
+  flex: 0 0 auto;
+  min-width: 44px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.legendPercentQuiet {
+  color: var(--text-tertiary);
+}
+
+.serverList {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.serverToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-small);
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+  text-align: left;
+}
+
+.serverToggleOpen {
+  background: var(--surface-raised);
+}
+
+.serverChevron {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  transition: transform var(--duration-reveal) var(--ease-out);
+}
+
+.serverChevronOpen {
+  transform: rotate(90deg);
+}
+
+.serverRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px 0 23px;
+  font-size: var(--font-size-caption);
+  line-height: 15px;
+}
+
+.serverName {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.contextFooter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
 }
 
 .note {

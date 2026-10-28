@@ -167,6 +167,34 @@ pub struct ContextStats {
     pub retrieval_budget_tokens: usize,
     pub context_window: usize,
     pub compacted: bool,
+    /// The system policy; `stable_prefix_tokens` is this plus `tool_tokens`.
+    /// The fields from here on are absent from events persisted before they
+    /// existed and default to zero (empty).
+    #[serde(default)]
+    pub system_prompt_tokens: usize,
+    /// Every tool definition offered to the model.
+    #[serde(default)]
+    pub tool_tokens: usize,
+    /// `tool_tokens` by source: the built-in tools first, then one group per
+    /// MCP server in the order the model sees them.
+    #[serde(default)]
+    pub tool_groups: Vec<ToolGroupStats>,
+    /// The repository summary and the task's own instructions.
+    #[serde(default)]
+    pub instructions_tokens: usize,
+    /// Prompt estimate past which the conversation is compacted
+    /// (`context_window` × `context.compaction_threshold`).
+    #[serde(default)]
+    pub compaction_threshold_tokens: usize,
+}
+
+/// One source of tool definitions in [`ContextStats::tool_groups`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ToolGroupStats {
+    /// The MCP server; `None` for the built-in tools.
+    pub server: Option<String>,
+    pub tools: usize,
+    pub tokens: usize,
 }
 
 /// One message of a model request as `AgentEvent::PromptSent` shows it:
