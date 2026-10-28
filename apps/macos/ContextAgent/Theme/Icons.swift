@@ -100,6 +100,7 @@ enum Icons {
     static let usage = "square.grid.3x3.fill"
     static let plan = "creditcard"
     static let contextCredit = "gift"
+    static let invite = "person.2"
     static let worktree = "arrow.branch"
     /// A machine reached over SSH (Settings → Remote hosts, the sidebar).
     static let remoteHost = "server.rack"

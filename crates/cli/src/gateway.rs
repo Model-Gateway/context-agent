@@ -148,8 +148,21 @@ async fn authed(layout: &DataLayout, base_url: Option<&str>, method: reqwest::Me
 /// The account summary behind the stored key: balance, used quota,
 /// requests, the device's token and the active plans.
 pub async fn account(layout: &DataLayout, base_url: Option<&str>) -> GatewayResult<Value> {
-    authed(layout, base_url, reqwest::Method::GET, "/api/device/self", None, "gateway/account").await
+    let data = authed(layout, base_url, reqwest::Method::GET, "/api/device/self", None, "gateway/account").await?;
+    // A key from before device ids (or from a client that sent none) is
+    // identified once, then the summary is read again so it says so.
+    let unidentified = data.get("device").and_then(|d| d.get("identified")).and_then(Value::as_bool) == Some(false);
+    if unidentified && !IDENTIFIED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        if identify(layout, base_url).await.is_ok() {
+            return authed(layout, base_url, reqwest::Method::GET, "/api/device/self", None, "gateway/account").await;
+        }
+    }
+    Ok(data)
 }
+
+/// Whether this process already tried to identify the device, so a gateway
+/// that keeps answering "unidentified" is asked once, not on every refresh.
+static IDENTIFIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Hourly usage rows per model and project, between two Unix times.
 pub async fn usage(layout: &DataLayout, base_url: Option<&str>, start_timestamp: Option<i64>, end_timestamp: Option<i64>) -> GatewayResult<Value> {
@@ -192,12 +205,65 @@ pub async fn claim_context_credit(layout: &DataLayout, base_url: Option<&str>) -
     authed(layout, base_url, reqwest::Method::POST, "/api/device/context-credit/claim", Some(json!({})), "gateway/context_credit/claim").await
 }
 
+/// This machine's identity for the gateway's once-per-device rules
+/// (`ctx_core::platform::device_identity`), or a random id kept in
+/// `<data_dir>/device_id` on platforms without a hardware one.
+pub fn device_identity(layout: &DataLayout) -> ctx_core::platform::DeviceIdentity {
+    if let Some(identity) = ctx_core::platform::device_identity() {
+        return identity;
+    }
+    let path = layout.device_id_file();
+    let stored = std::fs::read_to_string(&path).ok().map(|s| s.trim().to_string()).filter(|s| s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()));
+    let id = stored.unwrap_or_else(|| {
+        let id = ctx_core::platform::hash_device_id(&uuid::Uuid::new_v4().to_string());
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = write_private_atomic(&path, &id);
+        id
+    });
+    ctx_core::platform::DeviceIdentity { id, platform: "other", attested: false }
+}
+
+/// The `device_*` fields of the handshake and `identify` calls.
+fn device_fields(identity: &ctx_core::platform::DeviceIdentity) -> Value {
+    json!({"device_id": identity.id, "device_platform": identity.platform, "device_attested": identity.attested})
+}
+
 /// Opens a device authorization: `{device_code, user_code,
 /// verification_uri, verification_uri_complete, expires_in, interval}`.
-pub async fn device_start(origin: &str, device_name: Option<String>) -> GatewayResult<Value> {
+/// The machine's identity goes with it so the gateway can tie the key it
+/// creates to this device.
+pub async fn device_start(layout: &DataLayout, origin: &str, device_name: Option<String>) -> GatewayResult<Value> {
     let device_name = device_name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).unwrap_or_else(host_name);
-    let body = json!({"client_name": CLIENT_NAME, "device_name": device_name});
+    let mut body = json!({"client_name": CLIENT_NAME, "device_name": device_name});
+    if let (Some(body), Value::Object(fields)) = (body.as_object_mut(), device_fields(&device_identity(layout))) {
+        body.extend(fields);
+    }
     call(client()?.post(format!("{origin}/api/device/code")).json(&body), "gateway/device/start").await
+}
+
+/// `POST /api/device/identify`: attaches this machine's identity to the
+/// stored key when its handshake carried none (a client updated past it);
+/// the reply is the account's `device` block.
+pub async fn identify(layout: &DataLayout, base_url: Option<&str>) -> GatewayResult<Value> {
+    authed(layout, base_url, reqwest::Method::POST, "/api/device/identify", Some(device_fields(&device_identity(layout))), "gateway/device/identify").await
+}
+
+/// The Invite card: my code and link, my split, the terms, each referee
+/// with their stage and earnings (`GET /api/device/referral`).
+pub async fn referral(layout: &DataLayout, base_url: Option<&str>) -> GatewayResult<Value> {
+    authed(layout, base_url, reqwest::Method::GET, "/api/device/referral", None, "gateway/referral").await
+}
+
+/// `{split_referee_cents}`: how much of the match pool future referees get.
+pub async fn update_referral(layout: &DataLayout, base_url: Option<&str>, body: Value) -> GatewayResult<Value> {
+    authed(layout, base_url, reqwest::Method::PUT, "/api/device/referral", Some(body), "gateway/referral/update").await
+}
+
+/// `{code}`: adds a referrer to a new account that signed up without one.
+pub async fn attach_referral(layout: &DataLayout, base_url: Option<&str>, body: Value) -> GatewayResult<Value> {
+    authed(layout, base_url, reqwest::Method::POST, "/api/device/referral/attach", Some(body), "gateway/referral/attach").await
 }
 
 /// `{status: "pending"|"approved"|"denied"|"expired", interval?, account?}`.

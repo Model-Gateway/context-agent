@@ -25,6 +25,7 @@ import {
   type GatewayBillingPreference,
   type GatewayKeySettings,
   type GatewayPlan,
+  type GatewayReferral,
   type GatewayTopUpQuote,
   type GatewayUsageReport,
   type JSONObject,
@@ -92,6 +93,12 @@ export interface GatewayFields {
   billingBusy: boolean
   /** The Account page's Context credit claim in flight. */
   claimingContextCredit: boolean
+  /** The Account page's Invite card (`gateway/referral`). */
+  referral: GatewayReferral | null
+  referralLoading: boolean
+  referralError: string | null
+  /** A split change or a code attach in flight. */
+  referralBusy: boolean
   /** Settings → Spending: the device key's price limits and spending cap. */
   keySettings: GatewayKeySettings | null
   keySettingsError: string | null
@@ -132,6 +139,9 @@ export interface GatewayActions {
   refreshGateway: () => Promise<void>
   refreshGatewayUsage: () => Promise<void>
   claimContextCredit: () => Promise<void>
+  refreshGatewayReferral: () => Promise<void>
+  setGatewayReferralSplit: (cents: number) => Promise<void>
+  attachGatewayReferralCode: (code: string) => Promise<boolean>
   setGatewayRouting: (enabled: boolean) => Promise<void>
   setGatewayProjectAttribution: (enabled: boolean) => Promise<void>
   openGatewayDashboard: () => void
@@ -169,6 +179,10 @@ function initialFields(): GatewayFields {
     billingError: null,
     billingBusy: false,
     claimingContextCredit: false,
+    referral: null,
+    referralLoading: false,
+    referralError: null,
+    referralBusy: false,
     keySettings: null,
     keySettingsError: null,
     models: [],
@@ -210,6 +224,9 @@ const actions: GatewayActions = {
   refreshGateway: () => refreshGateway(),
   refreshGatewayUsage: () => refreshGatewayUsage(),
   claimContextCredit: () => claimContextCredit(),
+  refreshGatewayReferral: () => refreshGatewayReferral(),
+  setGatewayReferralSplit: (cents) => setGatewayReferralSplit(cents),
+  attachGatewayReferralCode: (code) => attachGatewayReferralCode(code),
   setGatewayRouting: (enabled) => setGatewayRouting(enabled),
   setGatewayProjectAttribution: (enabled) => setGatewayProjectAttribution(enabled),
   openGatewayDashboard: () => openGatewayDashboard(),
@@ -622,6 +639,65 @@ export async function claimContextCredit(): Promise<void> {
     }
   } finally {
     patch({ claimingContextCredit: false })
+  }
+}
+
+// MARK: - Referrals
+
+/** `refreshGatewayReferral()`: the Invite card's referees and terms (`gateway/referral`). */
+export async function refreshGatewayReferral(): Promise<void> {
+  if (!gw().isSignedIn || !connectionReady() || gw().referralLoading) return
+  patch({ referralLoading: true })
+  try {
+    const referral = await backend.gatewayReferral(GATEWAY_ORIGIN)
+    patch({ referral, referralError: null })
+  } catch (error) {
+    patch({ referralError: gatewayMessage(error) })
+  } finally {
+    patch({ referralLoading: false })
+  }
+}
+
+/** `setGatewayReferralSplit(_:)`: how much of the match pool future referees get. */
+export async function setGatewayReferralSplit(cents: number): Promise<void> {
+  if (!gw().isSignedIn || !connectionReady() || gw().referralBusy) return
+  patch({ referralBusy: true })
+  try {
+    const result = await backend.gatewayUpdateReferralSplit(GATEWAY_ORIGIN, cents)
+    const referral = gw().referral
+    const account = gw().account
+    patch({
+      referral: referral ? { ...referral, summary: { ...referral.summary, split_referee_cents: result.split_referee_cents } } : null,
+      account: account?.referral ? { ...account, referral: { ...account.referral, split_referee_cents: result.split_referee_cents } } : account,
+    })
+    persistGatewayAccount()
+  } catch (error) {
+    toast(`The split could not be changed: ${gatewayMessage(error)}`, 'error')
+    await refreshGatewayReferral()
+  } finally {
+    patch({ referralBusy: false })
+  }
+}
+
+/** `attachGatewayReferralCode(_:)`: adds a friend's code to this (new) account. */
+export async function attachGatewayReferralCode(code: string): Promise<boolean> {
+  if (!gw().isSignedIn || !connectionReady() || gw().referralBusy) return false
+  patch({ referralBusy: true })
+  try {
+    const result = await backend.gatewayAttachReferralCode(GATEWAY_ORIGIN, code)
+    const account = gw().account
+    if (account?.referral) {
+      patch({ account: { ...account, referral: { ...account.referral, invited_by: result.invited_by, attach_allowed: false } } })
+      persistGatewayAccount()
+    }
+    toast(`${result.invited_by.display_name} is now your referrer`, 'success')
+    await refreshGateway()
+    return true
+  } catch (error) {
+    toast(`The code could not be added: ${gatewayMessage(error)}`, 'error')
+    return false
+  } finally {
+    patch({ referralBusy: false })
   }
 }
 

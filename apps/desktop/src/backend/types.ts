@@ -2000,6 +2000,10 @@ export interface GatewayContextCredit {
   claimed: boolean
   eligible: boolean
   offer_quota: number
+  /** The welcome credit is once per device too: this key's device is not identified yet. */
+  device_required: boolean
+  /** Another account already claimed the welcome credit on this device. */
+  device_claimed: boolean
   /** Top-up kinds that make the account eligible (`stripe`, `apirone`); not in the Swift struct. */
   deposit_types?: string[] | null
 }
@@ -2012,6 +2016,8 @@ export function normalizeGatewayContextCredit(raw: Partial<GatewayContextCredit>
     claimed: raw?.claimed ?? false,
     eligible: raw?.eligible ?? false,
     offer_quota: raw?.offer_quota ?? 0,
+    device_required: raw?.device_required ?? false,
+    device_claimed: raw?.device_claimed ?? false,
     deposit_types: raw?.deposit_types ?? null,
   }
 }
@@ -2081,6 +2087,158 @@ export interface GatewayAccount {
   subscriptions?: GatewaySubscription[] | null
   /** Credit only Context's requests can spend; null from gateways that predate it. */
   context_credit?: GatewayContextCredit | null
+  /** Whether this key's device is identified; null from gateways that predate device ids. */
+  device?: GatewayDevice | null
+  /** The referral program's summary; null from gateways that predate it. */
+  referral?: GatewayReferralSummary | null
+}
+
+/** `GatewayDevice` (`device` of `gateway/account`): whether the gateway knows this key's machine. */
+export interface GatewayDevice {
+  identified: boolean
+  attested: boolean
+  platform: string
+}
+
+export function normalizeGatewayDevice(raw: Partial<GatewayDevice> | null | undefined): GatewayDevice {
+  return { identified: raw?.identified ?? false, attested: raw?.attested ?? false, platform: raw?.platform ?? '' }
+}
+
+/** `GatewayInvitedBy`: who referred this account and their gift (cents of credit). */
+export interface GatewayInvitedBy {
+  display_name: string
+  gift_cents: number
+  gift_unlocked_cents: number
+  status: string
+}
+
+export function normalizeGatewayInvitedBy(raw: Partial<GatewayInvitedBy> | null | undefined): GatewayInvitedBy {
+  return {
+    display_name: raw?.display_name ?? '',
+    gift_cents: raw?.gift_cents ?? 0,
+    gift_unlocked_cents: raw?.gift_unlocked_cents ?? 0,
+    status: raw?.status ?? '',
+  }
+}
+
+/**
+ * `GatewayReferralSummary` (`referral` of `gateway/account`, and the top of
+ * `gateway/referral`): my code and link, my split of the match pool, the
+ * terms, totals. Amounts are cents of credit; `share_rate_percent` is a percentage.
+ */
+export interface GatewayReferralSummary {
+  enabled: boolean
+  code: string
+  link: string
+  pool_cents: number
+  split_referee_cents: number
+  min_split_referee_cents: number
+  share_rate_percent: number
+  share_cap_cents: number
+  share_days: number
+  earned_cents: number
+  referee_count: number
+  attach_allowed: boolean
+  attach_window_ends_at: number
+  invited_by?: GatewayInvitedBy | null
+}
+
+export function normalizeGatewayReferralSummary(raw: Partial<GatewayReferralSummary> | null | undefined): GatewayReferralSummary {
+  const pool = raw?.pool_cents ?? 0
+  return {
+    enabled: raw?.enabled ?? false,
+    code: raw?.code ?? '',
+    link: raw?.link ?? '',
+    pool_cents: pool,
+    split_referee_cents: raw?.split_referee_cents ?? 0,
+    min_split_referee_cents: raw?.min_split_referee_cents ?? Math.ceil(pool / 2),
+    share_rate_percent: raw?.share_rate_percent ?? 0,
+    share_cap_cents: raw?.share_cap_cents ?? 0,
+    share_days: raw?.share_days ?? 0,
+    earned_cents: raw?.earned_cents ?? 0,
+    referee_count: raw?.referee_count ?? 0,
+    attach_allowed: raw?.attach_allowed ?? false,
+    attach_window_ends_at: raw?.attach_window_ends_at ?? 0,
+    invited_by: raw?.invited_by == null ? null : normalizeGatewayInvitedBy(raw.invited_by),
+  }
+}
+
+/** `GatewayReferee`: one referee of `gateway/referral`, their stage and what they earned me. */
+export interface GatewayReferee {
+  id: number
+  display_name: string
+  /** `signed_up` (no payment yet) · `active` · `completed` · `denied` · `frozen`. */
+  stage: string
+  status: string
+  deny_reason: string
+  pool_cents: number
+  pool_unlocked_cents: number
+  pool_paid_referrer_cents: number
+  pool_paid_referee_cents: number
+  share_paid_cents: number
+  share_cap_cents: number
+  earned_cents: number
+  days_left: number
+  created_at: number
+}
+
+export function normalizeGatewayReferee(raw: Partial<GatewayReferee> | null | undefined): GatewayReferee {
+  return {
+    id: raw?.id ?? 0,
+    display_name: raw?.display_name ?? '',
+    stage: raw?.stage ?? '',
+    status: raw?.status ?? '',
+    deny_reason: raw?.deny_reason ?? '',
+    pool_cents: raw?.pool_cents ?? 0,
+    pool_unlocked_cents: raw?.pool_unlocked_cents ?? 0,
+    pool_paid_referrer_cents: raw?.pool_paid_referrer_cents ?? 0,
+    pool_paid_referee_cents: raw?.pool_paid_referee_cents ?? 0,
+    share_paid_cents: raw?.share_paid_cents ?? 0,
+    share_cap_cents: raw?.share_cap_cents ?? 0,
+    earned_cents: raw?.earned_cents ?? 0,
+    days_left: raw?.days_left ?? 0,
+    created_at: raw?.created_at ?? 0,
+  }
+}
+
+/** `GatewayReferee.stageTitle`. */
+export function refereeStageTitle(referee: GatewayReferee): string {
+  switch (referee.stage) {
+    case 'signed_up':
+      return 'Signed up · waiting for their first top-up'
+    case 'active':
+      return referee.days_left > 0 ? `Active · ${referee.days_left} day${referee.days_left === 1 ? '' : 's'} of share left` : 'Active'
+    case 'completed':
+      return 'Completed'
+    case 'denied':
+      return referee.deny_reason === 'shared_device' ? 'Not eligible · same computer as you' : 'Not eligible · computer already rewarded'
+    case 'frozen':
+      return 'On hold'
+    default:
+      return referee.stage
+  }
+}
+
+/** `GatewayReferral` (`gateway/referral`): the summary plus each referee. */
+export interface GatewayReferral {
+  summary: GatewayReferralSummary
+  referees: GatewayReferee[]
+}
+
+export function normalizeGatewayReferral(raw: (Partial<GatewayReferralSummary> & { referees?: Partial<GatewayReferee>[] | null }) | null | undefined): GatewayReferral {
+  return { summary: normalizeGatewayReferralSummary(raw), referees: (raw?.referees ?? []).map(normalizeGatewayReferee) }
+}
+
+/** `gateway/referral/update`'s reply. */
+export interface GatewayReferralSplitResult {
+  split_referee_cents: number
+  min_split_referee_cents: number
+  pool_cents: number
+}
+
+/** `gateway/referral/attach`'s reply. */
+export interface GatewayReferralAttachResult {
+  invited_by: GatewayInvitedBy
 }
 
 /** `GatewayAccount.init(from:)` defaults. */
@@ -2100,6 +2258,8 @@ export function normalizeGatewayAccount(raw: Partial<GatewayAccount> | null | un
     billing_preference: raw?.billing_preference ?? null,
     subscriptions: raw?.subscriptions == null ? null : raw.subscriptions.map(normalizeGatewaySubscription),
     context_credit: raw?.context_credit == null ? null : normalizeGatewayContextCredit(raw.context_credit),
+    device: raw?.device == null ? null : normalizeGatewayDevice(raw.device),
+    referral: raw?.referral == null ? null : normalizeGatewayReferralSummary(raw.referral),
   }
 }
 

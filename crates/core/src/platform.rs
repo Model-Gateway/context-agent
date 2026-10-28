@@ -16,6 +16,8 @@
 //! - [`hide_console_window`]: keeps child processes of the desktop app from
 //!   flashing console windows on Windows.
 //! - [`open_url`], [`host_name`], [`python_interpreter`].
+//! - [`device_identity`]: a stable per-machine id for ModelGateway's
+//!   once-per-device promotions, hashed before it leaves the machine.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -518,6 +520,81 @@ pub fn host_name() -> Option<String> {
     None
 }
 
+/// A stable identifier of this machine for ModelGateway's once-per-device
+/// rules (the welcome credit, referral rewards): `id` is the SHA-256 of a
+/// hardware identifier, so the identifier itself never leaves the machine,
+/// `platform` names the source and `attested` says it is hardware-backed
+/// (survives reinstalls and new user accounts) rather than a file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceIdentity {
+    pub id: String,
+    pub platform: &'static str,
+    pub attested: bool,
+}
+
+/// This machine's identity: macOS `IOPlatformUUID`, Windows `MachineGuid`,
+/// Linux `/etc/machine-id` (not hardware-backed: trivially regenerated),
+/// else `None` and the caller falls back to a stored random id.
+pub fn device_identity() -> Option<DeviceIdentity> {
+    static FOUND: OnceLock<Option<DeviceIdentity>> = OnceLock::new();
+    FOUND.get_or_init(find_device_identity).clone()
+}
+
+fn find_device_identity() -> Option<DeviceIdentity> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("ioreg").args(["-rd1", "-c", "IOPlatformExpertDevice"]).output().ok()?;
+        let raw = parse_ioreg_platform_uuid(&String::from_utf8_lossy(&out.stdout))?;
+        return Some(DeviceIdentity { id: hash_device_id(&raw), platform: "macos", attested: true });
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = std::process::Command::new("reg");
+        cmd.args(["query", r"HKLM\SOFTWARE\Microsoft\Cryptography", "/v", "MachineGuid"]);
+        hide_console_window(&mut cmd);
+        let out = cmd.output().ok()?;
+        let raw = parse_reg_machine_guid(&String::from_utf8_lossy(&out.stdout))?;
+        return Some(DeviceIdentity { id: hash_device_id(&raw), platform: "windows", attested: true });
+    }
+    #[cfg(target_os = "linux")]
+    {
+        for path in ["/etc/machine-id", "/var/lib/dbus/machine-id"] {
+            if let Ok(text) = std::fs::read_to_string(path) {
+                let raw = text.trim();
+                if raw.len() >= 16 {
+                    return Some(DeviceIdentity { id: hash_device_id(raw), platform: "linux", attested: false });
+                }
+            }
+        }
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
+/// `"IOPlatformUUID" = "XXXXXXXX-…"` from `ioreg -rd1 -c IOPlatformExpertDevice`.
+pub fn parse_ioreg_platform_uuid(output: &str) -> Option<String> {
+    let line = output.lines().find(|l| l.contains("\"IOPlatformUUID\""))?;
+    let value = line.split('=').nth(1)?.trim().trim_matches('"').trim();
+    (value.len() >= 16).then(|| value.to_uppercase())
+}
+
+/// `    MachineGuid    REG_SZ    xxxxxxxx-…` from `reg query`.
+pub fn parse_reg_machine_guid(output: &str) -> Option<String> {
+    let line = output.lines().find(|l| l.contains("MachineGuid"))?;
+    let value = line.split_whitespace().last()?.trim();
+    (value.len() >= 16 && value != "MachineGuid").then(|| value.to_lowercase())
+}
+
+/// The id sent to the gateway: a SHA-256 of the raw identifier under a
+/// fixed label, hex encoded.
+pub fn hash_device_id(raw: &str) -> String {
+    use sha2::Digest;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(b"ctx-device-v1:");
+    hasher.update(raw.trim().as_bytes());
+    hex::encode(hasher.finalize())
+}
+
 /// What to call this kind of machine in user-facing text.
 pub fn machine_noun() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -690,5 +767,32 @@ mod tests {
         assert!(!ours.to_string_lossy().starts_with(r"\\?\"), "{}", ours.display());
         #[cfg(unix)]
         assert_eq!(ours, std::fs::canonicalize(dir.path()).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod device_identity_tests {
+    use super::*;
+
+    #[test]
+    fn parses_the_platform_uuid_out_of_ioreg() {
+        let output = "+-o MacBookPro18,3  <class IOPlatformExpertDevice, id 0x100000110, registered, matched, active, busy 0 (23 ms), retain 40>\n  {\n    \"IOPlatformUUID\" = \"7f3c2a10-9b6e-4d2f-8a11-0c5e7b9d1234\"\n    \"model\" = <\"MacBookPro18,3\">\n  }\n";
+        assert_eq!(parse_ioreg_platform_uuid(output).as_deref(), Some("7F3C2A10-9B6E-4D2F-8A11-0C5E7B9D1234"));
+        assert_eq!(parse_ioreg_platform_uuid("nothing here"), None);
+    }
+
+    #[test]
+    fn parses_the_machine_guid_out_of_reg_query() {
+        let output = "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography\r\n    MachineGuid    REG_SZ    4C4C4544-0032-3010-8052-B9C04F4A5A31\r\n\r\n";
+        assert_eq!(parse_reg_machine_guid(output).as_deref(), Some("4c4c4544-0032-3010-8052-b9c04f4a5a31"));
+        assert_eq!(parse_reg_machine_guid("ERROR: The system was unable to find the specified registry key or value."), None);
+    }
+
+    #[test]
+    fn the_hash_is_stable_and_case_insensitive_to_whitespace() {
+        let a = hash_device_id("ABC-123");
+        assert_eq!(a.len(), 64);
+        assert_eq!(a, hash_device_id("  ABC-123\n"));
+        assert_ne!(a, hash_device_id("abc-123"));
     }
 }

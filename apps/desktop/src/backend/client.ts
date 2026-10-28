@@ -25,6 +25,8 @@ import {
   normalizeGatewayAccount,
   normalizeGatewayBilling,
   normalizeGatewayContextCredit,
+  normalizeGatewayDevice,
+  normalizeGatewayReferral,
   normalizeGatewayKeySettings,
   normalizeGatewayUsageReport,
   normalizeInitializeResult,
@@ -43,6 +45,10 @@ import {
   type GatewayBilling,
   type GatewayCheckout,
   type GatewayContextCredit,
+  type GatewayDevice,
+  type GatewayReferral,
+  type GatewayReferralAttachResult,
+  type GatewayReferralSplitResult,
   type GatewayDevicePoll,
   type GatewayDeviceStart,
   type GatewayKeySettings,
@@ -857,6 +863,26 @@ export class BackendClient {
   /** Claims the welcome Context credit; the reply is the new summary. */
   async gatewayClaimContextCredit(baseURL: string): Promise<GatewayContextCredit> {
     return this.request('gateway/context_credit/claim', object({ base_url: baseURL }), normalizeGatewayContextCredit)
+  }
+
+  /** Attaches this machine's identity to the stored key (`gateway/account` does it by itself once). */
+  async gatewayDeviceIdentify(baseURL: string): Promise<GatewayDevice> {
+    return this.request('gateway/device/identify', object({ base_url: baseURL }), normalizeGatewayDevice)
+  }
+
+  /** The Invite card: code, link, split, terms and each referee. */
+  async gatewayReferral(baseURL: string): Promise<GatewayReferral> {
+    return this.request('gateway/referral', object({ base_url: baseURL }), normalizeGatewayReferral)
+  }
+
+  /** How much of the match pool future referees get. */
+  async gatewayUpdateReferralSplit(baseURL: string, splitRefereeCents: number): Promise<GatewayReferralSplitResult> {
+    return this.request('gateway/referral/update', object({ base_url: baseURL, split_referee_cents: splitRefereeCents }))
+  }
+
+  /** Adds a referrer to a new account that signed up without a code. */
+  async gatewayAttachReferralCode(baseURL: string, code: string): Promise<GatewayReferralAttachResult> {
+    return this.request('gateway/referral/attach', object({ base_url: baseURL, code }))
   }
 
   /** The device key's price limits and spending cap. */

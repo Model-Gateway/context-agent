@@ -91,6 +91,7 @@ import {
   TriangleAlert,
   Undo2,
   UserKey,
+  Users,
   WandSparkles,
   Wrench,
   X,
@@ -273,6 +274,7 @@ export const Icons = {
   usage: Grid3x3, // square.grid.3x3.fill (filled, see FILL)
   plan: CreditCard,
   contextCredit: Gift,
+  invite: Users, // person.2
   worktree: GitFork, // arrow.branch
 
   // ARCHITECTURE.md names and the toast error glyph.

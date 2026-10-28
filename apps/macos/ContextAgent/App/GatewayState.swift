@@ -58,6 +58,12 @@ final class GatewayState {
     var billingBusy = false
     /// The Account page's Context credit claim in flight.
     var claimingContextCredit = false
+    /// The Account page's Invite card (`gateway/referral`).
+    var referral: GatewayReferral?
+    var referralLoading = false
+    var referralError: String?
+    /// A split change or a code attach in flight.
+    var referralBusy = false
     /// Settings → Spending: the device key's price limits and spending cap.
     var keySettings: GatewayKeySettings?
     var keySettingsError: String?
@@ -341,6 +347,57 @@ extension AppState {
             toasts.show("The credit could not be claimed: \(Self.gatewayMessage(error))", kind: .error)
             // The gateway knows best whether it is claimable; show its view.
             await refreshGateway()
+        }
+    }
+
+    // MARK: Referrals
+
+    /// The Invite card's referees and terms (`gateway/referral`).
+    func refreshGatewayReferral() async {
+        guard gateway.isSignedIn, connection.isReady, !gateway.referralLoading else { return }
+        gateway.referralLoading = true
+        defer { gateway.referralLoading = false }
+        do {
+            gateway.referral = try await backend.gatewayReferral(baseURL: gatewayOrigin)
+            gateway.referralError = nil
+        } catch {
+            gateway.referralError = Self.gatewayMessage(error)
+        }
+    }
+
+    /// Changes how much of the match pool future referees get.
+    func setGatewayReferralSplit(_ cents: Int) async {
+        guard gateway.isSignedIn, connection.isReady, !gateway.referralBusy else { return }
+        gateway.referralBusy = true
+        defer { gateway.referralBusy = false }
+        do {
+            let result = try await backend.gatewayUpdateReferralSplit(baseURL: gatewayOrigin, splitRefereeCents: cents)
+            gateway.referral?.summary.splitRefereeCents = result.splitRefereeCents
+            gateway.account?.referral?.splitRefereeCents = result.splitRefereeCents
+            persistGatewayAccount()
+        } catch {
+            toasts.show("The split could not be changed: \(Self.gatewayMessage(error))", kind: .error)
+            await refreshGatewayReferral()
+        }
+    }
+
+    /// Adds a friend's code to this (new) account; the gift shows on the
+    /// Context credit card once it goes through.
+    func attachGatewayReferralCode(_ code: String) async -> Bool {
+        guard gateway.isSignedIn, connection.isReady, !gateway.referralBusy else { return false }
+        gateway.referralBusy = true
+        defer { gateway.referralBusy = false }
+        do {
+            let result = try await backend.gatewayAttachReferralCode(baseURL: gatewayOrigin, code: code)
+            gateway.account?.referral?.invitedBy = result.invitedBy
+            gateway.account?.referral?.attachAllowed = false
+            persistGatewayAccount()
+            toasts.show("\(result.invitedBy.displayName) is now your referrer", kind: .success)
+            await refreshGateway()
+            return true
+        } catch {
+            toasts.show("The code could not be added: \(Self.gatewayMessage(error))", kind: .error)
+            return false
         }
     }
 

@@ -745,6 +745,21 @@ final class BackendClient {
         try await request("gateway/context_credit/claim", params: object(["base_url": .string(baseURL)]))
     }
 
+    /// The Invite card: code, link, split, terms and each referee.
+    func gatewayReferral(baseURL: String) async throws -> GatewayReferral {
+        try await request("gateway/referral", params: object(["base_url": .string(baseURL)]))
+    }
+
+    /// How much of the match pool future referees get.
+    func gatewayUpdateReferralSplit(baseURL: String, splitRefereeCents: Int) async throws -> GatewayReferralSplitResult {
+        try await request("gateway/referral/update", params: object(["base_url": .string(baseURL), "split_referee_cents": .number(Double(splitRefereeCents))]))
+    }
+
+    /// Adds a referrer to a new account that signed up without a code.
+    func gatewayAttachReferralCode(baseURL: String, code: String) async throws -> GatewayReferralAttachResult {
+        try await request("gateway/referral/attach", params: object(["base_url": .string(baseURL), "code": .string(code)]))
+    }
+
     /// The device key's price limits and spending cap.
     func gatewayKeySettings(baseURL: String) async throws -> GatewayKeySettings {
         try await request("gateway/key", params: object(["base_url": .string(baseURL)]))

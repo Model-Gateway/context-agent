@@ -101,6 +101,11 @@ export function formatQuota(account: GatewayAccount, amount: number): string {
   return account.display_in_currency ? UsageFormat.usd(amount / Math.max(account.quota_per_unit, 1)) : UsageFormat.compact(amount)
 }
 
+/** `GatewayAccount.formatCents`: cents of credit as the gateway shows quota. */
+export function formatGatewayCents(account: GatewayAccount, cents: number): string {
+  return account.display_in_currency ? UsageFormat.usd(cents / 100) : UsageFormat.compact(Math.round((cents / 100) * account.quota_per_unit))
+}
+
 /** The balance as the sidebar button and the header show it ("$24.69" or "12.3M"). */
 export function balanceText(account: GatewayAccount): string {
   return account.display_in_currency ? UsageFormat.usd(balanceUSD(account)) : UsageFormat.compact(account.quota)

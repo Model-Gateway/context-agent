@@ -1244,7 +1244,7 @@ fn slash_command(state: &mut State, line: &str) -> Option<Action> {
 /// code expires. On approval the key is in the credential store.
 async fn device_sign_in(layout: ctx_core::paths::DataLayout, codes: mpsc::Sender<DeviceCode>) -> std::result::Result<Option<String>, String> {
     let origin = gateway::DEFAULT_ORIGIN;
-    let start = gateway::device_start(origin, None).await.map_err(|e| e.to_string())?;
+    let start = gateway::device_start(&layout, origin, None).await.map_err(|e| e.to_string())?;
     let code: DeviceCode = serde_json::from_value(start).map_err(|e| format!("unexpected reply from the gateway ({e})"))?;
     let deadline = Instant::now() + std::time::Duration::from_secs(code.expires_in.unwrap_or(600));
     let mut interval = code.interval.unwrap_or(5).max(1);

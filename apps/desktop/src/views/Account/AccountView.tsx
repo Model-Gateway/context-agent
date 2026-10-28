@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import type { GatewayAccount, GatewayContextCredit, GatewaySubscription } from '../../backend/types'
+import { refereeStageTitle, type GatewayAccount, type GatewayContextCredit, type GatewayReferee, type GatewayReferralSummary, type GatewaySubscription } from '../../backend/types'
 import { BrailleSpinner } from '../../components/BrailleSpinner'
 import { Button } from '../../components/Button'
 import { Chip } from '../../components/Chip'
@@ -14,6 +14,7 @@ import {
   billingPreferenceTitle,
   breakdownSeries,
   formatInteger,
+  formatGatewayCents,
   formatQuota,
   subscriptionDaysLeft,
   subscriptionEndDate,
@@ -46,6 +47,7 @@ import {
 import { usePref } from '../../models/preferences'
 import { useApp } from '../../state/app'
 import {
+  attachGatewayReferralCode,
   beginGatewaySignIn,
   cancelGatewaySignIn,
   claimContextCredit,
@@ -55,8 +57,10 @@ import {
   openGatewayDashboard,
   openInBrowser,
   refreshGateway,
+  refreshGatewayReferral,
   refreshGatewayUsage,
   setGatewayProjectAttribution,
+  setGatewayReferralSplit,
   setGatewayRouting,
   signOutOfGateway,
   useGateway,
@@ -101,6 +105,7 @@ export function AccountView() {
           <>
             <AccountHeader />
             <ContextCreditCard />
+            <InviteCard />
             {hasPlans ? <PlanCard /> : null}
             <UsageCard />
             <GatewaySettingsCard />
@@ -392,22 +397,35 @@ function ContextCreditCard() {
   )
 }
 
+/** The referral gift line on the credit card, or null when there is none. */
+function creditGiftText(account: GatewayAccount): string | null {
+  const invitedBy = account.referral?.invited_by
+  if (!invitedBy || invitedBy.gift_cents <= 0 || invitedBy.status === 'denied') return null
+  if (invitedBy.gift_unlocked_cents >= invitedBy.gift_cents) return `Includes ${formatGatewayCents(account, invitedBy.gift_cents)} from ${invitedBy.display_name}.`
+  const left = invitedBy.gift_cents - invitedBy.gift_unlocked_cents
+  return `${invitedBy.display_name} is giving you ${formatGatewayCents(account, left)} more, matched dollar for dollar as you add funds.`
+}
+
+function creditOfferText(credit: GatewayContextCredit, account: GatewayAccount): string {
+  if (credit.device_claimed) return 'The welcome credit was already claimed on this computer by another account. It is granted once per computer.'
+  if (credit.eligible) return `Thanks for trying Context! Claim ${formatQuota(account, credit.offer_quota)} for use within Context.`
+  return "Add funds by card or crypto once to unlock it. Context's requests are then paid from this credit before your balance. It only works in Context, once per account and per computer."
+}
+
 function CreditOffer({ credit, account }: { credit: GatewayContextCredit; account: GatewayAccount }) {
   const claiming = useGateway((state) => state.claimingContextCredit)
   const ready = useIsReady()
   const offer = formatQuota(account, credit.offer_quota)
+  const gift = creditGiftText(account)
   return (
     <div className={cx(styles.creditBody, styles.stack12)}>
       <div className={styles.stack4}>
         <h3 className={styles.heading}>{`${offer} of free Context credit`}</h3>
-        <p className={styles.secondaryText}>
-          {credit.eligible
-            ? 'Thanks for trying Context! Claim 10$ for use within Context'
-            : "Add funds by card or crypto once to unlock it. Context's requests are then paid from this credit before your balance. It only works in Context."}
-        </p>
+        <p className={styles.secondaryText}>{creditOfferText(credit, account)}</p>
+        {gift !== null ? <p className={styles.secondaryText}>{gift}</p> : null}
       </div>
       <div className={styles.buttonRow}>
-        <Tooltip content={credit.eligible ? 'Add the credit to this account' : 'Available after a card or crypto top-up'}>
+        <Tooltip content={credit.eligible ? 'Add the credit to this account' : credit.device_claimed ? 'Already claimed on this computer' : 'Available after a card or crypto top-up'}>
           <span className={styles.tooltipHost}>
             <Button variant="prominent" disabled={!credit.eligible || claiming || !ready} onClick={() => void claimContextCredit()}>
               {claiming ? (
@@ -421,7 +439,7 @@ function CreditOffer({ credit, account }: { credit: GatewayContextCredit; accoun
             </Button>
           </span>
         </Tooltip>
-        {!credit.eligible ? <Button onClick={() => useApp.getState().openSettings(SETTINGS_TAB_BILLING)}>Add funds…</Button> : null}
+        {!credit.eligible && !credit.device_claimed ? <Button onClick={() => useApp.getState().openSettings(SETTINGS_TAB_BILLING)}>Add funds…</Button> : null}
       </div>
     </div>
   )
@@ -438,7 +456,154 @@ function CreditRemaining({ credit, account }: { credit: GatewayContextCredit; ac
         <span className={cx(styles.secondaryText, styles.oneLine)}>{left}</span>
       </div>
       <CapsuleBar fraction={fraction} tone="accent" />
-      <p className={styles.captionTertiary}>Pays for Context&apos;s requests before your balance. It cannot be used with other API keys.</p>
+      <p className={styles.captionTertiary}>
+        {creditGiftText(account) !== null ? `${creditGiftText(account)} ` : ''}Pays for Context&apos;s requests before your balance. It cannot be used with other API keys.
+      </p>
+    </div>
+  )
+}
+
+// MARK: - Invite a friend
+
+/**
+ * `InviteCard`: the referral program. A link to share, how the match pool is
+ * split between the referrer and the friend (the friend always gets at least
+ * half), what each referee earned, and a field for a code on a new account.
+ * Rewards are Context credit; the gateway pays them as the friend adds funds
+ * and uses Context (docs/referral-program.md). Hidden for gateways without it.
+ */
+function InviteCard() {
+  const account = useGateway((state) => state.account)
+  const detail = useGateway((state) => state.referral)
+  const error = useGateway((state) => state.referralError)
+  const busy = useGateway((state) => state.referralBusy)
+  const summary = account?.referral
+  const accountId = account?.id ?? 0
+  useEffect(() => {
+    if (accountId > 0 && summary?.enabled) void refreshGatewayReferral()
+  }, [accountId, summary?.enabled])
+  if (!account || !summary || !summary.enabled) return null
+  const earned = detail?.summary.earned_cents ?? summary.earned_cents
+  return (
+    <section className={cx(styles.card, styles.stack14)} aria-label="Invite a friend">
+      <div className={styles.cardHeader}>
+        <Icon name="invite" size={13} strokeWidth={2} className={styles.headerIcon} />
+        <h3 className={styles.heading}>Invite a friend</h3>
+        <span className={styles.spacer} />
+        {earned > 0 || summary.referee_count > 0 ? (
+          <span className={cx(styles.secondaryText, styles.oneLine)}>{`${formatGatewayCents(account, earned)} earned · ${summary.referee_count} invited`}</span>
+        ) : null}
+      </div>
+      <p className={styles.secondaryText}>{inviteTerms(summary, account)}</p>
+      {summary.link.length > 0 ? (
+        <>
+          <div className={styles.inviteLinkRow}>
+            <code className={cx(styles.inviteLink, styles.oneLine)}>{summary.link}</code>
+            <CopyButton text={summary.link} label="Copy link" />
+          </div>
+          <SplitRow summary={detail?.summary ?? summary} account={account} busy={busy} />
+        </>
+      ) : null}
+      {summary.attach_allowed ? <AttachRow busy={busy} /> : null}
+      {error !== null ? <p className={cx(styles.caption, styles.dangerText)}>{error}</p> : null}
+      {detail && detail.referees.length > 0 ? (
+        <>
+          <hr className={styles.divider} />
+          {detail.referees.map((referee) => (
+            <RefereeRow key={referee.id} referee={referee} account={account} />
+          ))}
+        </>
+      ) : null}
+    </section>
+  )
+}
+
+function inviteTerms(summary: GatewayReferralSummary, account: GatewayAccount): string {
+  let text = `When a friend signs up with your link and adds funds, ${formatGatewayCents(account, summary.pool_cents)} of Context credit is unlocked dollar for dollar and split between you two`
+  if (summary.share_rate_percent > 0) {
+    text += `, and you earn ${summary.share_rate_percent}% of what they spend for ${summary.share_days} days (up to ${formatGatewayCents(account, summary.share_cap_cents)})`
+  }
+  return `${text}. One reward per computer; plans do not count as adding funds.`
+}
+
+/** The split slider: whole dollars between half the pool and all of it; sent when the drag ends. */
+function SplitRow({ summary, account, busy }: { summary: GatewayReferralSummary; account: GatewayAccount; busy: boolean }) {
+  const [split, setSplit] = useState(summary.split_referee_cents)
+  useEffect(() => setSplit(summary.split_referee_cents), [summary.split_referee_cents])
+  const minimum = summary.min_split_referee_cents
+  const maximum = summary.pool_cents
+  const me = Math.max(0, maximum - split)
+  const commit = () => {
+    const snapped = Math.round(split / 100) * 100
+    setSplit(snapped)
+    if (snapped !== summary.split_referee_cents) void setGatewayReferralSplit(snapped)
+  }
+  return (
+    <div className={styles.stack6}>
+      <div className={styles.baselineRow}>
+        <span className={styles.rowTitle}>{me === 0 ? `Your friend gets all ${formatGatewayCents(account, split)}` : `Your friend gets ${formatGatewayCents(account, split)} · you get ${formatGatewayCents(account, me)}`}</span>
+        <span className={styles.spacer} />
+        {busy ? <BrailleSpinner size={11} tint="var(--text-tertiary)" /> : null}
+      </div>
+      {maximum > minimum ? (
+        <input
+          type="range"
+          className={styles.splitSlider}
+          min={minimum}
+          max={maximum}
+          step={100}
+          value={split}
+          onChange={(event) => setSplit(Number(event.currentTarget.value))}
+          onMouseUp={commit}
+          onKeyUp={commit}
+          onTouchEnd={commit}
+          aria-label="How much of the pool your friend gets"
+        />
+      ) : null}
+      <p className={styles.captionTertiary}>Giving more makes the invite easier to accept; your friend always gets at least half.</p>
+    </div>
+  )
+}
+
+function AttachRow({ busy }: { busy: boolean }) {
+  const [code, setCode] = useState('')
+  const trimmed = code.trim()
+  const attach = () => {
+    if (trimmed.length === 0) return
+    void attachGatewayReferralCode(trimmed).then((ok) => {
+      if (ok) setCode('')
+    })
+  }
+  return (
+    <div className={styles.buttonRow}>
+      <input
+        type="text"
+        className={styles.codeInput}
+        placeholder="Have a friend's code?"
+        value={code}
+        onChange={(event) => setCode(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') attach()
+        }}
+        aria-label="Referral code"
+      />
+      <Button disabled={trimmed.length === 0 || busy} onClick={attach}>
+        Add code
+      </Button>
+      <span className={styles.captionTertiary}>Only on a new account, before its first top-up.</span>
+    </div>
+  )
+}
+
+function RefereeRow({ referee, account }: { referee: GatewayReferee; account: GatewayAccount }) {
+  return (
+    <div className={styles.baselineRow} role="group" aria-label={referee.display_name || 'A friend'}>
+      <div className={styles.stack3}>
+        <span className={styles.rowTitle}>{referee.display_name || 'A friend'}</span>
+        <span className={cx(styles.caption, referee.status === 'denied' ? styles.dangerText : styles.captionTertiary)}>{refereeStageTitle(referee)}</span>
+      </div>
+      <span className={styles.spacer} />
+      <span className={cx(styles.secondaryText, styles.oneLine)}>{referee.earned_cents > 0 ? `+${formatGatewayCents(account, referee.earned_cents)}` : '—'}</span>
     </div>
   )
 }

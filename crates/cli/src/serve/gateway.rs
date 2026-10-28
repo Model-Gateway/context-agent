@@ -108,7 +108,7 @@ impl Server {
     /// verification_uri_complete, expires_in, interval}`.
     pub(super) async fn gateway_device_start(&self, params: GatewayDeviceStartParams) -> RpcResult<Value> {
         let origin = gateway_origin(&params.base_url)?;
-        Ok(gateway::device_start(&origin, params.device_name).await?)
+        Ok(gateway::device_start(&self.layout(), &origin, params.device_name).await?)
     }
 
     /// `gateway/device/poll`: `{status: "pending"|"approved"|"denied"|"expired",
@@ -171,6 +171,32 @@ impl Server {
     pub(super) async fn gateway_claim_context_credit(&self, params: GatewayKeyParams) -> RpcResult<Value> {
         Self::check_base_url(params.base_url.as_deref())?;
         Ok(gateway::claim_context_credit(&self.layout(), params.base_url.as_deref()).await?)
+    }
+
+    /// `gateway/device/identify`: attaches this machine's identity to the
+    /// stored key (`POST /api/device/identify`); the reply is the account's
+    /// `device` block. `gateway/account` does this by itself once.
+    pub(super) async fn gateway_device_identify(&self, params: GatewayKeyParams) -> RpcResult<Value> {
+        Self::check_base_url(params.base_url.as_deref())?;
+        Ok(gateway::identify(&self.layout(), params.base_url.as_deref()).await?)
+    }
+
+    /// `gateway/referral`: the Invite card (`GET /api/device/referral`).
+    pub(super) async fn gateway_referral(&self, params: GatewayKeyParams) -> RpcResult<Value> {
+        Self::check_base_url(params.base_url.as_deref())?;
+        Ok(gateway::referral(&self.layout(), params.base_url.as_deref()).await?)
+    }
+
+    /// `gateway/referral/update`: `{split_referee_cents}` (`PUT /api/device/referral`).
+    pub(super) async fn gateway_referral_update(&self, params: GatewayBillingParams) -> RpcResult<Value> {
+        Self::check_base_url(params.base_url.as_deref())?;
+        Ok(gateway::update_referral(&self.layout(), params.base_url.as_deref(), Value::Object(params.body)).await?)
+    }
+
+    /// `gateway/referral/attach`: `{code}` (`POST /api/device/referral/attach`).
+    pub(super) async fn gateway_referral_attach(&self, params: GatewayBillingParams) -> RpcResult<Value> {
+        Self::check_base_url(params.base_url.as_deref())?;
+        Ok(gateway::attach_referral(&self.layout(), params.base_url.as_deref(), Value::Object(params.body)).await?)
     }
 
     /// `gateway/signout`: revokes the device's key on the gateway and forgets

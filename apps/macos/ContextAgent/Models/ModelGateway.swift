@@ -27,9 +27,13 @@ struct GatewayAccount: Codable, Equatable {
     var subscriptions: [GatewaySubscription]?
     /// Credit only Context's requests can spend; nil from gateways that predate it.
     var contextCredit: GatewayContextCredit?
+    /// Whether this key's device is identified; nil from gateways that predate device ids.
+    var device: GatewayDevice?
+    /// The referral program's summary; nil from gateways that predate it.
+    var referral: GatewayReferralSummary?
 
     enum CodingKeys: String, CodingKey {
-        case id, username, email, group, quota, token, subscriptions
+        case id, username, email, group, quota, token, subscriptions, device, referral
         case contextCredit = "context_credit"
         case displayName = "display_name"
         case usedQuota = "used_quota"
@@ -71,6 +75,13 @@ struct GatewayAccount: Codable, Equatable {
         billingPreference = try c.decodeIfPresent(String.self, forKey: .billingPreference)
         subscriptions = try c.decodeIfPresent([GatewaySubscription].self, forKey: .subscriptions)
         contextCredit = try c.decodeIfPresent(GatewayContextCredit.self, forKey: .contextCredit)
+        device = try c.decodeIfPresent(GatewayDevice.self, forKey: .device)
+        referral = try c.decodeIfPresent(GatewayReferralSummary.self, forKey: .referral)
+    }
+
+    /// Cents of credit as the gateway shows quota: dollars, or raw units.
+    func formatCents(_ cents: Int) -> String {
+        displayInCurrency ? UsageFormat.usd(Double(cents) / 100) : UsageFormat.compact(Int((Double(cents) / 100 * quotaPerUnit).rounded()))
     }
 
     /// Display name, else the username.
@@ -114,18 +125,27 @@ struct GatewayContextCredit: Codable, Equatable {
     var claimed: Bool
     var eligible: Bool
     var offerQuota: Int
+    /// The welcome credit is once per device too: this key's device has not
+    /// identified itself yet (older gateways never set it).
+    var deviceRequired: Bool
+    /// Another account already claimed the welcome credit on this device.
+    var deviceClaimed: Bool
 
     enum CodingKeys: String, CodingKey {
         case balance, granted, claimed, eligible
         case offerQuota = "offer_quota"
+        case deviceRequired = "device_required"
+        case deviceClaimed = "device_claimed"
     }
 
-    init(balance: Int = 0, granted: Int = 0, claimed: Bool = false, eligible: Bool = false, offerQuota: Int = 0) {
+    init(balance: Int = 0, granted: Int = 0, claimed: Bool = false, eligible: Bool = false, offerQuota: Int = 0, deviceRequired: Bool = false, deviceClaimed: Bool = false) {
         self.balance = balance
         self.granted = granted
         self.claimed = claimed
         self.eligible = eligible
         self.offerQuota = offerQuota
+        self.deviceRequired = deviceRequired
+        self.deviceClaimed = deviceClaimed
     }
 
     init(from decoder: Decoder) throws {
@@ -135,6 +155,241 @@ struct GatewayContextCredit: Codable, Equatable {
         claimed = try c.decodeIfPresent(Bool.self, forKey: .claimed) ?? false
         eligible = try c.decodeIfPresent(Bool.self, forKey: .eligible) ?? false
         offerQuota = try c.decodeIfPresent(Int.self, forKey: .offerQuota) ?? 0
+        deviceRequired = try c.decodeIfPresent(Bool.self, forKey: .deviceRequired) ?? false
+        deviceClaimed = try c.decodeIfPresent(Bool.self, forKey: .deviceClaimed) ?? false
+    }
+}
+
+/// `device` of `gateway/account`: whether the gateway knows which machine
+/// this key belongs to (`ctx serve` identifies it by itself).
+struct GatewayDevice: Codable, Equatable {
+    var identified: Bool
+    var attested: Bool
+    var platform: String
+
+    init(identified: Bool = false, attested: Bool = false, platform: String = "") {
+        self.identified = identified
+        self.attested = attested
+        self.platform = platform
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        identified = try c.decodeIfPresent(Bool.self, forKey: .identified) ?? false
+        attested = try c.decodeIfPresent(Bool.self, forKey: .attested) ?? false
+        platform = try c.decodeIfPresent(String.self, forKey: .platform) ?? ""
+    }
+}
+
+/// Who referred this account and what their gift is (`invited_by` of the
+/// referral summary). Amounts are cents of credit.
+struct GatewayInvitedBy: Codable, Equatable {
+    var displayName: String
+    var giftCents: Int
+    var giftUnlockedCents: Int
+    var status: String
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case displayName = "display_name"
+        case giftCents = "gift_cents"
+        case giftUnlockedCents = "gift_unlocked_cents"
+    }
+
+    init(displayName: String = "", giftCents: Int = 0, giftUnlockedCents: Int = 0, status: String = "") {
+        self.displayName = displayName
+        self.giftCents = giftCents
+        self.giftUnlockedCents = giftUnlockedCents
+        self.status = status
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? ""
+        giftCents = try c.decodeIfPresent(Int.self, forKey: .giftCents) ?? 0
+        giftUnlockedCents = try c.decodeIfPresent(Int.self, forKey: .giftUnlockedCents) ?? 0
+        status = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
+    }
+}
+
+/// `referral` of `gateway/account`, and the top of `gateway/referral`: my
+/// code and link, my split of the match pool, the terms, totals. Amounts
+/// are cents of credit; `shareRatePercent` is a percentage.
+struct GatewayReferralSummary: Codable, Equatable {
+    var enabled: Bool
+    var code: String
+    var link: String
+    var poolCents: Int
+    var splitRefereeCents: Int
+    var minSplitRefereeCents: Int
+    var shareRatePercent: Int
+    var shareCapCents: Int
+    var shareDays: Int
+    var earnedCents: Int
+    var refereeCount: Int
+    var attachAllowed: Bool
+    var attachWindowEndsAt: Int64
+    var invitedBy: GatewayInvitedBy?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, code, link
+        case poolCents = "pool_cents"
+        case splitRefereeCents = "split_referee_cents"
+        case minSplitRefereeCents = "min_split_referee_cents"
+        case shareRatePercent = "share_rate_percent"
+        case shareCapCents = "share_cap_cents"
+        case shareDays = "share_days"
+        case earnedCents = "earned_cents"
+        case refereeCount = "referee_count"
+        case attachAllowed = "attach_allowed"
+        case attachWindowEndsAt = "attach_window_ends_at"
+        case invitedBy = "invited_by"
+    }
+
+    init(enabled: Bool = false, code: String = "", link: String = "", poolCents: Int = 0, splitRefereeCents: Int = 0, minSplitRefereeCents: Int = 0, shareRatePercent: Int = 0, shareCapCents: Int = 0, shareDays: Int = 0, earnedCents: Int = 0, refereeCount: Int = 0, attachAllowed: Bool = false, attachWindowEndsAt: Int64 = 0, invitedBy: GatewayInvitedBy? = nil) {
+        self.enabled = enabled
+        self.code = code
+        self.link = link
+        self.poolCents = poolCents
+        self.splitRefereeCents = splitRefereeCents
+        self.minSplitRefereeCents = minSplitRefereeCents
+        self.shareRatePercent = shareRatePercent
+        self.shareCapCents = shareCapCents
+        self.shareDays = shareDays
+        self.earnedCents = earnedCents
+        self.refereeCount = refereeCount
+        self.attachAllowed = attachAllowed
+        self.attachWindowEndsAt = attachWindowEndsAt
+        self.invitedBy = invitedBy
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        code = try c.decodeIfPresent(String.self, forKey: .code) ?? ""
+        link = try c.decodeIfPresent(String.self, forKey: .link) ?? ""
+        poolCents = try c.decodeIfPresent(Int.self, forKey: .poolCents) ?? 0
+        splitRefereeCents = try c.decodeIfPresent(Int.self, forKey: .splitRefereeCents) ?? 0
+        minSplitRefereeCents = try c.decodeIfPresent(Int.self, forKey: .minSplitRefereeCents) ?? (poolCents + 1) / 2
+        shareRatePercent = try c.decodeIfPresent(Int.self, forKey: .shareRatePercent) ?? 0
+        shareCapCents = try c.decodeIfPresent(Int.self, forKey: .shareCapCents) ?? 0
+        shareDays = try c.decodeIfPresent(Int.self, forKey: .shareDays) ?? 0
+        earnedCents = try c.decodeIfPresent(Int.self, forKey: .earnedCents) ?? 0
+        refereeCount = try c.decodeIfPresent(Int.self, forKey: .refereeCount) ?? 0
+        attachAllowed = try c.decodeIfPresent(Bool.self, forKey: .attachAllowed) ?? false
+        attachWindowEndsAt = try c.decodeIfPresent(Int64.self, forKey: .attachWindowEndsAt) ?? 0
+        invitedBy = try c.decodeIfPresent(GatewayInvitedBy.self, forKey: .invitedBy)
+    }
+
+    /// The referrer's own share of the pool.
+    var splitReferrerCents: Int { max(0, poolCents - splitRefereeCents) }
+}
+
+/// One referee of `gateway/referral`: their stage and what they earned me.
+struct GatewayReferee: Codable, Equatable, Identifiable {
+    var id: Int
+    var displayName: String
+    /// `signed_up` (no payment yet) · `active` · `completed` · `denied` · `frozen`.
+    var stage: String
+    var status: String
+    var denyReason: String
+    var poolCents: Int
+    var poolUnlockedCents: Int
+    var poolPaidReferrerCents: Int
+    var poolPaidRefereeCents: Int
+    var sharePaidCents: Int
+    var shareCapCents: Int
+    var earnedCents: Int
+    var daysLeft: Int
+    var createdAt: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case id, stage, status
+        case displayName = "display_name"
+        case denyReason = "deny_reason"
+        case poolCents = "pool_cents"
+        case poolUnlockedCents = "pool_unlocked_cents"
+        case poolPaidReferrerCents = "pool_paid_referrer_cents"
+        case poolPaidRefereeCents = "pool_paid_referee_cents"
+        case sharePaidCents = "share_paid_cents"
+        case shareCapCents = "share_cap_cents"
+        case earnedCents = "earned_cents"
+        case daysLeft = "days_left"
+        case createdAt = "created_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(Int.self, forKey: .id) ?? 0
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? ""
+        stage = try c.decodeIfPresent(String.self, forKey: .stage) ?? ""
+        status = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
+        denyReason = try c.decodeIfPresent(String.self, forKey: .denyReason) ?? ""
+        poolCents = try c.decodeIfPresent(Int.self, forKey: .poolCents) ?? 0
+        poolUnlockedCents = try c.decodeIfPresent(Int.self, forKey: .poolUnlockedCents) ?? 0
+        poolPaidReferrerCents = try c.decodeIfPresent(Int.self, forKey: .poolPaidReferrerCents) ?? 0
+        poolPaidRefereeCents = try c.decodeIfPresent(Int.self, forKey: .poolPaidRefereeCents) ?? 0
+        sharePaidCents = try c.decodeIfPresent(Int.self, forKey: .sharePaidCents) ?? 0
+        shareCapCents = try c.decodeIfPresent(Int.self, forKey: .shareCapCents) ?? 0
+        earnedCents = try c.decodeIfPresent(Int.self, forKey: .earnedCents) ?? 0
+        daysLeft = try c.decodeIfPresent(Int.self, forKey: .daysLeft) ?? 0
+        createdAt = try c.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
+    }
+
+    /// The stage in words.
+    var stageTitle: String {
+        switch stage {
+        case "signed_up": "Signed up · waiting for their first top-up"
+        case "active": daysLeft > 0 ? "Active · \(daysLeft) day\(daysLeft == 1 ? "" : "s") of share left" : "Active"
+        case "completed": "Completed"
+        case "denied": denyReason == "shared_device" ? "Not eligible · same computer as you" : "Not eligible · computer already rewarded"
+        case "frozen": "On hold"
+        default: stage
+        }
+    }
+}
+
+/// `gateway/referral`: the summary plus each referee.
+struct GatewayReferral: Codable, Equatable {
+    var summary: GatewayReferralSummary
+    var referees: [GatewayReferee]
+
+    init(from decoder: Decoder) throws {
+        summary = try GatewayReferralSummary(from: decoder)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        referees = try c.decodeIfPresent([GatewayReferee].self, forKey: .referees) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try summary.encode(to: encoder)
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(referees, forKey: .referees)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case referees
+    }
+}
+
+/// `gateway/referral/update`'s reply.
+struct GatewayReferralSplitResult: Codable, Equatable {
+    var splitRefereeCents: Int
+    var minSplitRefereeCents: Int
+    var poolCents: Int
+
+    enum CodingKeys: String, CodingKey {
+        case splitRefereeCents = "split_referee_cents"
+        case minSplitRefereeCents = "min_split_referee_cents"
+        case poolCents = "pool_cents"
+    }
+}
+
+/// `gateway/referral/attach`'s reply.
+struct GatewayReferralAttachResult: Codable, Equatable {
+    var invitedBy: GatewayInvitedBy
+
+    enum CodingKeys: String, CodingKey {
+        case invitedBy = "invited_by"
     }
 }
 

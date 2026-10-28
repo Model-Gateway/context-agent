@@ -32,6 +32,12 @@ impl DataLayout {
         self.root.join("config.toml")
     }
 
+    /// The random device id used when the platform offers no hardware one
+    /// (`platform::device_identity`); a data-directory wipe resets it.
+    pub fn device_id_file(&self) -> PathBuf {
+        self.root.join("device_id")
+    }
+
     pub fn repositories_dir(&self) -> PathBuf {
         self.root.join("repositories")
     }

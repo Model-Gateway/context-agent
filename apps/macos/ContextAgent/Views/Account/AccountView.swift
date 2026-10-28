@@ -6,7 +6,8 @@ import AppKit
 /// bottom-left button. Signed out: the "Sign in with ModelGateway" card
 /// (and the device code while a sign-in runs). Signed in, top to bottom:
 /// the account header, the Context credit (the welcome offer, then what is
-/// left of it), Plan (active subscriptions, or pay as you go),
+/// left of it), Invite a friend (the referral link, split and referees),
+/// Plan (active subscriptions, or pay as you go),
 /// Usage (24h / 7d / 30d bar charts or an all-time GitHub-style heatmap:
 /// total, by model, by project; cost / tokens / requests), Settings and
 /// Sign out.
@@ -20,6 +21,9 @@ struct AccountView: View {
                 if gateway.isSignedIn {
                     AccountHeader()
                     ContextCreditCard()
+                    if gateway.account?.referral?.enabled == true {
+                        InviteCard()
+                    }
                     if gateway.account?.subscriptions != nil {
                         PlanCard()
                     }
@@ -313,17 +317,22 @@ private struct ContextCreditCard: View {
 
     private func offer(_ credit: GatewayContextCredit, account: GatewayAccount) -> some View {
         let claiming = appState.gateway.claimingContextCredit
+        let invitedBy = account.referral?.invitedBy
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: "\(account.formatQuota(credit.offerQuota)) of free Context credit")
                     .font(Theme.Font.heading)
                     .foregroundStyle(Theme.textPrimary)
-                Text(credit.eligible
-                    ? "Thanks for trying Context! Claim 10$ for use within Context"
-                    : "Add funds by card or crypto once to unlock it. Context's requests are then paid from this credit before your balance. It only works in Context.")
+                Text(offerText(credit, account: account))
                     .font(Theme.Font.secondary)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let invitedBy, invitedBy.giftCents > 0, invitedBy.status != "denied" {
+                    Text(verbatim: "\(invitedBy.displayName) is giving you \(account.formatCents(invitedBy.giftCents)) more, matched dollar for dollar as you add funds.")
+                        .font(Theme.Font.secondary)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             HStack(spacing: 8) {
                 Button {
@@ -341,8 +350,8 @@ private struct ContextCreditCard: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
                 .disabled(!credit.eligible || claiming || !appState.connection.isReady)
-                .help(credit.eligible ? "Add the credit to this account" : "Available after a card or crypto top-up")
-                if !credit.eligible {
+                .help(credit.eligible ? "Add the credit to this account" : credit.deviceClaimed ? "Already claimed on this computer" : "Available after a card or crypto top-up")
+                if !credit.eligible && !credit.deviceClaimed {
                     Button("Add funds…") {
                         appState.openSettings(.billing)
                     }
@@ -352,6 +361,16 @@ private struct ContextCreditCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func offerText(_ credit: GatewayContextCredit, account: GatewayAccount) -> String {
+        if credit.deviceClaimed {
+            return "The welcome credit was already claimed on this computer by another account. It is granted once per computer."
+        }
+        if credit.eligible {
+            return "Thanks for trying Context! Claim \(account.formatQuota(credit.offerQuota)) for use within Context."
+        }
+        return "Add funds by card or crypto once to unlock it. Context's requests are then paid from this credit before your balance. It only works in Context, once per account and per computer."
     }
 
     private func remaining(_ credit: GatewayContextCredit, account: GatewayAccount) -> some View {
@@ -374,12 +393,201 @@ private struct ContextCreditCard: View {
                 }
             }
             .frame(height: 6)
-            Text("Pays for Context's requests before your balance. It cannot be used with other API keys.")
+            Text(remainingText(account))
                 .font(Theme.Font.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func remainingText(_ account: GatewayAccount) -> String {
+        let base = "Pays for Context's requests before your balance. It cannot be used with other API keys."
+        guard let invitedBy = account.referral?.invitedBy, invitedBy.giftCents > 0, invitedBy.status != "denied" else { return base }
+        if invitedBy.giftUnlockedCents >= invitedBy.giftCents {
+            return "Includes \(account.formatCents(invitedBy.giftCents)) from \(invitedBy.displayName). " + base
+        }
+        let left = invitedBy.giftCents - invitedBy.giftUnlockedCents
+        return "\(invitedBy.displayName) is giving you \(account.formatCents(left)) more, matched dollar for dollar as you add funds. " + base
+    }
+}
+
+// MARK: - Invite a friend
+
+/// The referral program: a link to share, how the match pool is split
+/// between the referrer and the friend (the friend always gets at least
+/// half), what each referee earned, and a field for a code on a new
+/// account. Rewards are Context credit; the gateway pays them as the friend
+/// adds funds and uses Context (docs/referral-program.md).
+private struct InviteCard: View {
+    @Environment(AppState.self) private var appState
+    @State private var split: Double = 0
+    @State private var code = ""
+    @State private var copied = false
+
+    var body: some View {
+        if let account = appState.gateway.account, let summary = account.referral, summary.enabled {
+            let detail = appState.gateway.referral
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: Icons.invite)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                        .accessibilityHidden(true)
+                    Text("Invite a friend")
+                        .font(Theme.Font.heading)
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer(minLength: 8)
+                    if summary.earnedCents > 0 || summary.refereeCount > 0 {
+                        Text(verbatim: "\(account.formatCents(detail?.summary.earnedCents ?? summary.earnedCents)) earned · \(summary.refereeCount) invited")
+                            .font(Theme.Font.secondary)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                Text(terms(summary, account: account))
+                    .font(Theme.Font.secondary)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !summary.link.isEmpty {
+                    linkRow(summary)
+                    splitRow(summary, account: account)
+                }
+                if summary.attachAllowed {
+                    attachRow
+                }
+                if let error = appState.gateway.referralError {
+                    Text(error)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let detail, !detail.referees.isEmpty {
+                    Divider()
+                    ForEach(detail.referees) { referee in
+                        refereeRow(referee, account: account)
+                    }
+                }
+            }
+            .card(padding: 20)
+            .task(id: account.id) {
+                split = Double(summary.splitRefereeCents)
+                await appState.refreshGatewayReferral()
+                if let fresh = appState.gateway.referral?.summary.splitRefereeCents { split = Double(fresh) }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Invite a friend")
+        }
+    }
+
+    private func terms(_ summary: GatewayReferralSummary, account: GatewayAccount) -> String {
+        var text = "When a friend signs up with your link and adds funds, \(account.formatCents(summary.poolCents)) of Context credit is unlocked dollar for dollar and split between you two"
+        if summary.shareRatePercent > 0 {
+            text += ", and you earn \(summary.shareRatePercent)% of what they spend for \(summary.shareDays) days (up to \(account.formatCents(summary.shareCapCents)))"
+        }
+        return text + ". One reward per computer; plans do not count as adding funds."
+    }
+
+    private func linkRow(_ summary: GatewayReferralSummary) -> some View {
+        HStack(spacing: 8) {
+            Text(verbatim: summary.link)
+                .font(Theme.Font.mono)
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous))
+            Button(copied ? "Copied" : "Copy link") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(summary.link, forType: .string)
+                copied = true
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    copied = false
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .help("Copy your invite link")
+        }
+    }
+
+    private func splitRow(_ summary: GatewayReferralSummary, account: GatewayAccount) -> some View {
+        let minimum = Double(summary.minSplitRefereeCents)
+        let maximum = Double(summary.poolCents)
+        let friend = Int(split.rounded())
+        let me = max(0, summary.poolCents - friend)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(me == 0 ? "Your friend gets all \(account.formatCents(friend))" : "Your friend gets \(account.formatCents(friend)) · you get \(account.formatCents(me))")
+                    .font(Theme.Font.secondary)
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer(minLength: 8)
+                if appState.gateway.referralBusy {
+                    BrailleSpinner(size: 11, tint: Theme.textTertiary)
+                }
+            }
+            if maximum > minimum {
+                Slider(value: $split, in: minimum...maximum, step: 100) { _ in
+                    // Snap to whole dollars and send once the drag ends.
+                    split = (split / 100).rounded() * 100
+                    Task { await appState.setGatewayReferralSplit(Int(split)) }
+                }
+                .controlSize(.small)
+                .accessibilityLabel("How much of the pool your friend gets")
+            }
+            Text("Giving more makes the invite easier to accept; your friend always gets at least half.")
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var attachRow: some View {
+        HStack(spacing: 8) {
+            TextField("Have a friend's code?", text: $code)
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.regular)
+                .frame(maxWidth: 220)
+                .onSubmit { attach() }
+            Button("Add code") { attach() }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty || appState.gateway.referralBusy)
+            Text("Only on a new account, before its first top-up.")
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.textTertiary)
+        }
+    }
+
+    private func attach() {
+        let trimmed = code.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        Task {
+            if await appState.attachGatewayReferralCode(trimmed) { code = "" }
+        }
+    }
+
+    private func refereeRow(_ referee: GatewayReferee, account: GatewayAccount) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: referee.displayName.isEmpty ? "A friend" : referee.displayName)
+                    .font(Theme.Font.secondary)
+                    .foregroundStyle(Theme.textPrimary)
+                Text(verbatim: referee.stageTitle)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(referee.status == "denied" ? Theme.danger : Theme.textTertiary)
+            }
+            Spacer(minLength: 8)
+            Text(verbatim: referee.earnedCents > 0 ? "+\(account.formatCents(referee.earnedCents))" : "—")
+                .font(Theme.Font.secondary)
+                .foregroundStyle(referee.earnedCents > 0 ? Theme.textPrimary : Theme.textTertiary)
+                .monospacedDigit()
+        }
         .accessibilityElement(children: .combine)
     }
 }
