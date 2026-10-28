@@ -467,9 +467,11 @@ capability profile when it is agent-capable or probes the endpoint
 probed again rather than reused,
 and swaps it into the project; new sessions are created with it. Existing
 sessions keep the model name they were created with for display, while runs
-always use the project's current model (`ProjectInfo.model`). Fails with
-`-32002` while a task is running. In `--mock` mode the switch succeeds
-without any network access.
+always use the project's current model (`ProjectInfo.model`). Allowed while
+a task is running: a run takes the provider when it starts, so the running
+turn keeps its model and the new one applies from the next `task/run`
+(a `task/steer` message joins the running turn, so it keeps the old model
+too). In `--mock` mode the switch succeeds without any network access.
 ```json
 "capability":{"probed_at":"…"|null,"agent_capable":true,"streaming":true,"tool_calling":true,"parallel_tool_calls":true,"reasoning_controls":false,"issues":[]}
 ```

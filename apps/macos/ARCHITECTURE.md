@@ -614,9 +614,10 @@ closes the picker and switches in the background (the composer chip shows
 "Switching…", send disabled); a failed switch, or a model the probe rules
 out for agent runs, comes back as a toast; choosing the current model
 again re-runs the switch (and so the probe) unless it last passed; each row has the lab's logo and
-a models.dev hover card; when the project is running it opens
-read-only with "Finish or cancel the running task to switch". Return inside
-the picker/palette never reaches the composer.
+a models.dev hover card; switching while a task runs is allowed (the
+running turn keeps its model, the next turn uses the new one; the server
+clones the provider at run start). Return inside the picker/palette never
+reaches the composer.
 
 **Status bar**: running → spinner + `state.label` + "step 3" + elapsed +
 *Cancel* (⌘.); always: "ctx 12.4k/128k" when `contextStats` exists (click

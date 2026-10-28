@@ -1822,9 +1822,9 @@ impl Server {
         if model.is_empty() {
             return Err(RpcError::invalid_params("model must not be empty"));
         }
-        if project.is_running() {
-            return Err(RpcError::task_running());
-        }
+        // Allowed while a task runs: every run clones the project's provider
+        // when it starts (`execute_run`), so the running turn keeps its model
+        // and the switch applies to the next `task/run`.
         let mut next = project.config.read().clone();
         next.model.name = model.clone();
         if self.mock {
@@ -1847,9 +1847,6 @@ impl Server {
             // probe instead of leaving the request pending for 120 s.
             _ => self.probe(&next, provider.clone(), &project.lifetime).await?,
         };
-        if project.is_running() {
-            return Err(RpcError::task_running());
-        }
         *project.provider.write() = provider;
         *project.config.write() = next.clone();
         let (config, root) = (next.clone(), project.ctx.root.clone());

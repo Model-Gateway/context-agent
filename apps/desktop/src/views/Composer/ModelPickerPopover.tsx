@@ -106,7 +106,6 @@ function ModelPicker({ onClose }: { onClose: () => void }) {
   // What the rows are built from; each changes identity when it changes.
   const info = useProjectValue(project, (p) => p.info, null)
   const switchingModel = useProjectValue(project, (p) => p.switchingModel, null)
-  const running = useProjectValue(project, (p) => p.isRunning, false)
   const models = useProjectValue(project, (p) => p.models.models, [] as string[])
   const loading = useProjectValue(project, (p) => p.models.loading, false)
   const listError = useProjectValue(project, (p) => p.models.error, null)
@@ -125,7 +124,9 @@ function ModelPicker({ onClose }: { onClose: () => void }) {
   )
   const ids = useMemo(() => rows.filter((row) => row.kind !== 'header').map((row) => row.id), [rows])
   const selectedId = ids.length === 0 ? null : (ids[Math.min(Math.max(selected, 0), ids.length - 1)] ?? null)
-  const interactive = !running && switchingModel === null
+  // A running task keeps the model it started with; the switch applies to
+  // the next turn, so the picker stays live while it runs.
+  const interactive = switchingModel === null
 
   // The search field is focused by the popover (its first focusable element).
   // The list is normally prefetched when the project opened; this fetches
@@ -161,7 +162,7 @@ function ModelPicker({ onClose }: { onClose: () => void }) {
   /// model that failed validation gets probed again.
   const choose = (name: string) => {
     const target = selectedProject(useApp.getState())
-    if (!target || target.isRunning || target.switchingModel !== null) return
+    if (!target || target.switchingModel !== null) return
     // The chosen row never gets a hover exit: hide its card now.
     setClosing(true)
     setHover(null)
@@ -257,7 +258,7 @@ function ModelPicker({ onClose }: { onClose: () => void }) {
 
   const ruledOut = lastSwitch !== null && info !== null && lastSwitch.model === info.model && !lastSwitch.capability.agent_capable
   const showsLoading = loading && models.length === 0
-  const hasStatus = running || switchingModel !== null || switchError !== null || showsLoading || listError !== null || ruledOut
+  const hasStatus = switchingModel !== null || switchError !== null || showsLoading || listError !== null || ruledOut
 
   return (
     <div ref={rootRef} className={styles.picker} onKeyDown={onKeyDown}>
@@ -332,7 +333,6 @@ function ModelPicker({ onClose }: { onClose: () => void }) {
           </div>
           {hasStatus ? (
             <StatusFooter
-              running={running}
               switching={switchingModel !== null}
               switchError={switchError}
               showsLoading={showsLoading}
@@ -364,7 +364,6 @@ function highlighted(match: ModelMatch): TextRun[] {
 // MARK: - Footer (states)
 
 interface StatusFooterProps {
-  running: boolean
   switching: boolean
   switchError: string | null
   showsLoading: boolean
@@ -374,13 +373,12 @@ interface StatusFooterProps {
   ruledOutLine: string | null
 }
 
-/// The footer only appears with something to report: a running task, a
-/// switch in progress or failed, a first load, a list error or a model the
-/// probe ruled out (no idle "N models · Refresh" line).
-function StatusFooter({ running, switching, switchError, showsLoading, listError, refreshing, ruledOutLine }: StatusFooterProps) {
+/// The footer only appears with something to report: a switch in progress
+/// or failed, a first load, a list error or a model the probe ruled out (no
+/// idle "N models · Refresh" line).
+function StatusFooter({ switching, switchError, showsLoading, listError, refreshing, ruledOutLine }: StatusFooterProps) {
   return (
     <div className={`${styles.footer} hairline-top`} role="status">
-      {running ? <FooterLine icon="warning" tint="var(--warning)" text="Finish or cancel the running task to switch" /> : null}
       {switching ? (
         <div className={styles.footerSpinnerLine}>
           <BrailleSpinner size={11} tint="var(--text-secondary)" />

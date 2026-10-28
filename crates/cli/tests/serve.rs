@@ -258,6 +258,11 @@ fn mock_serve_round_trip() {
     assert_eq!(accepted["accepted"], true);
     let busy = c.request("task/run", json!({"project_id": pid, "session_id": sid, "prompt": "again"}));
     assert_eq!(busy["error"]["code"], -32002, "{busy}");
+    // Switching the model is allowed mid-run: the running turn keeps the
+    // provider it started with, and the next run uses the new model.
+    let switched = c.result("models/switch", json!({"project_id": pid, "model": "next-model"}));
+    assert_eq!(switched["model"], "next-model", "{switched}");
+    assert_eq!(c.result("project/status", json!({"project_id": pid}))["running_task"]["session_id"], json!(sid), "the run goes on");
 
     let finished = c.wait_notification(|n| n["method"] == "task/finished" && n["params"]["project_id"] == pid.as_str());
     let fp = &finished["params"];
@@ -265,6 +270,8 @@ fn mock_serve_round_trip() {
     assert!(fp["error"].is_null() && fp["error_kind"].is_null(), "{finished}");
     assert_eq!(fp["session_id"], json!(sid));
     let task_id = fp["task_id"].as_str().unwrap().to_string();
+    assert_eq!(c.result("models/list", json!({"project_id": pid}))["current"], "next-model", "the switch outlived the run");
+    c.result("models/switch", json!({"project_id": pid, "model": model}));
 
     let events = c.take_events(&sid);
     let kinds: Vec<&str> = events.iter().filter_map(|e| e["event"].as_str()).collect();
