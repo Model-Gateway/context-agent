@@ -212,7 +212,9 @@ final class AppState {
     private static let maxBufferedNotifications = 64
 
     convenience init() {
-        self.init(preferences: Preferences(), backend: BackendClient(), recents: RecentProjectStore(), toasts: ToastCenter(), notifier: TaskNotifier())
+        // `--autotest` gets its own defaults suite and support folder (LaunchOptions, "Storage").
+        let launch = LaunchOptions.current
+        self.init(preferences: Preferences(defaults: launch.makeDefaults()), backend: BackendClient(), recents: RecentProjectStore(), toasts: ToastCenter(), notifier: TaskNotifier())
     }
 
     init(preferences: Preferences, backend: BackendClient, recents: RecentProjectStore, toasts: ToastCenter, notifier: TaskNotifier, hosts: SSHHostStore? = nil) {
@@ -648,11 +650,12 @@ final class AppState {
             await openProject(url: URL(fileURLWithPath: path), select: true, restoreSession: false)
             return
         }
+        // Remembered folders are reopened without `init_git` (see `openProject`).
         let last = preferences.lastSelectedProjectId
         await withTaskGroup(of: Void.self) { group in
             for path in paths {
                 group.addTask { @MainActor in
-                    let project = await self.openProject(url: URL(fileURLWithPath: path), select: false, restoreSession: false)
+                    let project = await self.openProject(url: URL(fileURLWithPath: path), select: false, restoreSession: false, initGit: false)
                     if let project, project.id == last, self.selectedProjectId == nil {
                         self.selectRestoredProject(project.id)
                     }
@@ -679,7 +682,7 @@ final class AppState {
     private func reopenProjectsInPlace() async {
         for project in localProjects {
             do {
-                let info = try await backend.projectOpen(path: project.root, exact: false, initGit: preferences.autoInitGit)
+                let info = try await backend.projectOpen(path: project.root, exact: false, initGit: false)
                 project.info = info
                 project.runningSessionIds = info.runningSessionIds
                 project.indexProgress = nil
@@ -732,15 +735,19 @@ final class AppState {
     }
 
     @discardableResult
-    func openProject(url: URL, select: Bool, restoreSession: Bool) async -> ProjectState? {
-        await openProject(path: Self.projectFolder(url).path, host: nil, select: select, restoreSession: restoreSession)
+    func openProject(url: URL, select: Bool, restoreSession: Bool, initGit: Bool = true) async -> ProjectState? {
+        await openProject(path: Self.projectFolder(url).path, host: nil, select: select, restoreSession: restoreSession, initGit: initGit)
     }
 
     /// `project/open` on the local backend, or on the host's connection
     /// (connected first when it is not), then the usual registration:
     /// recents, remembered-open list, permission profile, loads.
+    /// `initGit` false (projects reopened at launch): a remembered folder
+    /// was a repository, or got one, when it was first opened, so one that
+    /// has none now lost it to something outside the app (a pruned linked
+    /// worktree, say) and must not be quietly made a new repository.
     @discardableResult
-    func openProject(path: String, host: SSHHost?, select: Bool, restoreSession: Bool) async -> ProjectState? {
+    func openProject(path: String, host: SSHHost?, select: Bool, restoreSession: Bool, initGit: Bool = true) async -> ProjectState? {
         let key = RecentProject.key(path: path, hostId: host?.id)
         if !openingProjectPaths.contains(key), !projects.contains(where: { $0.key == key }) {
             openingProjectPaths.append(key)
@@ -759,7 +766,7 @@ final class AppState {
         }
         let folderName = (path as NSString).lastPathComponent
         do {
-            let info = try await client.projectOpen(path: path, exact: false, initGit: preferences.autoInitGit)
+            let info = try await client.projectOpen(path: path, exact: false, initGit: initGit && preferences.autoInitGit)
             // One repository id per app: the same path on two hosts hashes
             // to the same id and would mix their events.
             if let clash = self.project(for: info.projectId), clash.host?.id != host?.id {

@@ -12,6 +12,10 @@ import Foundation
 ///
 /// `CTX_DATA_DIR` is not parsed here: `AppState.startBackend` passes it
 /// through to the child verbatim.
+///
+/// Under `--autotest` the app's own storage is isolated too (`makeDefaults`,
+/// `supportDirectory`): a self-test run starts from factory settings and
+/// leaves nothing behind in the user's preferences, recents or hosts.
 struct LaunchOptions: Equatable {
     /// `--mock` / `CTX_DESKTOP_MOCK=1`.
     var mock: Bool = false
@@ -98,6 +102,36 @@ struct LaunchOptions: Equatable {
     /// documents to open; `AppDelegate` uses this set to ignore them.
     var argumentPaths: Set<String> {
         Set([projectPath, autotestDirectory, binaryOverride].compactMap { $0 }.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+    }
+
+    // MARK: - Storage
+
+    /// The self-test's defaults suite, emptied at every `--autotest` launch.
+    static let autotestDefaultsSuite = "dev.contextagent.desktop.autotest"
+
+    /// `UserDefaults.standard`, or under `--autotest` an isolated suite wiped
+    /// at launch: the run starts from factory settings, and what it writes
+    /// (the projects it opens, worktrees it creates, the inspector toggle,
+    /// recent models) never lands in the user's preferences, where an
+    /// earlier harness left self-test worktrees among the open projects.
+    /// `-key value` launch overrides still apply: the argument domain is in
+    /// every instance's search list.
+    func makeDefaults() -> UserDefaults {
+        guard isAutotest, let suite = UserDefaults(suiteName: Self.autotestDefaultsSuite) else { return .standard }
+        suite.removePersistentDomain(forName: Self.autotestDefaultsSuite)
+        return suite
+    }
+
+    /// `~/Library/Application Support/ContextAgent` (recents, hosts,
+    /// attachment uploads), or `<autotest dir>/support` under `--autotest`.
+    /// A self-test that needs hosts or recents seeds them there.
+    var supportDirectory: URL {
+        if let autotestURL {
+            return autotestURL.appendingPathComponent("support", isDirectory: true)
+        }
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("ContextAgent", isDirectory: true)
     }
 
     // MARK: - Helpers

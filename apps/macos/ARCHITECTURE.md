@@ -1118,6 +1118,19 @@ and exit), `--binary <path>` (backend override for this launch). Settings →
 General also has a "Use mock backend (no API key)" toggle that restarts the
 backend. `CTX_DATA_DIR` in the environment is passed through to the child.
 
+The app's own storage is isolated under `--autotest` (`LaunchOptions`,
+"Storage"): `Preferences` read and write the
+`dev.contextagent.desktop.autotest` defaults suite, emptied at launch, and
+recents, hosts and attachment uploads live in `<autotest dir>/support/`
+instead of `~/Library/Application Support/ContextAgent`. A run therefore
+starts from factory settings and leaves nothing in the user's preferences
+(before this, every run's `--project` and the worktree it creates were
+remembered as the user's open projects and reopened at their next launch).
+`-key value` launch overrides (`-inspectorVisible '<true/>'`,
+`-openProjectPaths '(...)'`) still apply; a self-test that needs hosts seeds
+`<autotest dir>/support/ssh-hosts.json`. The window frame is not autosaved
+in this mode either.
+
 `UITestDriver.run(appState:)` (started from `ContextAgentApp` after the
 first window appears when `--autotest` is set): waits for `connection ==
 .ready`; opens `--project` (default: the nearest ancestor of the bundle or
@@ -1193,7 +1206,7 @@ composer selection. Esc never answers an approval.
   visibility, last tab and last Changes file per project, recently used
   models per base URL (max 8), notification toggles, `autoInitGit`
   (Settings → General → Git, default on: `project/open` is sent with
-  `init_git` so folders without a repository get one, and a toast says so).
+  `init_git` so folders without a repository get one, and a toast says so; folders reopened at launch or after a backend restart pass `init_git: false`, so a remembered project whose repository went missing, such as a linked worktree whose `.git` file is gone, is not quietly turned into a new repository).
 - Window frame via `setFrameAutosaveName("Main")`.
 - API keys: Keychain only.
 

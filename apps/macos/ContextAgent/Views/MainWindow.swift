@@ -275,7 +275,10 @@ private struct WindowConfigurator: NSViewRepresentable {
         // Only the top bar's empty space moves the window (`TitleBarArea`).
         window.isMovableByWindowBackground = false
         window.minSize = NSSize(width: 960, height: 600)
-        _ = window.setFrameAutosaveName("Main")
+        // The self-test's window must not resize the user's.
+        if !LaunchOptions.current.isAutotest {
+            _ = window.setFrameAutosaveName("Main")
+        }
         TrafficLights.align(in: window)
         // AppKit lays the buttons out again on resize, full screen and focus changes.
         let names: [Notification.Name] = [

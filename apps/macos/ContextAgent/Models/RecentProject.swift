@@ -38,8 +38,10 @@ struct RecentProject: Codable, Equatable, Hashable, Identifiable {
     }
 }
 
-/// `~/Library/Application Support/ContextAgent/recent-projects.json`:
-/// `[{path, name, lastOpened, pinned}]`, newest first, at most 30 entries.
+/// `~/Library/Application Support/ContextAgent/recent-projects.json`
+/// (`LaunchOptions.supportDirectory`; the self-test's own folder under
+/// `--autotest`): `[{path, name, lastOpened, pinned}]`, newest first, at
+/// most 30 entries.
 @MainActor
 @Observable
 final class RecentProjectStore {
@@ -67,9 +69,7 @@ final class RecentProjectStore {
     }
 
     static func defaultFileURL() -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return base.appendingPathComponent("ContextAgent").appendingPathComponent(fileName)
+        LaunchOptions.current.supportDirectory.appendingPathComponent(fileName)
     }
 
     func item(for path: String, hostId: UUID? = nil) -> RecentProject? {

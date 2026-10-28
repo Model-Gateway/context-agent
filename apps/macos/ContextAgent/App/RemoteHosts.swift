@@ -267,7 +267,7 @@ extension AppState {
                 group.addTask { @MainActor in
                     guard await self.connect(host, quietly: true) != nil else { return }
                     for path in paths {
-                        let project = await self.openProject(path: path, host: host, select: false, restoreSession: false)
+                        let project = await self.openProject(path: path, host: host, select: false, restoreSession: false, initGit: false)
                         if let project, project.id == last, self.selectedProjectId == nil {
                             self.select(project: project.id)
                         }

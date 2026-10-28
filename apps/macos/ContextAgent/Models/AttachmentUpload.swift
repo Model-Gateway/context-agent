@@ -259,7 +259,8 @@ enum PastedFiles {
 // MARK: - Store
 
 /// Files the app writes for the backend under Application Support
-/// (`ContextAgent/<directory>`). Files older than `retention` are removed
+/// (`ContextAgent/<directory>`, `LaunchOptions.supportDirectory`). Files
+/// older than `retention` are removed
 /// the first time a directory is written to after launch.
 enum AttachmentStore {
     static let retention: TimeInterval = 30 * 24 * 60 * 60
@@ -267,9 +268,7 @@ enum AttachmentStore {
     private static let pruned = OSAllocatedUnfairLock(initialState: Set<String>())
 
     static func directory(_ name: String) -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return base.appendingPathComponent("ContextAgent").appendingPathComponent(name, isDirectory: true)
+        LaunchOptions.current.supportDirectory.appendingPathComponent(name, isDirectory: true)
     }
 
     /// Writes `data` as `<name> <8 hex>.<ext>` (unique, keeps the name readable).
