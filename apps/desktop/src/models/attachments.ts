@@ -18,7 +18,7 @@
 
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { appDataDir, join } from '@tauri-apps/api/path'
-import type { FileUpload } from '../backend/types'
+import type { FileUpload, InlineImage } from '../backend/types'
 import { standardizePath } from './recentProject'
 import type { OutgoingPrompt } from './transcript'
 
@@ -426,6 +426,55 @@ async function isText(path: string): Promise<boolean> {
   const head = await readText(path, 8192)
   if (!head || head.content.length === 0) return false
   return !head.content.includes('\u0000') && !head.content.includes('�')
+}
+
+// MARK: - RemoteAttachments
+
+/// `RemoteAttachments.Prepared` (Models/AttachmentUpload.swift): attachments
+/// for a project on a remote host, where the backend cannot open the app's
+/// files: images as their base64 bytes and text files as their content.
+export interface PreparedRemoteAttachments {
+  inlineImages: InlineImage[]
+  files: FileUpload[]
+  /** Attachments that could not be read (gone since they were attached). */
+  skipped: string[]
+}
+
+/** The largest text file sent inline (the backend's own `file/read` cap). */
+const REMOTE_FILE_BYTE_LIMIT = 16 << 20
+
+/// `RemoteAttachments.prepare(images:files:)`: read just before `task/run`
+/// / `task/steer`; the prompt keeps its local paths for the transcript's
+/// thumbnails and chips. A name from history (a remote run's image) has no
+/// bytes here and is skipped.
+export async function prepareRemoteAttachments(images: readonly string[], files: readonly FileUpload[]): Promise<PreparedRemoteAttachments> {
+  const prepared: PreparedRemoteAttachments = { inlineImages: [], files: [], skipped: [] }
+  for (const path of images) {
+    const blob = isAbsoluteLocalPath(path) ? await readImageFile(path) : null
+    if (!blob || blob.size === 0) {
+      prepared.skipped.push(path)
+      continue
+    }
+    prepared.inlineImages.push({ name: pathName(path), data: base64(new Uint8Array(await blob.arrayBuffer())) })
+  }
+  for (const file of files) {
+    if (file.content != null) {
+      prepared.files.push(file)
+      continue
+    }
+    const text = isAbsoluteLocalPath(file.path) ? await readText(file.path, REMOTE_FILE_BYTE_LIMIT) : null
+    if (!text) {
+      prepared.skipped.push(file.path)
+      continue
+    }
+    prepared.files.push({ path: file.path, name: file.name, content: text.content })
+  }
+  return prepared
+}
+
+/** A path of this machine (POSIX, drive letter or UNC), as opposed to a bare name from history. */
+function isAbsoluteLocalPath(path: string): boolean {
+  return path.startsWith('/') || isWindowsPath(path)
 }
 
 // MARK: - Preview

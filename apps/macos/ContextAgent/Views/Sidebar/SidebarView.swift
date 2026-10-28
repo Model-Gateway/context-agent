@@ -16,6 +16,7 @@ struct SidebarView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 2) {
                     projectsSection
+                    RemoteHostsSection()
                     recentsSection
                 }
                 .padding(.horizontal, 10)
@@ -55,12 +56,13 @@ struct SidebarView: View {
     // MARK: - Projects
 
     private var openRoots: Set<String> {
-        Set(appState.projects.map(\.root))
+        Set(appState.projects.map(\.key))
     }
 
+    /// Pinned local recents that are not open (remote ones list under their host).
     private var pinnedNotOpen: [RecentProject] {
         let open = openRoots.union(appState.openingProjectPaths)
-        return appState.recents.pinned.filter { !open.contains($0.path) }
+        return appState.recents.pinned.filter { !$0.isRemote && !open.contains($0.id) }
     }
 
     /// An open project, or a folder still opening shown as a loading row.
@@ -83,11 +85,11 @@ struct SidebarView: View {
         }
     }
 
-    /// Open projects with the folders still opening slotted in at their
+    /// Open local projects with the folders still opening slotted in at their
     /// remembered launch position (new opens go last), so rows fill in place.
     private var projectEntries: [ProjectEntry] {
         var entries = appState.topLevelProjects.map(ProjectEntry.open)
-        for path in appState.pendingProjectPaths {
+        for path in appState.pendingProjectPaths where !RemoteProjectRef.isRemote(path) {
             let rank = appState.restoreRank(of: path)
             let index = entries.firstIndex { appState.restoreRank(of: $0.root) > rank } ?? entries.endIndex
             entries.insert(.opening(path), at: index)
@@ -192,7 +194,7 @@ struct SidebarView: View {
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Retry") {
-                Task { await project.loadSessions(backend: appState.backend) }
+                Task { await project.loadSessions() }
             }
             .buttonStyle(.bordered)
             .controlSize(.mini)

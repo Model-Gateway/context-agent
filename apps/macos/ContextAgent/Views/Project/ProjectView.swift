@@ -95,7 +95,7 @@ private struct ProjectContent: View {
     }
 
     private func refresh() async {
-        await project.refreshStatus(backend: appState.backend)
+        await project.refreshStatus()
         if project.tasks.isEmpty, project.memories.isEmpty, !project.extrasLoading {
             await appState.loadProjectExtras(project: project)
         }

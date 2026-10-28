@@ -30,7 +30,7 @@ use tauri::{AppHandle, Emitter, Manager, State, Url};
 use tauri_plugin_updater::{Update, UpdaterExt};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
-use crate::backend::{lock, Backend};
+use crate::backend::{lock, Backends};
 use crate::selftest::LaunchOptions;
 
 /// Sparkle's default `SUScheduledCheckInterval`: one day, in seconds.
@@ -298,16 +298,19 @@ impl Updates {
         }
     }
 
-    /// Install and Relaunch: stops the backend so the installer can replace
-    /// `ctx.exe`, then starts the installer, which opens the app again when
-    /// it is done. On success the process exits here; an error leaves the
-    /// backend stopped (the frontend starts it again).
+    /// Install and Relaunch: stops every backend (the local ctx and each
+    /// host's ssh) so the installer can replace `ctx.exe`, then starts the
+    /// installer, which opens the app again when it is done. On success the
+    /// process exits here; an error leaves the backends stopped (the
+    /// frontend starts them again).
     pub async fn install_now(&self, app: &AppHandle) -> Result<(), String> {
         if !self.available {
             return Err(UNAVAILABLE.into());
         }
         let (update, bytes) = self.take_downloaded().ok_or("No update has been downloaded yet.")?;
-        app.state::<Backend>().stop().await;
+        for backend in app.state::<Backends>().all() {
+            backend.stop().await;
+        }
         let _ = app.save_window_state(StateFlags::all());
         let installed = update.install(&bytes).map_err(|error| error.to_string());
         self.put_back(update, bytes);

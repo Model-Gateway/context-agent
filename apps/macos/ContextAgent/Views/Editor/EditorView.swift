@@ -173,6 +173,9 @@ private struct DocumentPane: View {
     var body: some View {
         VStack(spacing: 0) {
             switch document.kind {
+            case .image where project.isRemote, .pdf where project.isRemote:
+                // The file is on the host; only text comes over `file/read`.
+                EmptyPlaceholder(systemImage: Icons.remoteProject, title: "Not available for remote projects", subtitle: "Images and PDFs of a project on a remote host are not fetched. Open the file on \(project.host?.displayName ?? "the host").")
             case .image:
                 ImageDocumentView(url: appState.fileURL(of: document, in: project))
             case .pdf:

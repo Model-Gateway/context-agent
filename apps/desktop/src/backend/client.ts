@@ -4,9 +4,16 @@
 // drives it through the `backend_*` / `rpc_request` commands and receives
 // its frames as `backend:notification` / `backend:exited` / `backend:stderr`
 // events, delivered to `onNotification` in frame order on the UI thread.
+//
+// There is one client per backend: `backend` (id `local`) is the `ctx` on
+// this machine; a remote host's client (id = the host's id, started with
+// `host` in its options) is `ssh … ctx serve` there (docs/desktop-protocol.md
+// "Remote hosts"). Every shell event carries the backend id, and the one
+// set of listeners routes it to the client with that id.
 
 import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { listen } from '@tauri-apps/api/event'
+import type { SSHHost } from '../models/sshHost'
 import { BackendError, BackendFailure, BackendFailureError, errorText } from './errors'
 import { debug } from './log'
 import { decodeNotification, type BackendNotification } from './notifications'
@@ -31,6 +38,7 @@ import {
   type FileContent,
   type FileUpload,
   type FileWriteResult,
+  type FsListing,
   type GatewayAccount,
   type GatewayBilling,
   type GatewayCheckout,
@@ -52,6 +60,7 @@ import {
   type GitLogEntry,
   type GitStatus,
   type InitializeResult,
+  type InlineImage,
   type JSONObject,
   type JSONValue,
   type LspCompletionResult,
@@ -89,6 +98,9 @@ export { decodeNotification, type BackendNotification } from './notifications'
 /** `BackendClient.State`: `running` carries the child's pid in `BackendClient.pid`. */
 export type BackendState = 'stopped' | 'starting' | 'running' | 'failed'
 
+/** The id of the backend on this machine (`LOCAL_BACKEND` in the shell). */
+export const LOCAL_BACKEND_ID = 'local'
+
 /** What `start` takes (the `backend_start` command's arguments). */
 export interface BackendStartOptions {
   mock: boolean
@@ -98,6 +110,10 @@ export interface BackendStartOptions {
   apiKeyEnv?: string
   /** `preferences.backendPathOverride` / `--binary`: skip the locator. */
   binaryOverride?: string
+  /// `BackendLaunch.ssh(host)`: the child is `ssh … ctx serve` on this host
+  /// instead of the local binary (the locator, the override and the API
+  /// key do not apply).
+  host?: SSHHost
 }
 
 /** `backend_start`'s result. */
@@ -109,18 +125,21 @@ interface BackendStartResult {
 
 /** `backend:notification`'s payload. */
 interface NotificationPayload {
+  backend?: string | null
   method: string
   params?: JSONValue
 }
 
 /** `backend:exited`'s payload. */
 interface ExitedPayload {
+  backend?: string | null
   code: number
   tail: string
 }
 
 /** `backend:stderr`'s payload. */
 interface StderrPayload {
+  backend?: string | null
   lines: string[]
 }
 
@@ -144,8 +163,39 @@ const STDERR_RING_CAPACITY = 500
 /// settles on a transport error (`proc.waitForExit(timeout: 1)`).
 const EXIT_GRACE_MS = 1_000
 
-/** `BackendClient`: one instance drives the app's single `ctx serve` child. */
+/** The clients by backend id, for the event routing. */
+const clients = new Map<string, BackendClient>()
+let listening: Promise<void> | null = null
+
+/// Subscribes once to the three backend events and routes each by its
+/// `backend` id (a payload without one is the local backend's, as the dev
+/// bridge sends them). Tauri delivers each listener's events in emission
+/// order, so notifications reach `onNotification` in frame order.
+function ensureListeners(): Promise<void> {
+  if (listening) return listening
+  listening = (async () => {
+    await Promise.all([
+      listen<NotificationPayload>('backend:notification', (event) => {
+        const client = clients.get(event.payload.backend ?? LOCAL_BACKEND_ID)
+        if (!client) return
+        const notification = decodeNotification(event.payload.method, event.payload.params)
+        if (notification) client.deliver(notification)
+      }),
+      listen<ExitedPayload>('backend:exited', (event) => clients.get(event.payload.backend ?? LOCAL_BACKEND_ID)?.handleExit(event.payload)),
+      listen<StderrPayload>('backend:stderr', (event) => clients.get(event.payload.backend ?? LOCAL_BACKEND_ID)?.appendStderr(event.payload.lines)),
+    ])
+  })().catch((error: unknown) => {
+    listening = null
+    throw error
+  })
+  return listening
+}
+
+/// `BackendClient`: one instance per `ctx serve` child: the local one
+/// (`backend`), or a remote host's (`new BackendClient(host.id)`).
 export class BackendClient {
+  /** `local`, or the remote host's id: what the shell's events are tagged with. */
+  readonly id: string
   /** Read it; `start` / `stop` and exits change it (and call `onStateChange`). */
   state: BackendState = 'stopped'
   /// Called after every change of `state` (the Swift class is `@Observable`;
@@ -171,16 +221,24 @@ export class BackendClient {
   /** True from `stop()` until the next `start()`. */
   private stopRequested = false
 
-  private listeners: UnlistenFn[] | null = null
-  private listening: Promise<void> | null = null
   private initialized = false
   private processAlive = false
   /** An exit that arrived while `start()` was still initialising. */
   private exitDuringStart: ExitedPayload | null = null
   private exitWaiters: Array<(exit: ExitedPayload) => void> = []
 
+  constructor(id: string = LOCAL_BACKEND_ID) {
+    this.id = id
+    clients.set(id, this)
+  }
+
   get isRunning(): boolean {
     return this.state === 'running'
+  }
+
+  /** True while `initialize` has answered and the child is alive (`isReady`). */
+  get isReady(): boolean {
+    return this.state === 'running' && this.initialized
   }
 
   // MARK: - Lifecycle
@@ -203,14 +261,14 @@ export class BackendClient {
 
     // The listeners must be in place before the child can write a frame.
     try {
-      await this.ensureListeners()
+      await ensureListeners()
     } catch (error) {
       return this.failStart(BackendFailure.transport(`Could not listen for backend events: ${errorText(error)}`))
     }
 
     let launched: BackendStartResult
     try {
-      launched = await invoke<BackendStartResult>('backend_start', startArguments(opts))
+      launched = await invoke<BackendStartResult>('backend_start', startArguments(opts, this.id))
     } catch (error) {
       const failure = BackendFailure.fromInvoke(error)
       return this.failStart(failure)
@@ -274,7 +332,7 @@ export class BackendClient {
       return
     }
     try {
-      await invoke<void>('backend_stop')
+      await invoke<void>('backend_stop', { backend: this.id })
     } catch (error) {
       debug(() => `backend_stop failed: ${errorText(error)}`)
     }
@@ -284,9 +342,21 @@ export class BackendClient {
     this.setState('stopped')
   }
 
+  /// `backend_remove`: stops the child and forgets the shell's entry for it
+  /// (a removed host). The client stops routing events afterwards.
+  async remove(): Promise<void> {
+    await this.stop()
+    try {
+      await invoke<void>('backend_remove', { backend: this.id })
+    } catch (error) {
+      debug(() => `backend_remove failed: ${errorText(error)}`)
+    }
+    if (clients.get(this.id) === this) clients.delete(this.id)
+  }
+
   /** `backend_state`: the Rust shell's view of the child. */
   async processState(): Promise<BackendProcessState> {
-    return invoke<BackendProcessState>('backend_state')
+    return invoke<BackendProcessState>('backend_state', { backend: this.id })
   }
 
   /** `backend_candidates`: the locator's search list, for the failure panel. */
@@ -301,7 +371,7 @@ export class BackendClient {
 
   /** `backend_stderr`: the Rust shell's own copy of the last 500 stderr lines. */
   async fetchStderr(): Promise<string[]> {
-    const lines = await invoke<string[]>('backend_stderr')
+    const lines = await invoke<string[]>('backend_stderr', { backend: this.id })
     this.stderrLog = lines.slice(-STDERR_RING_CAPACITY)
     return this.stderrLog
   }
@@ -314,7 +384,7 @@ export class BackendClient {
   async call(method: string, params?: JSONValue): Promise<JSONValue> {
     if (!this.processAlive) throw BackendError.notRunning()
     try {
-      const result = await invoke<JSONValue | undefined>('rpc_request', { method, params: params ?? null })
+      const result = await invoke<JSONValue | undefined>('rpc_request', { backend: this.id, method, params: params ?? null })
       return result ?? null
     } catch (error) {
       throw BackendError.from(error)
@@ -416,12 +486,15 @@ export class BackendClient {
     )
   }
 
+  /// `images` are paths the backend reads itself, or `{ name, data }`
+  /// inline images for a backend that cannot (a remote host); `files` with
+  /// `content` are sent inline the same way.
   async taskRun(
     projectId: string,
     sessionId: string,
     prompt: string,
     options: TaskRunOptions = {},
-    images: string[] = [],
+    images: Array<string | InlineImage> = [],
     files: FileUpload[] = [],
   ): Promise<void> {
     await this.call(
@@ -430,8 +503,8 @@ export class BackendClient {
         project_id: projectId,
         session_id: sessionId,
         prompt,
-        images: images.length === 0 ? undefined : images,
-        files: files.length === 0 ? undefined : files.map((file) => ({ path: file.path, name: file.name })),
+        images: imageParams(images),
+        files: fileParams(files),
         options: encodeOptions(options),
       }),
     )
@@ -439,17 +512,23 @@ export class BackendClient {
 
   /// Hands a message to `sessionId`'s running turn (read at its next step);
   /// `BackendError.isNoTaskRunning` when the run is idle or ending.
-  async taskSteer(projectId: string, sessionId: string, prompt: string, images: string[] = [], files: FileUpload[] = []): Promise<void> {
+  async taskSteer(projectId: string, sessionId: string, prompt: string, images: Array<string | InlineImage> = [], files: FileUpload[] = []): Promise<void> {
     await this.call(
       'task/steer',
       object({
         project_id: projectId,
         session_id: sessionId,
         prompt,
-        images: images.length === 0 ? undefined : images,
-        files: files.length === 0 ? undefined : files.map((file) => ({ path: file.path, name: file.name })),
+        images: imageParams(images),
+        files: fileParams(files),
       }),
     )
+  }
+
+  /// `fs/list`: a directory of the backend's machine (`path` null = home),
+  /// for the remote folder picker and the Files tab of a remote project.
+  async fsList(path: string | null, dirsOnly = false): Promise<FsListing> {
+    return this.request('fs/list', object({ path, dirs_only: dirsOnly }))
   }
 
   /** Cancels `sessionId`'s run; without one, every run of the project. */
@@ -811,28 +890,8 @@ export class BackendClient {
 
   // MARK: - Events from the Rust shell
 
-  /// Subscribes once to the three backend events. Tauri delivers each
-  /// listener's events in emission order, so notifications reach
-  /// `onNotification` in frame order.
-  private ensureListeners(): Promise<void> {
-    if (this.listeners) return Promise.resolve()
-    if (this.listening) return this.listening
-    this.listening = (async () => {
-      const unlisten = await Promise.all([
-        listen<NotificationPayload>('backend:notification', (event) => {
-          const notification = decodeNotification(event.payload.method, event.payload.params)
-          if (notification) this.deliver(notification)
-        }),
-        listen<ExitedPayload>('backend:exited', (event) => this.handleExit(event.payload)),
-        listen<StderrPayload>('backend:stderr', (event) => this.appendStderr(event.payload.lines)),
-      ])
-      this.listeners = unlisten
-      this.listening = null
-    })()
-    return this.listening
-  }
-
-  private deliver(notification: BackendNotification): void {
+  /** Called by the event router with a decoded notification of this backend. */
+  deliver(notification: BackendNotification): void {
     try {
       this.onNotification?.(notification)
     } catch (error) {
@@ -843,7 +902,7 @@ export class BackendClient {
   /// `BackendClient.handleExit(of:code:)`: decides whether an `exited`
   /// notification is delivered. A requested stop is silent; an exit before
   /// `initialize` answered is reported through `start()`'s error instead.
-  private handleExit(exit: ExitedPayload): void {
+  handleExit(exit: ExitedPayload): void {
     debug(() => `ctx exited (${exit.code})`)
     this.processAlive = false
     this.pid = null
@@ -878,7 +937,7 @@ export class BackendClient {
     })
   }
 
-  private appendStderr(lines: string[]): void {
+  appendStderr(lines: string[]): void {
     this.stderrLog.push(...lines)
     if (this.stderrLog.length > STDERR_RING_CAPACITY) {
       this.stderrLog.splice(0, this.stderrLog.length - STDERR_RING_CAPACITY)
@@ -931,11 +990,30 @@ function encodeOptions(options: TaskRunOptions): JSONObject {
   })
 }
 
+/// `task/run` / `task/steer` `images`: paths as strings, inline images as
+/// `{ name, data }` objects; omitted when there are none.
+function imageParams(images: ReadonlyArray<string | InlineImage>): JSONValue | undefined {
+  if (images.length === 0) return undefined
+  return images.map((image) => (typeof image === 'string' ? image : { name: image.name, data: image.data }))
+}
+
+/// `files`: `{ path, name }` for files the backend reads itself, `{ name,
+/// content[, path] }` for text sent inline; omitted when there are none.
+function fileParams(files: readonly FileUpload[]): JSONValue | undefined {
+  if (files.length === 0) return undefined
+  return files.map((file) => {
+    if (file.content != null) return object({ name: file.name, content: file.content, path: file.path.length > 0 ? file.path : undefined })
+    return { path: file.path, name: file.name }
+  })
+}
+
 /// The `backend_start` arguments. ARCHITECTURE.md names them in snake_case;
 /// Tauri's default command binding reads camelCase keys, so both spellings
 /// are sent and the extra ones are ignored.
-function startArguments(opts: BackendStartOptions): Record<string, unknown> {
+function startArguments(opts: BackendStartOptions, backend: string): Record<string, unknown> {
   return {
+    backend,
+    host: opts.host ?? null,
     mock: opts.mock,
     binary_override: opts.binaryOverride ?? null,
     binaryOverride: opts.binaryOverride ?? null,
@@ -976,5 +1054,5 @@ function withTimeout<T>(ms: number, operation: () => Promise<T>, what: string): 
   })
 }
 
-/** The app's single client (`AppState.backend`). */
-export const backend = new BackendClient()
+/** The local backend's client (`AppState.backend`); remote hosts have their own. */
+export const backend = new BackendClient(LOCAL_BACKEND_ID)

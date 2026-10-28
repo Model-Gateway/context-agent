@@ -12,11 +12,12 @@
 
 import { useMemo } from 'react'
 import { describe as describeFailure, type BackendFailure } from '../backend/errors'
-import { isDiscountDrop, type ApprovalRequest } from '../backend/types'
+import { isDiscountDrop, type ApprovalRequest, type InitializeResult } from '../backend/types'
 import { isProjectCollapsed } from '../models/preferences'
-import { lastPathComponent, useRecentProjects, type RecentProject } from '../models/recentProject'
+import { lastPathComponent, localRecentProject, recentProjectId as recentProjectKey, useRecentProjects, type RecentProject } from '../models/recentProject'
 import { chatStatusIsRunning } from '../models/reducer'
-import { existingBrowser, restoreRank, useApp, type AppStore, type ConnectionState } from './app'
+import { decodeRemoteProject, hostDisplayName, SSHHosts } from '../models/sshHost'
+import { existingBrowser, remoteConnection, restoreRank, useApp, type AppStore, type ConnectionState } from './app'
 import { useBrowserWorkspace } from './browser'
 import type { ChatState } from './chat'
 import type { ProjectState } from './project'
@@ -67,8 +68,26 @@ export function connectionLabel(state: AppStore): string {
 /// The ModelGateway key comes from sign-in only, so a missing one is never
 /// asked for here (the Account page says to sign in again).
 export function needsAPIKey(state: AppStore): boolean {
-  const config = state.config
+  return configNeedsAPIKey(state.config)
+}
+
+function configNeedsAPIKey(config: InitializeResult | null): boolean {
   return config?.model.api_key_set === false && config.mock !== true && config.model.credential !== GATEWAY_CREDENTIAL
+}
+
+/// `isReady(_ project:)`: whether the project's own backend is ready: the
+/// local connection for a local project, the host's connection for a
+/// remote one.
+export function isProjectReady(state: AppStore, project: ProjectState | null): boolean {
+  if (!project || project.host === null) return isReady(state)
+  return remoteConnection(project.host.id)?.isReady ?? false
+}
+
+/// `needsAPIKey(for:)`: the project's backend has no key for its model
+/// (the host's `initialize` result for a remote project).
+export function needsAPIKeyFor(state: AppStore, project: ProjectState | null): boolean {
+  if (!project || project.host === null) return needsAPIKey(state)
+  return configNeedsAPIKey(remoteConnection(project.host.id)?.result ?? null)
 }
 
 /** `apiKeyEnvName`. */
@@ -148,19 +167,28 @@ export function canRewind(state: AppStore, chat: ChatState): boolean {
 
 // MARK: - Sidebar (worktrees)
 
-/// `topLevelProjects`: projects shown at the top level of the sidebar:
-/// everything but the worktrees whose parent checkout is open (those nest under it).
-export function topLevelProjects(state: AppStore): ProjectState[] {
-  const roots = new Set(state.projects.map((project) => project.root))
-  return state.projects.filter((project) => {
+/// `topLevelProjects(on:)`: projects shown at the top level of the
+/// sidebar's section for `hostId` (null: the local Projects section):
+/// everything on that backend but the worktrees whose parent checkout is
+/// open (those nest under it).
+export function topLevelProjects(state: AppStore, hostId: string | null = null): ProjectState[] {
+  const mine = projectsOn(state, hostId)
+  const roots = new Set(mine.map((project) => project.root))
+  return mine.filter((project) => {
     const parent = project.parentRoot
     return parent === null || !roots.has(parent)
   })
 }
 
-/** `worktrees(of:)`: the open worktrees of `project`'s checkout. */
+/** `projects(on:)`: the open projects of a host (null: the local ones). */
+export function projectsOn(state: AppStore, hostId: string | null): ProjectState[] {
+  return state.projects.filter((project) => (project.host?.id ?? null) === hostId)
+}
+
+/** `worktrees(of:)`: the open worktrees of `project`'s checkout (on the same backend). */
 export function worktreesOf(state: AppStore, project: ProjectState): ProjectState[] {
-  return state.projects.filter((candidate) => candidate.parentRoot === project.root)
+  const hostId = project.host?.id ?? null
+  return state.projects.filter((candidate) => candidate.parentRoot === project.root && (candidate.host?.id ?? null) === hostId)
 }
 
 /** `isCollapsed(_:)`: whether the project's worktree rows are folded away in the sidebar. */
@@ -186,13 +214,20 @@ export function hiddenWorktrees(state: AppStore, project: ProjectState): Project
 export function parentProject(state: AppStore, project: ProjectState): ProjectState | null {
   const parent = project.parentRoot
   if (parent === null) return null
-  return state.projects.find((candidate) => candidate.root === parent) ?? null
+  const hostId = project.host?.id ?? null
+  return state.projects.find((candidate) => candidate.root === parent && (candidate.host?.id ?? null) === hostId) ?? null
 }
 
-/** `pendingProjectPaths`: folders still opening that have no project row yet. */
+/// `pendingProjectPaths`: folders still opening that have no project row
+/// yet, as keys (paths, or `ctx-ssh://…` on a host).
 export function pendingProjectPaths(state: AppStore): string[] {
-  const roots = new Set(state.projects.map((project) => project.root))
-  return state.openingProjectPaths.filter((path) => !roots.has(path))
+  const keys = new Set(state.projects.map((project) => project.key))
+  return state.openingProjectPaths.filter((key) => !keys.has(key))
+}
+
+/** `pendingProjectPaths` of one host (null: the local folders). */
+export function pendingProjectPathsOn(state: AppStore, hostId: string | null): string[] {
+  return pendingProjectPaths(state).filter((key) => (decodeRemoteProject(key)?.hostId ?? null) === hostId)
 }
 
 // MARK: - Hooks
@@ -240,10 +275,10 @@ export function usePendingDiscountDrop(): PendingApproval | null {
   return useMemo(() => pendingDiscountDrop(useApp.getState()), [version])
 }
 
-/** `topLevelProjects`, memoised on the store version. */
-export function useTopLevelProjects(): ProjectState[] {
+/** `topLevelProjects(on:)`, memoised on the store version. */
+export function useTopLevelProjects(hostId: string | null = null): ProjectState[] {
   const version = useAppVersion()
-  return useMemo(() => topLevelProjects(useApp.getState()), [version])
+  return useMemo(() => topLevelProjects(useApp.getState(), hostId), [version, hostId])
 }
 
 /** `visibleWorktrees(of:)` / `hiddenWorktrees(of:)` of `project`, memoised on the store version. */
@@ -275,12 +310,17 @@ export function useRecentProjectCards(): RecentProject[] {
       .join('\n'),
   )
   return useMemo(() => {
-    const remembered = new Set(recents.map((recent) => recent.path))
+    const remembered = new Set(recents.map((recent) => recentProjectKey(recent)))
     const fresh = opening
       .split('\n')
-      .filter((path) => path.length > 0 && !remembered.has(path))
+      .filter((key) => key.length > 0 && !remembered.has(key))
       .reverse()
-      .map((path): RecentProject => ({ path, name: lastPathComponent(path), lastOpened: new Date(), pinned: false }))
+      .map((key): RecentProject => {
+        const ref = decodeRemoteProject(key)
+        if (!ref) return localRecentProject(key, lastPathComponent(key))
+        const host = SSHHosts.host(ref.hostId)
+        return { path: ref.path, name: lastPathComponent(ref.path), lastOpened: new Date(), pinned: false, hostId: ref.hostId, hostName: host ? hostDisplayName(host) : null }
+      })
     return [...fresh, ...recents]
   }, [recents, opening])
 }

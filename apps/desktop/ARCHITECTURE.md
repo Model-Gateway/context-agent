@@ -58,12 +58,13 @@ apps/desktop/
     Cargo.toml  build.rs  tauri.conf.json  capabilities/default.json  icons/   # F0
     binaries/                              # sidecar: ctx-<target-triple>[.exe] (git-ignored)
     src/main.rs  src/lib.rs                # F1  app setup: plugins, state, command registration, window
-    src/backend/mod.rs                     # F1  BackendProcess: spawn ctx serve, LF line reader, stderr ring, exit watcher
+    src/backend/mod.rs                     # F1  BackendProcess: spawn ctx serve, LF line reader, stderr ring, exit watcher; `Backends`: one child per backend id (local + one per SSH host), events tagged with the id
+    src/backend/launch.rs                  # BackendLaunch (local binary | ssh host): the ssh command line, the quoted remote command, SshHost, ~/.ssh/config aliases (see "Remote hosts (SSH)")
     src/backend/rpc.rs                     # F1  request ids, pending map, writer; notifications → Tauri events
     src/backend/locator.rs                 # F1  find ctx (override, sidecar, CTX_BINARY, cargo bin, PATH, repo walk)
     src/backend/environment.rs             # F1  child environment: PATH merge, login shell (macOS/Linux), API key from the secret store
     src/secrets.rs                         # F1  keyring: service "dev.contextagent.desktop", account = env var name
-    src/terminal.rs                        # F6  portable-pty sessions (ConPTY on Windows) ↔ xterm.js
+    src/terminal.rs                        # F6  portable-pty sessions (ConPTY on Windows) ↔ xterm.js; `ssh -t` shells for projects on a host
     src/browser.rs                         # F6  child webview per project for the Browser tab + the agent's browser tool
     src/fs.rs                              # F1  list_dir (file tree), read_text_file (attachments), reveal, open_with
     src/selftest.rs                        # F1  --mock / --project / --autotest parsing (LaunchOptions)
@@ -89,7 +90,8 @@ apps/desktop/
     models/transcript.ts                   # F5  port of Transcript.swift (TranscriptItem, UserTurn, AssistantTurn, ToolGroup, ToolCallItem, AgentGroup, Outcome, Notice, Approval)
     models/reducer.ts                      # F5  TranscriptReducer (the 16 rules in the macOS doc) + delta coalescing at 33 ms
     models/toolMetadata.ts                 # F5  port of ToolMetadata.swift (name → icon, label, category, verbs, path argument)
-    models/preferences.ts                  # F5  Preferences store (localStorage-backed, same keys as Preferences.swift where they are plain values)
+    models/preferences.ts                  # F5  Preferences store (localStorage-backed, same keys as Preferences.swift where they are plain values; `sshHosts` is Swift's ssh-hosts.json)
+    models/sshHost.ts                      # SSHHost, RemoteProjectRef (`ctx-ssh://<host id>/path` keys), the SSHHosts store, ~/.ssh/config aliases
     models/modelCatalog.ts                 # F5  port of ModelCatalog.swift (recents per base URL, fuzzy ranking, prefix grouping)
     models/modelsDev.ts                    # F5  port of ModelsDev.swift (models.dev info fetched by the backend? no: cached JSON in the app; see below)
     models/permissions.ts                  # F5  port of PermissionProfiles.swift
@@ -99,11 +101,13 @@ apps/desktop/
     state/editor.ts                        # V6  EditorWorkspace / EditorDocument
     state/git.ts                           # V5  git actions (GitActions.swift)
     state/worktrees.ts                     # V5  WorktreeActions.swift
+    state/remote.ts                        # RemoteConnection (a host's `ssh … ctx serve` and its state / hint); the intents live in state/app.ts
     state/keys.ts                          # V1  global shortcuts (AppCommands.swift), `mod` = Ctrl on Windows/Linux, ⌘ on macOS
     state/updater.ts                       # the updater's state and intents (Check for Updates…, Install and Relaunch)
     views/MainWindow.tsx                   # V1  TopBar + Sidebar | Detail | Inspector, toasts, window controls
     views/TopBar.tsx                       # V1
-    views/Sidebar/SidebarView.tsx  SidebarRows.tsx          # V1
+    views/Sidebar/SidebarView.tsx  SidebarRows.tsx  HostRows.tsx   # V1 (HostRows: the "Remote" section, one host row with its projects beneath it)
+    views/Remote/RemoteFolderPicker.tsx    # the remote folder picker sheet over `fs/list {dirs_only}`
     views/Welcome/WelcomeView.tsx          # V1  hero, Open a project…, recents, Connect-a-model card, backend failure panel, drop target
     views/Palette/CommandPalette.tsx       # V1
     views/Detail/DetailView.tsx            # V1  tab content switch (Chat / Changes / Project / Editor / Apps / Profile)
@@ -116,7 +120,7 @@ apps/desktop/
     views/Project/ProjectView.tsx          # V5
     views/Editor/EditorView.tsx  CodeEditor.tsx  CompletionPanel.tsx  MediaViews.tsx           # V6  CodeMirror 6
     views/Inspector/InspectorView.tsx  FilesTab.tsx  AgentsTab.tsx  TerminalTab.tsx  BrowserTab.tsx   # V7
-    views/Settings/SettingsView.tsx  SettingsSections.tsx  BYOKSettingsSection.tsx  SpendingSettingsSection.tsx  BillingSettingsSection.tsx   # V8
+    views/Settings/SettingsView.tsx  SettingsSections.tsx  BYOKSettingsSection.tsx  SpendingSettingsSection.tsx  BillingSettingsSection.tsx  RemoteHostsSettingsSection.tsx   # V8
     views/Account/AccountView.tsx  UsageHeatmap.tsx  UsageBarChart.tsx                        # V8
     views/Apps/AppsView.tsx                # V9  marketplace, app page, connect page
     views/Updates/UpdateSheet.tsx          # what Sparkle's windows show: checking, up to date, new release, download, ready
@@ -219,14 +223,18 @@ string is user-presentable.
 
 ```
 launch_options() -> { mock, project, binary, autotest }
-backend_start({ binary_override?: string, data_dir?: string, mock: bool, api_key_env?: string }) -> { pid, binary, searched: string[] }
+backend_start({ backend?: string, host?: SshHost, binary_override?: string, data_dir?: string, mock: bool, api_key_env?: string }) -> { pid, binary, searched: string[] }
       // locate → environment → spawn; fails with a BackendFailure-shaped error JSON:
       // { kind: "not_found", searched } | { kind: "exited", code, tail } | { kind: "transport", message }
-backend_stop() -> ()               // "shutdown" request → wait ≤2 s → kill
-backend_state() -> { state: "stopped"|"starting"|"running"|"failed", pid?, detail? }
-backend_stderr() -> string[]       // last 500 lines
-rpc_request({ method: string, params?: JSON }) -> JSON   // resolves with `result`, rejects with { code, message, kind? } as a JSON string
+      // `backend` names the child ("local" by default; a host's id for its ssh child); with `host` the child is
+      // `ssh … ctx serve` on that host (binary_override and api_key_env do not apply) — see "Remote hosts (SSH)"
+backend_stop({ backend? }) -> ()   // "shutdown" request → wait ≤2 s → kill
+backend_remove({ backend }) -> ()  // stop + forget a host's entry (Remove Host)
+backend_state({ backend? }) -> { state: "stopped"|"starting"|"running"|"failed", pid?, detail? }
+backend_stderr({ backend? }) -> string[]       // last 500 lines
+rpc_request({ backend?, method: string, params?: JSON }) -> JSON   // resolves with `result`, rejects with { code, message, kind? } as a JSON string
 backend_candidates() -> string[]   // the locator's search list, for the failure panel
+ssh_config_hosts() -> string[]     // the `Host` aliases of ~/.ssh/config (Include one level deep, patterns skipped)
 
 secret_get({ account }) -> string | null
 secret_set({ account, value }) -> ()
@@ -241,7 +249,7 @@ reveal_in_file_manager({ path }) -> ()                          // Explorer / Fi
 open_with_default_app({ path }) -> ()
 open_url({ url }) -> ()
 
-terminal_open({ cwd }) -> { id }                                // F6
+terminal_open({ cwd, cols?, rows?, host?: SshHost }) -> { id, shell, pid }   // F6; with `host`: `ssh -t <host> 'cd <cwd>; exec $SHELL -l'`
 terminal_write({ id, data }) -> ()
 terminal_resize({ id, cols, rows }) -> ()
 terminal_close({ id }) -> ()
@@ -252,9 +260,9 @@ browser_perform({ project_id, action }) -> { ok, content, url, title, error }   
 Events (Rust → frontend, `app.emit`):
 
 ```
-"backend:notification"  { method: string, params: JSON }       // every notification frame, in order
-"backend:exited"        { code: number, tail: string }
-"backend:stderr"        { lines: string[] }
+"backend:notification"  { backend: string, method: string, params: JSON }   // every notification frame, in order, tagged with its backend id
+"backend:exited"        { backend: string, code: number, tail: string }
+"backend:stderr"        { backend: string, lines: string[] }
 "terminal:data"         { id, data }      "terminal:exit" { id, code }
 "browser:state"         { project_id, url, title, loading, can_go_back, can_go_forward, progress }
 ```
@@ -265,17 +273,26 @@ stderr ring, an exit watcher that emits `backend:exited` and fails every
 pending request. The writer is one task behind an `mpsc` channel so lines
 never interleave. On Windows the child is spawned with
 `CREATE_NO_WINDOW`, and `stop()` cannot send SIGTERM: it sends `shutdown`,
-waits two seconds, then kills.
+waits two seconds, then kills. `Backends` (managed state) holds one
+`Backend` per id: `local`, and one per SSH host; quitting stops them all.
 
 ### `BackendClient` (`src/backend/client.ts`)
 
+One instance per backend: `backend` (id `local`) is the local `ctx`; a
+remote host's client is `new BackendClient(host.id)` started with `host`
+in its options. One set of event listeners routes each shell event to the
+client whose id it carries.
+
 ```ts
 export class BackendClient {
+  readonly id: string                                     // 'local', or the host's id
   state: 'stopped' | 'starting' | 'running' | 'failed'
   onNotification?: (n: BackendNotification) => void      // called in frame order on the UI thread
   stderrLog: string[]
-  start(opts: { mock: boolean; dataDir?: string; apiKeyEnv?: string; binaryOverride?: string }): Promise<InitializeResult>
+  start(opts: { mock: boolean; dataDir?: string; apiKeyEnv?: string; binaryOverride?: string; host?: SSHHost }): Promise<InitializeResult>
   stop(): Promise<void>
+  remove(): Promise<void>                                 // stop + backend_remove (a removed host)
+  fsList(path: string | null, dirsOnly?: boolean): Promise<FsListing>   // a directory of the backend's machine
   // one method per protocol method, same names as BackendClient.swift:
   initialize(); configGet(); configPatch(values); projectOpen(path, exact, initGit); projectClose(id); projectStatus(id); indexRebuild(id)
   sessionsList(projectId, limit); sessionCreate(projectId, title?); sessionRename(...); sessionDelete(...); sessionHistory(...); sessionRewind(...)
@@ -336,8 +353,9 @@ toast, restart once after 1 s unless we stopped it).
 `notifyOnFinish`, `notifyOnApproval`, `appearance` (system | light |
 dark), `developerMode`, `useContextEngine`, `gatewayAccount`,
 `gatewayPreviousEndpoint`, `routeThroughGateway`, `attributeProjects`,
-`recents` (RecentProject[] with pinned), `modelRecents`). A `usePref(key)`
-hook subscribes views.
+`recents` (RecentProject[] with pinned, and `hostId` / `hostName` for a
+folder on a host), `modelRecents`, `sshHosts` (the SSH hosts, Swift's
+`ssh-hosts.json`)). A `usePref(key)` hook subscribes views.
 
 ### Secrets
 
@@ -483,6 +501,96 @@ substitutions:
   `Pasted Images`), pruned after 30 days.
 - **Media viewers**: `<img>` from `convertFileSrc(path)`; PDFs in an
   `<iframe>` of the asset URL (WebView2 and WKWebView both render PDFs).
+
+## Remote hosts (SSH)
+
+The port of the macOS feature (apps/macos/ARCHITECTURE.md "Remote hosts
+(SSH)", docs/remote-hosts.md): a project can live on another machine; the
+app runs `ctx serve` there over SSH and talks the same protocol through the
+SSH session's pipes (docs/desktop-protocol.md "Remote hosts"). The server
+needs nothing new. What differs from the macOS app is only where the
+pieces live:
+
+- **Rust launches ssh.** `src-tauri/src/backend/launch.rs` is
+  `BackendLaunch.swift` + `SSHHost.swift`: `BackendLaunch::Ssh(host)` runs
+  `ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o
+  ServerAliveCountMax=4 -o ClearAllForwardings=yes -T [-p port] [-i key]
+  [-l user] <extras> -- <address> 'env PATH="$HOME/.cargo/bin:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:$PATH" ctx serve [--mock]'`
+  — the address after `--`, the remote command quoted for a POSIX shell
+  (the remote is Unix; `$HOME`/`$PATH` expand there). The client is
+  `/usr/bin/ssh`, on Windows `%SystemRoot%\System32\OpenSSH\ssh.exe`
+  (`ssh.exe` on PATH as a fallback), or `$CTX_SSH_BINARY` for tests. The
+  child gets the login shell's environment (SSH_AUTH_SOCK, the user's PATH)
+  and no API key (the host's `ctx` has its own); on Windows it is spawned
+  with `CREATE_NO_WINDOW` like every child (`configure_platform`, the same
+  flag `ctx_core::platform::hide_console_window` sets; the crate does not
+  depend on `ctx-core`). `Backends` keeps one `Backend` per backend id and
+  every event (`backend:notification` / `exited` / `stderr`) carries the id,
+  so the frontend routes it to the right `BackendClient`; the commands take
+  `backend` (default `local`). `ssh_config_hosts` reads the `Host` aliases
+  of `~/.ssh/config` for the settings form.
+- **One connection per host.** `state/remote.ts` is `RemoteConnection`: the
+  `SSHHost` as configured when it connected, its own `BackendClient`
+  (`id = host.id`), a `state` (disconnected / connecting / ready / failed)
+  and a `hint` (`remoteHint`: what ssh's last words mean — keys, PATH, the
+  address, the host key). The intents are in `state/app.ts` ("Remote hosts"
+  section): `remoteFor`, `connectHost` (made when the first project on the
+  host is opened; concurrent callers share one attempt), `disconnectHost`
+  (closes its projects with `forget` false), `reconnectHost`, `removeHost`,
+  `saveHost`, `testHost` (a saved host on its own connection, a draft on a
+  throwaway client), `chooseRemoteProject`, `listRemoteDirectory`,
+  `reopenRememberedRemoteProjects` (at launch, each host in parallel, after
+  — and independently of — the local start). `handleRemoteExit` fails the
+  host's running chats, marks the connection failed and leaves the rows in
+  place for Reconnect; never an automatic retry. `--mock` / Settings →
+  General's mock toggle apply to every backend.
+- **A remote project is a `ProjectState` with a `backend` and a `host`.**
+  Every per-project request goes through `project.backend` (`ProjectState`'s
+  loads, `state/git.ts`, `state/editor.ts`, `state/worktrees.ts` and the
+  store's intents); chat-scoped ones use `backendFor(projectId)`. Readiness
+  is `isProjectReady(state, project)` and the key check
+  `needsAPIKeyFor(state, project)` (selectors.ts), so a remote project never
+  looks at the local backend. Notifications are routed by project id, which
+  `openProject` keeps unique across backends (the same path on two hosts
+  hashes to one id: the second open is refused with a toast); `log` lines
+  get a `[host]` prefix, `mcp/status` is the local backend's only.
+  `makeProject` builds the `ModelCatalog` from the host's `initialize`.
+- **Keys.** Preferences and recents key a project by `ProjectState.key` /
+  `recentProjectId`: the path locally, `ctx-ssh://<host id>/path` on a host
+  (`models/sshHost.ts` `RemoteProjectRef`). `openProjectPaths` mixes both;
+  `openingProjectPaths` holds keys too (the loading rows decode them). The
+  hosts themselves are the `sshHosts` preference (same JSON shape as the
+  Swift `SSHHost`; the Rust `SshHost` reads it as is).
+- **No shared filesystem.** The Files tab lists folders through `fs/list`
+  (`FileTreeModel(root, onChange, remote)`), the folder picker is the
+  `RemoteFolderPicker` sheet over `fs/list {dirs_only}` (`views/Remote/`),
+  the Editor reads and writes through `file/read` / `file/write` as always
+  but shows a placeholder for images and PDFs, Explorer / Finder and "Open
+  with Default Editor" are left out (`FileRow.localActions`, `reveal`), and
+  the Terminal tab's shells are `ssh -t <host> 'cd <root>; exec $SHELL -l'`
+  (`TerminalWorkspace(directory, host)` → `terminal_open({ host })`).
+  Attachments: `task/run` and `task/steer` get the bytes
+  (`prepareRemoteAttachments` → `InlineImage` / `FileUpload.content`)
+  instead of paths; the transcript keeps the local paths for its thumbnails.
+- **UI.** Welcome: "Open on a remote host…" under the open button (Settings
+  → Remote hosts when none is configured). Sidebar: a "Remote" section
+  (`HostRows.tsx`) listing every configured host with its projects,
+  worktrees, opening rows and pinned recents beneath it; the Projects
+  section shows local projects only. Palette: "Open project on remote
+  host…" (`mod+shift+O`). Recents cards carry the host as a chip and open
+  through `openRecent`. Settings → Remote hosts
+  (`RemoteHostsSettingsSection.tsx`): the rows with state, hint and Connect /
+  Disconnect / Edit… / Remove…, "Add host…" and the `~/.ssh/config` aliases
+  menu, the editor sheet with Test connection. The Inspector Run tab's
+  Backend card describes the selected project's host connection
+  (Reconnect instead of Retry).
+- **Testing without a server.** `CTX_SSH_BINARY` points the shell (and
+  `scripts/dev-bridge.mjs`, which keeps one child per backend id too) at a
+  stand-in ssh: a script that ignores the options and runs its last
+  argument with `sh -c`, with the host's ctx path set to a local build
+  (`target/debug/ctx`). The browser preview then opens a "remote" project,
+  chats, lists files, loses the link when that `ctx serve` exits and
+  reconnects from the host row.
 
 ## Self-test mode
 

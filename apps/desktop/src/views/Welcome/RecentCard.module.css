@@ -127,3 +127,11 @@
 .chipSlot {
   display: inline-flex;
 }
+
+/* The host chip of a project on a remote host (`Chip(host.displayName, systemImage: Icons.remoteHost)`). */
+.hostChip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  max-width: 45%;
+  margin-top: 1px;
+}

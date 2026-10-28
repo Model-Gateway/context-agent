@@ -258,6 +258,11 @@ fn mock_serve_round_trip() {
     assert_eq!(accepted["accepted"], true);
     let busy = c.request("task/run", json!({"project_id": pid, "session_id": sid, "prompt": "again"}));
     assert_eq!(busy["error"]["code"], -32002, "{busy}");
+    // Switching the model is allowed mid-run: the running turn keeps the
+    // provider it started with, and the next run uses the new model.
+    let switched = c.result("models/switch", json!({"project_id": pid, "model": "next-model"}));
+    assert_eq!(switched["model"], "next-model", "{switched}");
+    assert_eq!(c.result("project/status", json!({"project_id": pid}))["running_task"]["session_id"], json!(sid), "the run goes on");
 
     let finished = c.wait_notification(|n| n["method"] == "task/finished" && n["params"]["project_id"] == pid.as_str());
     let fp = &finished["params"];
@@ -265,6 +270,8 @@ fn mock_serve_round_trip() {
     assert!(fp["error"].is_null() && fp["error_kind"].is_null(), "{finished}");
     assert_eq!(fp["session_id"], json!(sid));
     let task_id = fp["task_id"].as_str().unwrap().to_string();
+    assert_eq!(c.result("models/list", json!({"project_id": pid}))["current"], "next-model", "the switch outlived the run");
+    c.result("models/switch", json!({"project_id": pid, "model": model}));
 
     let events = c.take_events(&sid);
     let kinds: Vec<&str> = events.iter().filter_map(|e| e["event"].as_str()).collect();
@@ -1440,6 +1447,88 @@ fn worktree_merge_lands_the_branch_in_the_parent() {
     assert_eq!(c.request("project/status", json!({"project_id": wid}))["error"]["code"], -32001);
     let branches = c.result("git/branches", json!({"project_id": pid}));
     assert!(branches["local"].as_array().unwrap().iter().all(|b| b["name"] != "ctx/add-docs"), "{branches}");
+
+    assert_eq!(c.result("shutdown", json!({})), json!({}));
+    assert_eq!(c.child.wait().unwrap().code(), Some(0));
+}
+
+/// `initialize.host`, `fs/list` (the desktop app's remote folder picker)
+/// and attachments sent inline by a client on another machine.
+#[test]
+fn remote_client_host_listing_and_inline_attachments() {
+    let data = tempfile::tempdir().unwrap();
+    let repo = fixture();
+    let mut c = Client::spawn(data.path());
+
+    let init = c.result("initialize", json!({}));
+    let host = &init["host"];
+    assert!(host["hostname"].is_string() && host["home_dir"].is_string() && host["os"].is_string(), "{init}");
+    assert_eq!(host["os"], std::env::consts::OS);
+
+    // The home directory when no path is given; `~` expands.
+    let home = c.result("fs/list", json!({}));
+    assert_eq!(home["path"], host["home_dir"], "{home}");
+    assert_eq!(home["home"], host["home_dir"]);
+    let tilde = c.result("fs/list", json!({"path": "~"}));
+    assert_eq!(tilde["path"], home["path"]);
+
+    // The fixture: `src` is a directory, README.md a file; dirs_only hides files.
+    let listing = c.result("fs/list", json!({"path": repo.path()}));
+    let canonical = ctx_core::platform::canonicalize(repo.path()).unwrap();
+    assert_eq!(listing["path"], json!(canonical), "{listing}");
+    assert_eq!(listing["parent"], json!(canonical.parent().unwrap()));
+    let entries = listing["entries"].as_array().unwrap();
+    let names: Vec<&str> = entries.iter().filter_map(|e| e["name"].as_str()).collect();
+    assert_eq!(names, vec!["src", "README.md"], "{listing}");
+    assert!(!names.contains(&".git"));
+    assert_eq!(entries[0]["is_dir"], true);
+    assert_eq!(entries[0]["is_git"], false);
+    assert_eq!(entries[0]["path"], json!(canonical.join("src")));
+    let only_dirs = c.result("fs/list", json!({"path": repo.path(), "dirs_only": true}));
+    let dir_names: Vec<&str> = only_dirs["entries"].as_array().unwrap().iter().filter_map(|e| e["name"].as_str()).collect();
+    assert_eq!(dir_names, vec!["src"]);
+    // The parent of the fixture lists it as a repository root.
+    let parent = c.result("fs/list", json!({"path": canonical.parent().unwrap(), "dirs_only": true}));
+    let fixture_entry = parent["entries"].as_array().unwrap().iter().find(|e| e["path"] == json!(canonical)).expect("fixture listed in its parent");
+    assert_eq!(fixture_entry["is_git"], true, "{fixture_entry}");
+    // Bad paths are -32602.
+    let relative = c.request("fs/list", json!({"path": "relative/dir"}));
+    assert_eq!(relative["error"]["code"], -32602, "{relative}");
+    let missing = c.request("fs/list", json!({"path": repo.path().join("nope")}));
+    assert_eq!(missing["error"]["code"], -32602, "{missing}");
+    let file = c.request("fs/list", json!({"path": repo.path().join("README.md")}));
+    assert_eq!(file["error"]["code"], -32602, "{file}");
+
+    // A run with an inline image and an inline file: history lists them by name.
+    let info = c.result("project/open", json!({"path": repo.path()}));
+    let pid = info["project_id"].as_str().unwrap().to_string();
+    c.wait_notification(|n| n["method"] == "index/ready" && n["params"]["project_id"] == pid.as_str());
+    let session = c.result("session/create", json!({"project_id": pid}));
+    let sid = session["id"].as_str().unwrap().to_string();
+    let png = {
+        use base64::Engine as _;
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&[0u8; 16]);
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    };
+    let bad = c.request("task/run", json!({"project_id": pid, "session_id": sid, "prompt": "x", "images": [{"name": "shot.png", "data": "not base64!"}]}));
+    assert_eq!(bad["error"]["code"], -32602, "{bad}");
+    let nameless = c.request("task/run", json!({"project_id": pid, "session_id": sid, "prompt": "x", "files": [{"content": "hi"}]}));
+    assert_eq!(nameless["error"]["code"], -32602, "{nameless}");
+    let accepted = c.result("task/run", json!({
+        "project_id": pid, "session_id": sid, "prompt": "Look at the attachments",
+        "images": [{"name": "shot.png", "data": png}],
+        "files": [{"name": "notes.txt", "content": "remember the milk\n"}, {"path": "/elsewhere/report.pdf", "name": "report.pdf", "content": "extracted text"}]
+    }));
+    assert_eq!(accepted["accepted"], true);
+    let finished = c.wait_notification(|n| n["method"] == "task/finished" && n["params"]["session_id"] == sid.as_str());
+    assert_eq!(finished["params"]["status"], "completed", "{finished}");
+    let history = c.result("session/history", json!({"project_id": pid, "session_id": sid}));
+    let messages = history["turns"][0]["messages"].as_array().unwrap();
+    let user = messages.iter().find(|m| m["kind"] == "user").unwrap();
+    assert_eq!(user["text"], "Look at the attachments");
+    assert_eq!(user["images"], json!(["shot.png"]), "{user}");
+    assert_eq!(user["files"], json!([{"path": "notes.txt", "name": "notes.txt"}, {"path": "/elsewhere/report.pdf", "name": "report.pdf"}]), "{user}");
 
     assert_eq!(c.result("shutdown", json!({})), json!({}));
     assert_eq!(c.child.wait().unwrap().code(), Some(0));

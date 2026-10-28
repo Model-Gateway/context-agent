@@ -1,10 +1,17 @@
-//! The `ctx serve` child: the port of `BackendProcess.swift` (spawn with
+//! The `ctx serve` children: the port of `BackendProcess.swift` (spawn with
 //! piped stdio, a strict-LF stdout line reader that scans only new bytes, a
 //! 500-line stderr ring, an awaitable exit signal) plus the lifecycle half of
 //! `BackendClient.swift` (`start`, `stop`, `handleExit`). The typed protocol
 //! API, `initialize` and the protocol-version check live in the frontend
 //! (`src/backend/client.ts`), which drives this module through the
 //! `backend_*` and `rpc_request` commands registered in `lib.rs`.
+//!
+//! There is one [`Backend`] per backend id in [`Backends`]: `"local"` is the
+//! `ctx` on this machine, every other id is a remote host whose child is
+//! `ssh … ctx serve` ([`launch::BackendLaunch::Ssh`], docs/desktop-protocol.md
+//! "Remote hosts"). Every event the shell emits carries the backend id so
+//! the frontend routes `exited`, `stderr` and the notifications to the
+//! right client; the commands take an optional `backend` (default `"local"`).
 //!
 //! Tasks per child: one stdout reader (lines → [`rpc::RpcConnection::receive`]),
 //! one stderr reader (lines → ring + `backend:stderr`), one writer (inside
@@ -13,10 +20,11 @@
 //! and emits `backend:exited` unless the exit was requested by `stop`.
 
 pub mod environment;
+pub mod launch;
 pub mod locator;
 pub mod rpc;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -31,13 +39,17 @@ use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::sync::{mpsc, watch};
 
 use crate::selftest::LaunchOptions;
+use launch::{BackendLaunch, SshHost};
 use rpc::{RpcConnection, RpcError};
+
+/// The id of the backend on this machine; remote hosts use their host id.
+pub const LOCAL_BACKEND: &str = "local";
 
 /// `BackendProcess.stderrRingCapacity`.
 pub const STDERR_RING_CAPACITY: usize = 500;
-/// Emitted once per unrequested exit: `{ code, tail }`.
+/// Emitted once per unrequested exit: `{ backend, code, tail }`.
 pub const EXITED_EVENT: &str = "backend:exited";
-/// Emitted for every batch of stderr lines: `{ lines }`.
+/// Emitted for every batch of stderr lines: `{ backend, lines }`.
 pub const STDERR_EVENT: &str = "backend:stderr";
 /// `CTX_MOCK_PACE_MS` for mock children: 20 ms per streamed delta so
 /// streaming text and running tool rows can be seen.
@@ -206,6 +218,9 @@ pub struct StartResult {
 /// `backend_start`'s arguments (`BackendClient.start` + `AppState.startBackend`).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct StartOptions {
+    /// A remote host: the child is `ssh … ctx serve` there (`BackendLaunch.ssh`)
+    /// and `binary_override` / `api_key_env` do not apply.
+    pub host: Option<SshHost>,
     /// `preferences.backendPathOverride` (or `--binary`); tried first.
     pub binary_override: Option<String>,
     /// `--data-dir` for the child (`CTX_DATA_DIR` in the macOS app).
@@ -219,12 +234,14 @@ pub struct StartOptions {
 
 #[derive(Clone, Serialize)]
 struct ExitedPayload {
+    backend: String,
     code: i32,
     tail: String,
 }
 
 #[derive(Clone, Serialize)]
 struct StderrPayload {
+    backend: String,
     lines: Vec<String>,
 }
 
@@ -301,16 +318,59 @@ struct Inner {
     mock: bool,
 }
 
-/// The one `ctx serve` child and its connection, held by Tauri as managed
-/// state (`BackendClient` in Swift). Every public method takes the inner
-/// lock briefly; nothing awaits the child while holding it except `stop`,
-/// which is what callers expect to wait for.
-#[derive(Default)]
+/// One `ctx serve` child and its connection (`BackendClient` in Swift):
+/// the local one, or a host's `ssh … ctx serve`. Every public method takes
+/// the inner lock briefly; nothing awaits the child while holding it except
+/// `stop`, which is what callers expect to wait for.
 pub struct Backend {
+    /// [`LOCAL_BACKEND`], or the remote host's id.
+    pub id: String,
     inner: tokio::sync::Mutex<Inner>,
 }
 
+/// Every backend by id, held by Tauri as managed state. The local one is
+/// created on first use like any other; a remote host's entry stays until
+/// `backend_remove` (Remove Host) so its stderr and state can be read after
+/// a failure.
+#[derive(Default)]
+pub struct Backends {
+    map: Mutex<HashMap<String, Arc<Backend>>>,
+}
+
+impl Backends {
+    /// The backend with `id`, created (stopped) when it does not exist yet.
+    pub fn get_or_create(&self, id: &str) -> Arc<Backend> {
+        let mut map = lock(&self.map);
+        Arc::clone(map.entry(id.to_owned()).or_insert_with(|| Arc::new(Backend::new(id))))
+    }
+
+    pub fn get(&self, id: &str) -> Option<Arc<Backend>> {
+        lock(&self.map).get(id).cloned()
+    }
+
+    /// Drops the entry (the caller stops it first).
+    pub fn remove(&self, id: &str) -> Option<Arc<Backend>> {
+        lock(&self.map).remove(id)
+    }
+
+    pub fn all(&self) -> Vec<Arc<Backend>> {
+        lock(&self.map).values().cloned().collect()
+    }
+}
+
+/// `backend` of a command, defaulted to the local one.
+fn backend_id(backend: Option<String>) -> String {
+    backend.map(|id| id.trim().to_owned()).filter(|id| !id.is_empty()).unwrap_or_else(|| LOCAL_BACKEND.to_owned())
+}
+
 impl Backend {
+    pub fn new(id: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            inner: tokio::sync::Mutex::new(Inner::default()),
+        }
+    }
+
     /// Locate → environment → spawn (`BackendClient.start` up to the point
     /// where the macOS app sends `initialize`; the frontend does that through
     /// `rpc_request`). A running child is stopped first, so this doubles as
@@ -328,39 +388,63 @@ impl Backend {
         inner.mock = options.mock;
         inner.binary = None;
 
-        // Locate: the explicit override, else `--binary` from the launch options, else the search list.
-        let override_path = options
-            .binary_override
-            .as_deref()
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(str::to_owned)
-            .or_else(|| LaunchOptions::current().binary.clone());
-        let located = locator::locate(override_path.as_deref());
-        let searched: Vec<String> = located.searched.iter().map(|path| path.display().to_string()).collect();
-        let Some(binary) = located.found else {
-            inner.status = BackendStatus::Failed {
-                detail: "ctx not found".to_owned(),
-            };
-            return Err(StartFailure::NotFound { searched });
+        // Locate: a host means `ssh`; locally the explicit override, else
+        // `--binary` from the launch options, else the search list.
+        let (launch, searched) = match options.host.clone() {
+            Some(host) => {
+                let ssh = BackendLaunch::ssh_binary();
+                let searched = vec![ssh.display().to_string()];
+                // A bare name (`ssh.exe` without the OpenSSH folder) is left
+                // to the PATH lookup of `Command::new`.
+                if ssh.components().count() > 1 && !locator::is_executable(&ssh) {
+                    inner.status = BackendStatus::Failed {
+                        detail: format!("ssh not found at {}", ssh.display()),
+                    };
+                    return Err(StartFailure::NotFound { searched });
+                }
+                (BackendLaunch::Ssh(host), searched)
+            }
+            None => {
+                let override_path = options
+                    .binary_override
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|path| !path.is_empty())
+                    .map(str::to_owned)
+                    .or_else(|| LaunchOptions::current().binary.clone());
+                let located = locator::locate(override_path.as_deref());
+                let searched: Vec<String> = located.searched.iter().map(|path| path.display().to_string()).collect();
+                let Some(binary) = located.found else {
+                    inner.status = BackendStatus::Failed {
+                        detail: "ctx not found".to_owned(),
+                    };
+                    return Err(StartFailure::NotFound { searched });
+                };
+                (BackendLaunch::Local { binary }, searched)
+            }
         };
+        let binary = launch.executable();
         inner.binary = Some(binary.clone());
 
-        // Environment: no API key lookup for the mock, like `AppState.startBackend`.
-        let api_key_env = if options.mock { None } else { options.api_key_env.as_deref() };
+        // Environment: no API key lookup for the mock, like `AppState.startBackend`;
+        // none for a host either (its `ctx` has its own key), but the login
+        // shell's variables still carry SSH_AUTH_SOCK and the user's PATH.
+        let api_key_env = if options.mock || launch.host().is_some() { None } else { options.api_key_env.as_deref() };
         let mut environment = environment::build(api_key_env).await;
         if options.mock && environment.get("CTX_MOCK_PACE_MS").is_none_or(String::is_empty) {
             environment.insert("CTX_MOCK_PACE_MS".to_owned(), MOCK_PACE_MS.to_owned());
         }
 
-        let mut arguments = vec!["serve".to_owned()];
+        let mut serve_arguments = vec!["serve".to_owned()];
         if options.mock {
-            arguments.push("--mock".to_owned());
+            serve_arguments.push("--mock".to_owned());
         }
         if let Some(dir) = options.data_dir.as_deref().map(str::trim).filter(|dir| !dir.is_empty()) {
-            arguments.push("--data-dir".to_owned());
-            arguments.push(locator::expand_tilde(dir).display().to_string());
+            serve_arguments.push("--data-dir".to_owned());
+            // A remote path is the host's: `~` expands there.
+            serve_arguments.push(if launch.host().is_some() { dir.to_owned() } else { locator::expand_tilde(dir).display().to_string() });
         }
+        let arguments = launch.arguments(&serve_arguments);
 
         let mut command = Command::new(&binary);
         command
@@ -376,7 +460,7 @@ impl Backend {
         let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {
-                let message = format!("Could not launch {}: {error}", binary.display());
+                let message = format!("Could not launch {}: {error}", launch.label());
                 inner.status = BackendStatus::Failed {
                     detail: message.clone(),
                 };
@@ -393,7 +477,7 @@ impl Backend {
             return Err(StartFailure::Transport { message });
         };
 
-        let connection = RpcConnection::new(app.clone(), stdin);
+        let connection = RpcConnection::new(app.clone(), stdin, self.id.clone());
         let (control, control_receiver) = mpsc::unbounded_channel();
         let (exit_sender, exit_receiver) = watch::channel(None);
         let handle = Arc::new(ChildHandle {
@@ -403,9 +487,10 @@ impl Backend {
         });
         let stderr_ring = Arc::clone(&inner.stderr);
         let stdout_task = tauri::async_runtime::spawn(read_stdout(stdout, Arc::clone(&connection)));
-        tauri::async_runtime::spawn(read_stderr(app.clone(), stderr, Arc::clone(&stderr_ring)));
+        tauri::async_runtime::spawn(read_stderr(app.clone(), self.id.clone(), stderr, Arc::clone(&stderr_ring)));
         tauri::async_runtime::spawn(watch_exit(ExitWatch {
             app: app.clone(),
+            backend: self.id.clone(),
             child,
             control: control_receiver,
             exit: exit_sender,
@@ -418,10 +503,10 @@ impl Backend {
         inner.child = Some(handle);
         inner.connection = Some(connection);
         inner.status = BackendStatus::Running { pid };
-        debug(|| format!("launched {} {} pid {pid}", binary.display(), arguments.join(" ")));
+        debug(|| format!("[{}] launched {} {} pid {pid}", self.id, binary.display(), arguments.join(" ")));
         Ok(StartResult {
             pid,
-            binary: binary.display().to_string(),
+            binary: launch.label(),
             searched,
         })
     }
@@ -542,7 +627,7 @@ async fn read_stdout(mut stdout: ChildStdout, connection: Arc<RpcConnection>) {
 }
 
 /// The stderr reader: lines into the ring and out as `backend:stderr`.
-async fn read_stderr(app: AppHandle, mut stderr: ChildStderr, ring: Arc<Mutex<StderrRing>>) {
+async fn read_stderr(app: AppHandle, backend: String, mut stderr: ChildStderr, ring: Arc<Mutex<StderrRing>>) {
     let mut splitter = LineSplitter::default();
     let mut chunk = vec![0u8; READ_CHUNK];
     loop {
@@ -555,23 +640,24 @@ async fn read_stderr(app: AppHandle, mut stderr: ChildStderr, ring: Arc<Mutex<St
             .into_iter()
             .map(|line| String::from_utf8_lossy(&line).into_owned())
             .collect();
-        record_stderr(&app, &ring, lines);
+        record_stderr(&app, &backend, &ring, lines);
     }
     if let Some(rest) = splitter.drain() {
-        record_stderr(&app, &ring, vec![String::from_utf8_lossy(&rest).into_owned()]);
+        record_stderr(&app, &backend, &ring, vec![String::from_utf8_lossy(&rest).into_owned()]);
     }
 }
 
-fn record_stderr(app: &AppHandle, ring: &Mutex<StderrRing>, lines: Vec<String>) {
+fn record_stderr(app: &AppHandle, backend: &str, ring: &Mutex<StderrRing>, lines: Vec<String>) {
     if lines.is_empty() {
         return;
     }
     lock(ring).push(lines.iter().cloned());
-    let _ = app.emit(STDERR_EVENT, StderrPayload { lines });
+    let _ = app.emit(STDERR_EVENT, StderrPayload { backend: backend.to_owned(), lines });
 }
 
 struct ExitWatch {
     app: AppHandle,
+    backend: String,
     child: Child,
     control: mpsc::UnboundedReceiver<Signal>,
     exit: watch::Sender<Option<i32>>,
@@ -588,6 +674,7 @@ struct ExitWatch {
 async fn watch_exit(watch: ExitWatch) {
     let ExitWatch {
         app,
+        backend,
         mut child,
         mut control,
         exit,
@@ -615,7 +702,7 @@ async fn watch_exit(watch: ExitWatch) {
             },
         }
     };
-    debug(|| format!("ctx terminated: status {code}"));
+    debug(|| format!("[{backend}] ctx terminated: status {code}"));
     let _ = exit.send(Some(code));
 
     if tokio::time::timeout(STDOUT_DRAIN_TIMEOUT, &mut stdout_task).await.is_err() {
@@ -625,9 +712,12 @@ async fn watch_exit(watch: ExitWatch) {
     connection.close(RpcError::transport(format!("ctx exited ({code})")));
     let tail = lock(&stderr).tail(STDERR_TAIL_LINES);
 
-    let should_emit = app.state::<Backend>().handle_exit(generation, code).await;
+    let should_emit = match app.state::<Backends>().get(&backend) {
+        Some(target) => target.handle_exit(generation, code).await,
+        None => false, // removed meanwhile (Remove Host)
+    };
     if should_emit {
-        let _ = app.emit(EXITED_EVENT, ExitedPayload { code, tail });
+        let _ = app.emit(EXITED_EVENT, ExitedPayload { backend, code, tail });
     }
 }
 
@@ -682,50 +772,80 @@ fn configure_platform(_command: &mut Command) {}
 
 // MARK: - Commands
 
-/// `backend_start({ binary_override?, data_dir?, mock, api_key_env? })`
+/// `backend_start({ backend?, host?, binary_override?, data_dir?, mock, api_key_env? })`
 /// → `{ pid, binary, searched }`, or a `BackendFailure`-shaped JSON error.
+/// With `host` the child is `ssh … ctx serve` on that host.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn backend_start(
     app: AppHandle,
-    backend: State<'_, Backend>,
+    backends: State<'_, Backends>,
+    backend: Option<String>,
+    host: Option<SshHost>,
     binary_override: Option<String>,
     data_dir: Option<String>,
     mock: Option<bool>,
     api_key_env: Option<String>,
 ) -> Result<StartResult, String> {
     let options = StartOptions {
+        host,
         binary_override,
         data_dir,
         mock: mock.unwrap_or(false),
         api_key_env,
     };
-    backend.start(&app, options).await.map_err(String::from)
+    let target = backends.get_or_create(&backend_id(backend));
+    target.start(&app, options).await.map_err(String::from)
 }
 
-/// `backend_stop()`: `shutdown` → wait ≤ 2 s → kill.
+/// `backend_stop({ backend? })`: `shutdown` → wait ≤ 2 s → kill.
 #[tauri::command]
-pub async fn backend_stop(backend: State<'_, Backend>) -> Result<(), String> {
-    backend.stop().await;
+pub async fn backend_stop(backends: State<'_, Backends>, backend: Option<String>) -> Result<(), String> {
+    if let Some(target) = backends.get(&backend_id(backend)) {
+        target.stop().await;
+    }
     Ok(())
 }
 
-/// `backend_state()` → `{ state, pid?, detail? }`.
+/// `backend_remove({ backend })`: stops a remote host's child and forgets
+/// its entry (Remove Host). The local backend is only stopped.
 #[tauri::command]
-pub async fn backend_state(backend: State<'_, Backend>) -> Result<BackendStatus, String> {
-    Ok(backend.status().await)
+pub async fn backend_remove(backends: State<'_, Backends>, backend: String) -> Result<(), String> {
+    let id = backend_id(Some(backend));
+    if let Some(target) = backends.get(&id) {
+        target.stop().await;
+    }
+    if id != LOCAL_BACKEND {
+        backends.remove(&id);
+    }
+    Ok(())
 }
 
-/// `backend_stderr()` → the last 500 stderr lines.
+/// `backend_state({ backend? })` → `{ state, pid?, detail? }`.
 #[tauri::command]
-pub async fn backend_stderr(backend: State<'_, Backend>) -> Result<Vec<String>, String> {
-    Ok(backend.stderr_lines().await)
+pub async fn backend_state(backends: State<'_, Backends>, backend: Option<String>) -> Result<BackendStatus, String> {
+    Ok(match backends.get(&backend_id(backend)) {
+        Some(target) => target.status().await,
+        None => BackendStatus::Stopped,
+    })
 }
 
-/// `rpc_request({ method, params? })` → the response's `result`; rejects
-/// with `{ code, message, kind? }` as a JSON string.
+/// `backend_stderr({ backend? })` → the last 500 stderr lines.
 #[tauri::command]
-pub async fn rpc_request(backend: State<'_, Backend>, method: String, params: Option<Value>) -> Result<Value, String> {
-    backend.request(&method, params).await.map_err(String::from)
+pub async fn backend_stderr(backends: State<'_, Backends>, backend: Option<String>) -> Result<Vec<String>, String> {
+    Ok(match backends.get(&backend_id(backend)) {
+        Some(target) => target.stderr_lines().await,
+        None => Vec::new(),
+    })
+}
+
+/// `rpc_request({ backend?, method, params? })` → the response's `result`;
+/// rejects with `{ code, message, kind? }` as a JSON string.
+#[tauri::command]
+pub async fn rpc_request(backends: State<'_, Backends>, backend: Option<String>, method: String, params: Option<Value>) -> Result<Value, String> {
+    let Some(target) = backends.get(&backend_id(backend)) else {
+        return Err(RpcError::not_running().into());
+    };
+    target.request(&method, params).await.map_err(String::from)
 }
 
 /// `backend_candidates()` → the locator's search list, for the failure panel.
@@ -736,6 +856,15 @@ pub fn backend_candidates(binary_override: Option<String>) -> Result<Vec<String>
         .iter()
         .map(|path| path.display().to_string())
         .collect())
+}
+
+/// `ssh_config_hosts()` → the `Host` aliases of `~/.ssh/config`, offered
+/// when adding a remote host.
+#[tauri::command]
+pub async fn ssh_config_hosts() -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(launch::ssh_config_aliases)
+        .await
+        .map_err(|error| format!("could not read ~/.ssh/config: {error}"))
 }
 
 #[cfg(test)]

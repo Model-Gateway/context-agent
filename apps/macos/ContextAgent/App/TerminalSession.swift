@@ -2,9 +2,10 @@ import AppKit
 import SwiftTerm
 
 /// One shell in the Inspector Terminal tab: the user's login shell on a
-/// SwiftTerm `LocalProcessTerminalView`, started in the project root. The
-/// view lives as long as the session, so switching tabs keeps scrollback and
-/// running programs.
+/// SwiftTerm `LocalProcessTerminalView`, started in the project root — or,
+/// for a project on a remote host, `ssh -t <host>` with a login shell in
+/// the project's remote root. The view lives as long as the session, so
+/// switching tabs keeps scrollback and running programs.
 @MainActor
 @Observable
 final class TerminalSession: Identifiable {
@@ -22,9 +23,9 @@ final class TerminalSession: Identifiable {
 
     var displayTitle: String { title ?? fallbackTitle }
 
-    init(directory: String, number: Int) {
+    init(directory: String, number: Int, host: SSHHost? = nil) {
         let shell = Self.shellPath
-        let name = (shell as NSString).lastPathComponent
+        let name = host.map(\.displayName) ?? (shell as NSString).lastPathComponent
         fallbackTitle = number > 1 ? "\(name) \(number)" : name
         currentDirectory = directory
 
@@ -44,14 +45,31 @@ final class TerminalSession: Identifiable {
         environment["COLORTERM"] = "truecolor"
         environment["TERM_PROGRAM"] = "ContextAgent"
         environment["LANG"] = environment["LANG"] ?? "en_US.UTF-8"
-        environment["PWD"] = directory
-        view.startProcess(
-            executable: shell,
-            args: [],
-            environment: environment.map { "\($0.key)=\($0.value)" },
-            execName: "-" + name,
-            currentDirectory: directory
-        )
+        if let host {
+            // A tty for the remote login shell; `cd` into the project's root
+            // there (quoted for the remote POSIX shell), then the user's shell
+            // as a login shell so its profile applies as in a terminal.
+            let command = "cd \(BackendLaunch.shellQuote(directory)) 2>/dev/null; exec \"${SHELL:-/bin/sh}\" -l"
+            var arguments = BackendLaunch.sshArguments(host: host).filter { $0 != "-T" }
+            arguments.insert("-t", at: 0)
+            arguments.append(command)
+            view.startProcess(
+                executable: BackendLaunch.sshBinary.path,
+                args: arguments,
+                environment: environment.map { "\($0.key)=\($0.value)" },
+                execName: nil,
+                currentDirectory: nil
+            )
+        } else {
+            environment["PWD"] = directory
+            view.startProcess(
+                executable: shell,
+                args: [],
+                environment: environment.map { "\($0.key)=\($0.value)" },
+                execName: "-" + name,
+                currentDirectory: directory
+            )
+        }
         isRunning = true
     }
 
@@ -127,12 +145,15 @@ final class TerminalSession: Identifiable {
 @Observable
 final class TerminalWorkspace {
     let directory: String
+    /// The remote host of the project's shells, nil for a local project.
+    let host: SSHHost?
     private(set) var sessions: [TerminalSession] = []
     var selectedId: UUID?
     @ObservationIgnored private var opened = 0
 
-    init(directory: String) {
+    init(directory: String, host: SSHHost? = nil) {
         self.directory = directory
+        self.host = host
     }
 
     var selected: TerminalSession? {
@@ -148,7 +169,7 @@ final class TerminalWorkspace {
     @discardableResult
     func newSession(running command: String? = nil) -> TerminalSession {
         opened += 1
-        let session = TerminalSession(directory: directory, number: opened)
+        let session = TerminalSession(directory: directory, number: opened, host: host)
         if let command { session.run(command) }
         session.onExit = { [weak self] session in
             self?.remove(session)

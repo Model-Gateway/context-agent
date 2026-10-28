@@ -164,8 +164,16 @@ final class AppState {
 
     let preferences: Preferences
     let toasts: ToastCenter
+    /// The local `ctx serve`. A project on a remote host uses its own
+    /// connection (`ProjectState.backend`, App/RemoteHosts.swift).
     let backend: BackendClient
     let recents: RecentProjectStore
+    /// Settings → Remote hosts.
+    let hosts: SSHHostStore
+    /// host id → its `ssh … ctx serve` connection, created on first use.
+    var remotes: [UUID: RemoteConnection] = [:]
+    /// The remote folder picker sheet (Welcome, the sidebar, ⌘⇧O).
+    var remotePicker: RemotePickerRequest?
     let notifier: TaskNotifier
     /// "Sign in with ModelGateway" (App/GatewayState.swift).
     let gateway: GatewayState
@@ -188,6 +196,8 @@ final class AppState {
     /// Consecutive automatic restarts; reset after a long healthy run.
     @ObservationIgnored private var autoRestartCount = 0
     @ObservationIgnored private var backendStartClaimed = false
+    /// The remembered remote projects are reopened once per launch.
+    @ObservationIgnored private var remoteRestoreStarted = false
     @ObservationIgnored private var backendLogNextId = 0
     /// Notifications for a project whose `project/open` has not returned yet
     /// (a small repository's `index/ready` beats the response frame),
@@ -205,10 +215,11 @@ final class AppState {
         self.init(preferences: Preferences(), backend: BackendClient(), recents: RecentProjectStore(), toasts: ToastCenter(), notifier: TaskNotifier())
     }
 
-    init(preferences: Preferences, backend: BackendClient, recents: RecentProjectStore, toasts: ToastCenter, notifier: TaskNotifier) {
+    init(preferences: Preferences, backend: BackendClient, recents: RecentProjectStore, toasts: ToastCenter, notifier: TaskNotifier, hosts: SSHHostStore? = nil) {
         self.preferences = preferences
         self.backend = backend
         self.recents = recents
+        self.hosts = hosts ?? SSHHostStore()
         self.toasts = toasts
         self.notifier = notifier
         gateway = GatewayState(preferences: preferences)
@@ -240,7 +251,7 @@ final class AppState {
             toasts?.show("Context will restart to finish updating once the running tasks are done.")
         }
         backend.onNotification = { [weak self] notification in
-            self?.handle(notification)
+            self?.handle(notification, remote: nil)
         }
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.appDidBecomeActive() }
@@ -296,7 +307,7 @@ final class AppState {
     /// The project's terminal tabs, created (with no shell yet) on first use.
     func terminals(for project: ProjectState) -> TerminalWorkspace {
         if let existing = terminals[project.id] { return existing }
-        let workspace = TerminalWorkspace(directory: project.root)
+        let workspace = TerminalWorkspace(directory: project.root, host: project.host)
         terminals[project.id] = workspace
         return workspace
     }
@@ -304,7 +315,29 @@ final class AppState {
     /// The ModelGateway key comes from sign-in only, so a missing one is
     /// never asked for here (the Account page says to sign in again).
     var needsAPIKey: Bool {
+        Self.needsAPIKey(config)
+    }
+
+    /// Whether the project's backend (the remote host's for a remote
+    /// project) has no key for its model.
+    func needsAPIKey(for project: ProjectState) -> Bool {
+        guard project.isRemote else { return needsAPIKey }
+        return Self.needsAPIKey(project.backend.initializeResult)
+    }
+
+    private static func needsAPIKey(_ config: InitializeResult?) -> Bool {
         (config?.model.apiKeySet == false) && config?.mock != true && config?.model.credential != GatewayState.credentialName
+    }
+
+    /// The backend a project id's requests go to: the project's own, or the
+    /// local one for an id that is not open (its answer is an error either way).
+    func backend(for projectId: String) -> BackendClient {
+        project(for: projectId)?.backend ?? backend
+    }
+
+    /// Whether requests about the project can be sent right now.
+    func isReady(_ project: ProjectState) -> Bool {
+        project.backend.isReady
     }
 
     var selectedProject: ProjectState? {
@@ -312,19 +345,26 @@ final class AppState {
         return projects.first { $0.id == selectedProjectId }
     }
 
-    /// Projects shown at the top level of the sidebar: everything but the
-    /// worktrees whose parent checkout is open (those nest under it).
+    /// Projects shown at the top level of the sidebar's Projects section:
+    /// the local ones, minus the worktrees whose parent checkout is open
+    /// (those nest under it). Remote projects list under their host.
     var topLevelProjects: [ProjectState] {
-        let roots = Set(projects.map(\.root))
-        return projects.filter { project in
+        topLevelProjects(on: nil)
+    }
+
+    /// The top-level projects of one host (nil: local).
+    func topLevelProjects(on hostId: UUID?) -> [ProjectState] {
+        let mine = projects.filter { $0.host?.id == hostId }
+        let roots = Set(mine.map(\.root))
+        return mine.filter { project in
             guard let parent = project.parentRoot else { return true }
             return !roots.contains(parent)
         }
     }
 
-    /// The open worktrees of `project`'s checkout.
+    /// The open worktrees of `project`'s checkout (on the same host).
     func worktrees(of project: ProjectState) -> [ProjectState] {
-        projects.filter { $0.parentRoot == project.root }
+        projects.filter { $0.parentRoot == project.root && $0.host?.id == project.host?.id }
     }
 
     /// Whether the project's worktree rows are folded away in the sidebar.
@@ -354,10 +394,10 @@ final class AppState {
         return worktrees(of: project).filter { $0.id != selectedProjectId }
     }
 
-    /// The open project of a worktree's parent checkout.
+    /// The open project of a worktree's parent checkout (on the same host).
     func parentProject(of project: ProjectState) -> ProjectState? {
         guard let parent = project.parentRoot else { return nil }
-        return projects.first { $0.root == parent }
+        return projects.first { $0.root == parent && $0.host?.id == project.host?.id }
     }
 
     var selectedChat: ChatState? {
@@ -392,10 +432,18 @@ final class AppState {
 
     var anyProjectRunning: Bool { projects.contains { $0.isRunning } }
 
-    /// Folders still opening that have no project row yet.
+    /// The projects of the local backend.
+    var localProjects: [ProjectState] { projects.filter { !$0.isRemote } }
+
+    /// The open projects on a host.
+    func projects(on hostId: UUID) -> [ProjectState] {
+        projects.filter { $0.host?.id == hostId }
+    }
+
+    /// Folders still opening that have no project row yet (`ProjectState.key`s).
     var pendingProjectPaths: [String] {
-        let roots = Set(projects.map(\.root))
-        return openingProjectPaths.filter { !roots.contains($0) }
+        let keys = Set(projects.map(\.key))
+        return openingProjectPaths.filter { !keys.contains($0) }
     }
 
     /// A remembered project's position at launch; later opens sort last.
@@ -412,11 +460,16 @@ final class AppState {
     /// among the recents and gets no card.
     var recentProjectCards: [RecentProject] {
         let remembered = recentProjects
-        let paths = Set(remembered.map(\.path))
+        let keys = Set(remembered.map(\.id))
         let opening = pendingProjectPaths
-            .filter { !paths.contains($0) && restoreRank(of: $0) == Int.max }
+            .filter { !keys.contains($0) && restoreRank(of: $0) == Int.max }
             .reversed()
-            .map { RecentProject(path: $0, name: URL(fileURLWithPath: $0).lastPathComponent, lastOpened: Date()) }
+            .map { key -> RecentProject in
+                if let ref = RemoteProjectRef(encoded: key) {
+                    return RecentProject(path: ref.path, name: (ref.path as NSString).lastPathComponent, lastOpened: Date(), hostId: ref.hostId, hostName: hosts.host(ref.hostId)?.displayName)
+                }
+                return RecentProject(path: key, name: URL(fileURLWithPath: key).lastPathComponent, lastOpened: Date())
+            }
         return opening + remembered
     }
 
@@ -506,7 +559,7 @@ final class AppState {
         }
 
         // A new backend may see a different key or endpoint: refetch models.
-        for project in projects {
+        for project in localProjects {
             project.models.baseURL = config?.model.baseUrl ?? ""
             project.models.invalidate()
         }
@@ -521,6 +574,12 @@ final class AppState {
             await retireLegacyGatewayKey()
             await restoreGatewaySession()
         }
+        // Projects on remote hosts come back in parallel, each through its
+        // own `ssh … ctx serve`, without holding the local start up.
+        if !remoteRestoreStarted {
+            remoteRestoreStarted = true
+            Task { await reopenRememberedRemoteProjects() }
+        }
     }
 
     /// Stop, start, `project/open` for every open project, `sessions/list` for the selected one.
@@ -530,7 +589,7 @@ final class AppState {
         // the connection already marked as restarting, `dequeue` keeps queued
         // prompts instead of sending them into a process that stopped reading.
         connection = .connecting
-        for project in projects {
+        for project in localProjects {
             for chat in project.allChats where chat.status.isRunning {
                 chat.finish(TaskFinished(projectId: project.id, sessionId: chat.sessionId, taskId: nil, status: .cancelled, error: "Backend restarted", errorKind: "backend_restarted"), terminal: .stopped)
             }
@@ -552,7 +611,8 @@ final class AppState {
             paths = [Self.projectFolder(URL(fileURLWithPath: (path as NSString).expandingTildeInPath)).path]
         } else {
             let fm = FileManager.default
-            for path in preferences.openProjectPaths {
+            // Remote folders are reopened by `reopenRememberedRemoteProjects`.
+            for path in preferences.openProjectPaths where !RemoteProjectRef.isRemote(path) {
                 var isDirectory: ObjCBool = false
                 guard fm.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
                     preferences.forgetOpenProject(path: path)
@@ -617,7 +677,7 @@ final class AppState {
     }
 
     private func reopenProjectsInPlace() async {
-        for project in projects {
+        for project in localProjects {
             do {
                 let info = try await backend.projectOpen(path: project.root, exact: false, initGit: preferences.autoInitGit)
                 project.info = info
@@ -630,11 +690,11 @@ final class AppState {
                 toasts.show("Could not reopen \(project.name): \(error.localizedDescription)", kind: .error, details: error.localizedDescription)
             }
         }
-        if let project = selectedProject {
-            await project.loadSessions(backend: backend)
+        if let project = selectedProject, !project.isRemote {
+            await project.loadSessions()
             Task {
-                await project.refreshGit(backend: backend)
-                await project.loadExtras(backend: backend)
+                await project.refreshGit()
+                await project.loadExtras()
             }
         }
     }
@@ -673,25 +733,46 @@ final class AppState {
 
     @discardableResult
     func openProject(url: URL, select: Bool, restoreSession: Bool) async -> ProjectState? {
-        let target = Self.projectFolder(url)
-        let path = target.path
-        if !openingProjectPaths.contains(path), !projects.contains(where: { $0.root == path }) {
-            openingProjectPaths.append(path)
+        await openProject(path: Self.projectFolder(url).path, host: nil, select: select, restoreSession: restoreSession)
+    }
+
+    /// `project/open` on the local backend, or on the host's connection
+    /// (connected first when it is not), then the usual registration:
+    /// recents, remembered-open list, permission profile, loads.
+    @discardableResult
+    func openProject(path: String, host: SSHHost?, select: Bool, restoreSession: Bool) async -> ProjectState? {
+        let key = RecentProject.key(path: path, hostId: host?.id)
+        if !openingProjectPaths.contains(key), !projects.contains(where: { $0.key == key }) {
+            openingProjectPaths.append(key)
         }
-        defer { openingProjectPaths.removeAll { $0 == path } }
-        guard connection.isReady else {
-            toasts.show("The backend is not running; open a project once it is connected.", kind: .warning)
-            return nil
+        defer { openingProjectPaths.removeAll { $0 == key } }
+        let client: BackendClient
+        if let host {
+            guard let connected = await connect(host) else { return nil }
+            client = connected.client
+        } else {
+            guard connection.isReady else {
+                toasts.show("The backend is not running; open a project once it is connected.", kind: .warning)
+                return nil
+            }
+            client = backend
         }
+        let folderName = (path as NSString).lastPathComponent
         do {
-            let info = try await backend.projectOpen(path: path, exact: false, initGit: preferences.autoInitGit)
-            let project = register(info)
+            let info = try await client.projectOpen(path: path, exact: false, initGit: preferences.autoInitGit)
+            // One repository id per app: the same path on two hosts hashes
+            // to the same id and would mix their events.
+            if let clash = self.project(for: info.projectId), clash.host?.id != host?.id {
+                toasts.show("\(info.name) is already open \(clash.host.map { "on \($0.displayName)" } ?? "locally") at the same path; close it first.", kind: .warning)
+                return nil
+            }
+            let project = register(info, host: host)
             // The real row replaces the loading one now, even when the
             // backend resolved the folder to a different repository root.
-            openingProjectPaths.removeAll { $0 == path }
+            openingProjectPaths.removeAll { $0 == key }
             // A worktree is listed under its parent, not among the recents.
             if !project.isWorktree {
-                recents.touch(path: info.root, name: info.name)
+                recents.touch(path: info.root, name: info.name, host: host)
             }
             if info.gitInitialized == true {
                 toasts.show("Initialized a Git repository in \(info.name) so turns can be undone.", kind: .info)
@@ -704,28 +785,42 @@ final class AppState {
             startLoads(for: project)
             return project
         } catch {
-            toasts.show("Could not open \(target.lastPathComponent): \(error.localizedDescription)", kind: .error, details: error.localizedDescription)
+            let location = host.map { " on \($0.displayName)" } ?? ""
+            toasts.show("Could not open \(folderName)\(location): \(error.localizedDescription)", kind: .error, details: error.localizedDescription)
             return nil
         }
+    }
+
+    /// Opens a remembered project, local or remote.
+    @discardableResult
+    func openRecent(_ recent: RecentProject, select: Bool = true, restoreSession: Bool = false) async -> ProjectState? {
+        if let hostId = recent.hostId {
+            guard let host = hosts.host(hostId) else {
+                toasts.show("The host of \(recent.name) is no longer configured; add it again in Settings → Remote hosts.", kind: .warning)
+                return nil
+            }
+            return await openProject(path: recent.path, host: host, select: select, restoreSession: restoreSession)
+        }
+        return await openProject(url: recent.url, select: select, restoreSession: restoreSession)
     }
 
     /// Adopts a `project/open` (or `worktree/create`) result: reuses the
     /// open `ProjectState` for that id, else creates it, replays the
     /// notifications that beat the response, and remembers it for the next launch.
-    func register(_ info: ProjectInfo) -> ProjectState {
+    func register(_ info: ProjectInfo, host: SSHHost? = nil) -> ProjectState {
         let project: ProjectState
         if let existing = self.project(for: info.projectId) {
             existing.info = info
             project = existing
         } else {
-            project = makeProject(info)
+            project = makeProject(info, host: host)
             // A project reopened at launch goes to its remembered position.
-            let rank = restoreRank(of: info.root)
-            let index = projects.firstIndex { restoreRank(of: $0.root) > rank } ?? projects.endIndex
+            let rank = restoreRank(of: project.key)
+            let index = projects.firstIndex { restoreRank(of: $0.key) > rank } ?? projects.endIndex
             projects.insert(project, at: index)
             replayBufferedNotifications(for: project.id)
         }
-        preferences.rememberOpenProject(path: info.root)
+        preferences.rememberOpenProject(path: project.key)
         return project
     }
 
@@ -733,28 +828,31 @@ final class AppState {
     /// The chat list does not wait for Git: `ctx serve` answers both at once.
     func startLoads(for project: ProjectState) {
         Task { await prefetchModels(project) }
-        Task { await project.loadSessions(backend: backend) }
+        Task { await project.loadSessions() }
         Task {
-            await project.refreshGit(backend: backend)
-            await project.loadExtras(backend: backend)
+            await project.refreshGit()
+            await project.loadExtras()
         }
     }
 
-    func closeProject(_ id: String) async {
+    /// Closes a project (`project/close`) and drops its row; `forget` false
+    /// keeps it in the remembered-open list (a host being disconnected, whose
+    /// projects come back on reconnect).
+    func closeProject(_ id: String, forget: Bool = true) async {
         guard let index = projects.firstIndex(where: { $0.id == id }) else { return }
         let project = projects[index]
         // Its open worktrees go with it (their checkouts and chats are kept).
         for child in worktrees(of: project) {
-            await closeProject(child.id)
+            await closeProject(child.id, forget: forget)
         }
         gitRefreshTasks[id]?.cancel()
         gitRefreshTasks[id] = nil
         terminals.removeValue(forKey: id)?.terminateAll()
         browsers.removeValue(forKey: id)?.tearDown()
         editors.removeValue(forKey: id)
-        if connection.isReady {
+        if project.backend.isReady {
             do {
-                try await backend.projectClose(id: id)
+                try await project.backend.projectClose(id: id)
             } catch {
                 toasts.show("Could not close \(project.name): \(error.localizedDescription)", kind: .error, details: error.localizedDescription)
             }
@@ -762,7 +860,7 @@ final class AppState {
         if let current = projects.firstIndex(where: { $0.id == id }) {
             projects.remove(at: current)
         }
-        preferences.forgetOpenProject(path: project.root)
+        if forget { preferences.forgetOpenProject(path: project.key) }
         if selectedProjectId == id {
             selectedProjectId = nil
             selectedSessionId = nil
@@ -824,7 +922,7 @@ final class AppState {
             if let inFlight = project.sessionsLoad {
                 await inFlight.value
             } else if project.sessions.isEmpty {
-                await project.loadSessions(backend: backend)
+                await project.loadSessions()
             }
             guard selectedProjectId == id, selectedSessionId == nil, restoringSessionId == last, project.session(last) != nil else { return }
             await select(session: last)
@@ -860,7 +958,7 @@ final class AppState {
         if chat.transcript.isEmpty, chat.status == .idle {
             chat.status = .loadingHistory
             do {
-                let history = try await backend.sessionHistory(projectId: project.id, sessionId: id)
+                let history = try await project.backend.sessionHistory(projectId: project.id, sessionId: id)
                 if chat.status == .loadingHistory {
                     chat.loadHistory(history)
                 } else {
@@ -901,10 +999,10 @@ final class AppState {
     /// kept only if the composer is still empty and the chat idle.
     func requestSuggestion(for chat: ChatState, projectId: String) {
         chat.suggestion = nil
-        guard preferences.suggestNextMessage, connection.isReady else { return }
+        guard preferences.suggestNextMessage, let project = project(for: projectId), isReady(project) else { return }
         let sessionId = chat.sessionId
         Task {
-            guard let text = try? await backend.suggestNext(projectId: projectId, sessionId: sessionId) else { return }
+            guard let text = try? await project.backend.suggestNext(projectId: projectId, sessionId: sessionId) else { return }
             guard chat.draft.isEmpty, !chat.isRunning, chat.queued.isEmpty else { return }
             chat.suggestion = text
         }
@@ -916,7 +1014,7 @@ final class AppState {
     /// `StarterSuggestion.fallback`.
     func loadStarters(for project: ProjectState) {
         guard !project.startersLoading else { return }
-        guard connection.isReady, !needsAPIKey else {
+        guard isReady(project), !needsAPIKey(for: project) else {
             if project.starters == nil { project.starters = StarterSuggestion.fallback(for: project.info) }
             return
         }
@@ -924,7 +1022,7 @@ final class AppState {
         project.startersLoading = true
         let projectId = project.id
         Task {
-            let generated = (try? await backend.suggestStarters(projectId: projectId)) ?? []
+            let generated = (try? await project.backend.suggestStarters(projectId: projectId)) ?? []
             project.starters = generated.isEmpty ? StarterSuggestion.fallback(for: project.info) : generated
             project.startersLoadedAt = Date()
             project.startersLoading = false
@@ -951,8 +1049,8 @@ final class AppState {
             sidebarItem = .welcome
             return
         }
-        guard connection.isReady else {
-            toasts.show("The backend is not running.", kind: .error)
+        guard isReady(project) else {
+            toasts.show(project.isRemote ? "\(project.host?.displayName ?? "The host") is not connected." : "The backend is not running.", kind: .error)
             return
         }
         let chat: ChatState
@@ -990,7 +1088,8 @@ final class AppState {
     private func steer(_ prompt: OutgoingPrompt, in chat: ChatState, project: ProjectState) async {
         chat.steering.append(prompt)
         do {
-            try await backend.taskSteer(projectId: project.id, sessionId: chat.sessionId, prompt: prompt.text, images: prompt.images, files: prompt.files)
+            let attachments = await outgoingAttachments(prompt, for: project)
+            try await project.backend.taskSteer(projectId: project.id, sessionId: chat.sessionId, prompt: prompt.text, images: attachments.images, inlineImages: attachments.inlineImages, files: attachments.files)
         } catch {
             // `task/finished` may have moved it to the queue meanwhile.
             guard let index = chat.steering.firstIndex(of: prompt) else { return }
@@ -1027,7 +1126,7 @@ final class AppState {
         let chat = project.chat(for: sessionId)
         chat.cancelRequested = true
         do {
-            try await backend.taskCancel(projectId: project.id, sessionId: sessionId)
+            try await project.backend.taskCancel(projectId: project.id, sessionId: sessionId)
         } catch {
             chat.cancelRequested = false
             if case .rpc(let code, _, _)? = error as? BackendError, code == BackendError.noTaskRunning {
@@ -1068,7 +1167,7 @@ final class AppState {
 
     private func createSession(in project: ProjectState) async -> ChatState? {
         do {
-            let summary = try await backend.sessionCreate(projectId: project.id, title: nil)
+            let summary = try await project.backend.sessionCreate(projectId: project.id, title: nil)
             project.upsert(session: summary)
             let chat = project.chat(for: summary.id)
             if selectedProjectId == project.id {
@@ -1098,7 +1197,8 @@ final class AppState {
 
         let options = TaskRunOptions(proactiveRetrieval: preferences.contextEngineEnabled ? nil : false, debugPrompt: preferences.developerMode ? true : nil)
         do {
-            try await backend.taskRun(projectId: project.id, sessionId: chat.sessionId, prompt: prompt.text, images: prompt.images, files: prompt.files, options: options)
+            let attachments = await outgoingAttachments(prompt, for: project)
+            try await project.backend.taskRun(projectId: project.id, sessionId: chat.sessionId, prompt: prompt.text, images: attachments.images, inlineImages: attachments.inlineImages, files: attachments.files, options: options)
         } catch let error as BackendError where error.isTaskAlreadyRunning {
             // The session is still running (a stale view): queue instead of failing.
             removeUserItem(item.id, from: chat)
@@ -1106,7 +1206,7 @@ final class AppState {
             project.runningSessionIds.remove(chat.sessionId)
             chat.queued.insert(prompt, at: 0)
             if chat.queuedSince == nil { chat.queuedSince = Date() }
-            await project.refreshStatus(backend: backend)
+            await project.refreshStatus()
         } catch let error as BackendError where error.isConnectionLoss {
             // The backend went away between the dequeue and the request (a
             // restart in progress): keep the prompt for the next run instead
@@ -1130,6 +1230,18 @@ final class AppState {
         }
     }
 
+    /// What `task/run` / `task/steer` get for a prompt's attachments: the
+    /// local paths for a local project; for a project on a remote host the
+    /// bytes and text, read now (the host cannot open the app's files).
+    private func outgoingAttachments(_ prompt: OutgoingPrompt, for project: ProjectState) async -> (images: [String], inlineImages: [InlineImage], files: [FileUpload]) {
+        guard project.isRemote else { return (prompt.images, [], prompt.files) }
+        let prepared = await RemoteAttachments.prepare(images: prompt.images, files: prompt.files)
+        if !prepared.skipped.isEmpty {
+            toasts.show("\(prepared.skipped.count) attachment\(prepared.skipped.count == 1 ? " is" : "s are") no longer available and \(prepared.skipped.count == 1 ? "was" : "were") not sent.", kind: .warning, details: prepared.skipped.joined(separator: "\n"))
+        }
+        return ([], prepared.inlineImages, prepared.files)
+    }
+
     private func removeUserItem(_ id: String, from chat: ChatState) {
         if let last = chat.transcript.last, last.id == id {
             chat.transcript.removeLast()
@@ -1148,8 +1260,9 @@ final class AppState {
     /// session's files).
     func canRewind(_ chat: ChatState) -> Bool {
         if chat.status.isRunning || chat.status == .loadingHistory { return false }
-        if let project = project(for: chat.projectId), project.isRunning(session: chat.sessionId) { return false }
-        return connection.isReady
+        guard let project = project(for: chat.projectId) else { return false }
+        if project.isRunning(session: chat.sessionId) { return false }
+        return isReady(project)
     }
 
     /// Hover pencil / context menu: the bubble becomes an editor.
@@ -1226,7 +1339,7 @@ final class AppState {
         defer { rewindInFlight = false }
         let result: RewindResult
         do {
-            result = try await backend.sessionRewind(projectId: project.id, sessionId: chat.sessionId, messageId: messageId, restoreFiles: restoreFiles)
+            result = try await project.backend.sessionRewind(projectId: project.id, sessionId: chat.sessionId, messageId: messageId, restoreFiles: restoreFiles)
         } catch {
             toasts.show("Could not rewind the chat: \(error.localizedDescription)", kind: .error, details: error.localizedDescription)
             return
@@ -1239,7 +1352,7 @@ final class AppState {
         // rebuilt exactly as storage now has it.
         chat.status = .loadingHistory
         do {
-            let history = try await backend.sessionHistory(projectId: project.id, sessionId: chat.sessionId)
+            let history = try await project.backend.sessionHistory(projectId: project.id, sessionId: chat.sessionId)
             chat.loadHistory(history)
         } catch {
             chat.status = .idle
@@ -1247,8 +1360,8 @@ final class AppState {
         }
         chat.addLog("rewound to message \(messageId); removed \(result.removedTasks) task(s)" + (result.files.map { "; restored \($0.restored), deleted \($0.deleted) file(s)" + (($0.skipped ?? []).isEmpty ? "" : "; kept \(($0.skipped ?? []).joined(separator: ", ")), changed since") } ?? ""))
         Task {
-            await project.refreshGit(backend: backend)
-            await project.loadExtras(backend: backend)
+            await project.refreshGit()
+            await project.loadExtras()
         }
         if let files = result.files {
             let skipped = files.skipped ?? []
@@ -1325,7 +1438,7 @@ final class AppState {
             }
         }
         do {
-            try await backend.approvalRespond(projectId: chat.projectId, sessionId: chat.sessionId, requestId: requestId, decision: decision)
+            try await backend(for: chat.projectId).approvalRespond(projectId: chat.projectId, sessionId: chat.sessionId, requestId: requestId, decision: decision)
         } catch {
             chat.approvalError = error.localizedDescription
         }
@@ -1341,7 +1454,7 @@ final class AppState {
         chat.questionError = nil
         defer { chat.questionInFlight = false }
         do {
-            try await backend.questionRespond(projectId: chat.projectId, sessionId: chat.sessionId, requestId: requestId, answers: answers, message: message)
+            try await backend(for: chat.projectId).questionRespond(projectId: chat.projectId, sessionId: chat.sessionId, requestId: requestId, answers: answers, message: message)
             if chat.pendingQuestion?.requestId == requestId { chat.pendingQuestion = nil }
         } catch {
             chat.questionError = error.localizedDescription
@@ -1358,14 +1471,14 @@ final class AppState {
         config = result
         connection = .ready(result)
         let endpointChanged = previous?.baseUrl != result.model.baseUrl || previous?.apiKeyEnv != result.model.apiKeyEnv
-        for project in projects {
+        for project in localProjects {
             project.models.baseURL = result.model.baseUrl
             if endpointChanged {
                 project.models.invalidate()
                 Task { await prefetchModels(project) }
             }
             if !project.isRunning {
-                Task { await project.refreshStatus(backend: backend) }
+                Task { await project.refreshStatus() }
             }
         }
     }
@@ -1462,7 +1575,10 @@ final class AppState {
 
     // MARK: - Notifications from the backend
 
-    func handle(_ notification: BackendNotification) {
+    /// Routes a notification of the local backend (`remote` nil) or of a
+    /// host's connection. Project ids are unique across backends (`openProject`
+    /// refuses a clash), so project-scoped notifications route by id alone.
+    func handle(_ notification: BackendNotification, remote: RemoteConnection?) {
         switch notification {
         case .event(let e):
             guard let project = project(for: e.projectId) else { return }
@@ -1503,10 +1619,10 @@ final class AppState {
             gitRefreshTasks[project.id]?.cancel()
             gitRefreshTasks[project.id] = nil
             Task {
-                await project.refreshGit(backend: backend)
-                await project.loadSessions(backend: backend)
-                await project.refreshStatus(backend: backend)
-                await project.loadExtras(backend: backend)
+                await project.refreshGit()
+                await project.loadSessions()
+                await project.refreshStatus()
+                await project.loadExtras()
             }
             if f.errorKind != "provider_auth" {
                 dequeue(project: project, preferring: chat)
@@ -1531,12 +1647,13 @@ final class AppState {
             project.indexProgress = nil
             project.lastIndexReady = ready
             project.info.indexing = false
-            Task { await project.refreshStatus(backend: backend) }
+            Task { await project.refreshStatus() }
 
         case .log(let line):
-            appendBackendLog(level: line.level, message: line.message)
+            let message = remote.map { "[\($0.host.displayName)] \(line.message)" } ?? line.message
+            appendBackendLog(level: line.level, message: message)
             if line.level.lowercased() == "error" {
-                toasts.show(line.message, kind: .error, details: line.message)
+                toasts.show(message, kind: .error, details: message)
             }
 
         case .lspDiagnostics(let d):
@@ -1550,7 +1667,8 @@ final class AppState {
             handleQuestionRequest(request)
 
         case .mcpStatus(let servers):
-            mcpServers = servers
+            // The Apps tab shows the local backend's servers.
+            if remote == nil { mcpServers = servers }
 
         case .projectChanged(let value):
             guard let id = value["project_id"]?.stringValue, let project = project(for: id) else { return }
@@ -1560,7 +1678,11 @@ final class AppState {
             scheduleGitRefresh(project)
 
         case .exited(let code, let tail):
-            handleExit(code: code, tail: tail)
+            if let remote {
+                handleRemoteExit(remote, code: code, tail: tail)
+            } else {
+                handleExit(code: code, tail: tail)
+            }
         }
     }
 
@@ -1568,7 +1690,7 @@ final class AppState {
     /// the page acts and the reply goes back with `browser/respond`. The
     /// Inspector is left on whatever tab the user has open.
     private func handleBrowserRequest(_ request: BrowserRequest) {
-        let backend = self.backend
+        let backend = backend(for: request.projectId)
         guard let project = project(for: request.projectId) else {
             Task {
                 try? await backend.browserRespond(projectId: request.projectId, sessionId: request.sessionId, requestId: request.requestId, reply: BrowserReply(ok: false, error: "the project is not open in the app"))
@@ -1590,7 +1712,7 @@ final class AppState {
     /// above its composer (and gets the orange dot) until they are answered.
     private func handleQuestionRequest(_ request: QuestionRequest) {
         guard let project = project(for: request.projectId) else {
-            let backend = self.backend
+            let backend = backend(for: request.projectId)
             Task {
                 try? await backend.questionRespond(projectId: request.projectId, sessionId: request.sessionId, requestId: request.requestId, answers: nil, message: nil)
             }
@@ -1608,7 +1730,7 @@ final class AppState {
     }
 
     private func handleExit(code: Int32, tail: String) {
-        for project in projects {
+        for project in localProjects {
             for chat in project.allChats where chat.status.isRunning {
                 chat.finish(TaskFinished(projectId: project.id, sessionId: chat.sessionId, taskId: nil, status: .failed, error: "Backend exited (code \(code))", errorKind: "backend_exited"), terminal: .stopped)
             }
@@ -1643,7 +1765,7 @@ final class AppState {
     /// After `task/finished`: every chat of the project with queued prompts
     /// whose session is idle sends its next one, the finished chat first.
     private func dequeue(project: ProjectState, preferring chat: ChatState) {
-        guard connection.isReady else { return }
+        guard isReady(project) else { return }
         var started = Set<String>()
         for target in [chat] + project.queuedChats where !target.queued.isEmpty && !project.isRunning(session: target.sessionId) && started.insert(target.sessionId).inserted {
             guard let prompt = target.dequeueFirst() else { continue }
@@ -1662,8 +1784,11 @@ final class AppState {
 
     private func replayBufferedNotifications(for projectId: String) {
         guard let list = pendingProjectNotifications.removeValue(forKey: projectId) else { return }
+        // Only project-scoped frames are buffered, so the connection matters
+        // only for the log prefix of a remote project.
+        let connection = project(for: projectId).flatMap { remote(of: $0) }
         for notification in list {
-            handle(notification)
+            handle(notification, remote: connection)
         }
     }
 
@@ -1697,10 +1822,12 @@ final class AppState {
 
     // MARK: - Helpers
 
-    private func makeProject(_ info: ProjectInfo) -> ProjectState {
-        let catalog = ModelCatalog(preferences: preferences, baseURL: config?.model.baseUrl ?? "")
+    private func makeProject(_ info: ProjectInfo, host: SSHHost?) -> ProjectState {
+        let remote = host.flatMap { remotes[$0.id] }
+        let backendConfig = remote?.client.initializeResult ?? config
+        let catalog = ModelCatalog(preferences: preferences, baseURL: backendConfig?.model.baseUrl ?? "")
         catalog.current = info.model
-        let project = ProjectState(info: info, models: catalog)
+        let project = ProjectState(info: info, models: catalog, backend: remote?.client ?? backend, host: host)
         project.lastTab = preferences.lastTab[info.projectId].flatMap(SidebarItem.init(rawValue:)) ?? .chat
         project.selectedChangePath = preferences.lastChangesPath[info.projectId]
         project.onChatCreated = { [weak self] chat in
@@ -1719,7 +1846,7 @@ final class AppState {
         return value.hasPrefix("--") ? nil : value
     }
 
-    private static func failure(from start: BackendClient.StartFailure?, error: Error) -> BackendFailure {
+    static func failure(from start: BackendClient.StartFailure?, error: Error) -> BackendFailure {
         switch start {
         case .launchFailed(let message)?: return .transport(message)
         case .incompatible(let found, let detail)?: return .incompatible(found: found, detail: detail)

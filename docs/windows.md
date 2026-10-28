@@ -102,6 +102,22 @@ to glyphs every console font has; set `CTX_ASCII=0` to force the Unicode set
 or `CTX_ASCII=1` to force the fallback anywhere. AltGr characters (`@ { } [
 ] \ | ~`) and Ctrl shortcuts work regardless of Caps Lock.
 
+## Remote hosts
+
+Projects on another machine work as on macOS ([remote-hosts.md](remote-hosts.md)):
+Settings → **Remote hosts** → **Add host…**, then **Open on a remote host…**
+on Welcome, the host's row in the sidebar's Remote section, or Ctrl+Shift+O.
+The app runs Windows' own OpenSSH client (`C:\Windows\System32\OpenSSH\ssh.exe`,
+part of Windows 10 1809 and later; `ssh.exe` on `PATH` otherwise) with
+`BatchMode=yes`, so sign-in is key-based: load the key into the
+`ssh-agent` service (`Start-Service ssh-agent; ssh-add`), set an identity
+file for the host, or put the host in `%USERPROFILE%\.ssh\config`, whose
+`Host` aliases the Add host form offers. Connect once from a terminal
+(`ssh host`) to accept the host key. The remote machine is Unix and needs
+`ctx` installed and a model configured there; the Terminal tab opens
+`ssh -t` shells on it. `CTX_SSH_BINARY` names another ssh client (a Git for
+Windows `ssh.exe`, or a test shim).
+
 ## Differences from macOS
 
 - **Computer Use** is macOS only; it is not in the app catalog on Windows.

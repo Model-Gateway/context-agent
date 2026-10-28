@@ -19,6 +19,51 @@ pub(super) struct ConfigInfo {
     pub(super) pricing: Option<PricingInfo>,
     pub(super) spend: ctx_core::SpendConfig,
     pub(super) mcp: ctx_core::McpConfig,
+    /// The machine `ctx serve` runs on; the desktop app shows it for a
+    /// backend reached over SSH and starts its folder picker in `home_dir`.
+    pub(super) host: HostInfo,
+}
+
+/// `initialize.host`: where this server runs.
+#[derive(Serialize, Clone)]
+pub(super) struct HostInfo {
+    pub(super) hostname: String,
+    pub(super) user: String,
+    pub(super) home_dir: String,
+    /// `std::env::consts::OS`: "macos", "linux", "windows", …
+    pub(super) os: &'static str,
+}
+
+/// `fs/list` params: a directory to list, `~`-expanded; absent or empty is
+/// the home directory.
+#[derive(Deserialize)]
+pub(super) struct FsListParams {
+    #[serde(default)]
+    pub(super) path: Option<String>,
+    /// Leave files out (a folder picker).
+    #[serde(default)]
+    pub(super) dirs_only: bool,
+}
+
+/// `fs/list` result.
+#[derive(Serialize)]
+pub(super) struct FsListing {
+    /// The listed directory, canonical.
+    pub(super) path: String,
+    /// Its parent, absent at the root.
+    pub(super) parent: Option<String>,
+    pub(super) home: String,
+    pub(super) entries: Vec<FsEntry>,
+}
+
+#[derive(Serialize)]
+pub(super) struct FsEntry {
+    pub(super) name: String,
+    pub(super) path: String,
+    pub(super) is_dir: bool,
+    /// A directory holding a `.git` entry (a repository root).
+    pub(super) is_git: bool,
+    pub(super) is_hidden: bool,
 }
 
 #[derive(Deserialize)]
@@ -547,9 +592,10 @@ pub(super) struct TaskRunParams {
     pub(super) project_id: String,
     pub(super) session_id: String,
     pub(super) prompt: String,
-    /// Absolute paths of PNG, JPEG, GIF or WebP files sent with the prompt.
+    /// PNG, JPEG, GIF or WebP images sent with the prompt: absolute paths
+    /// on this machine, or the bytes inline (a client on another machine).
     #[serde(default)]
-    pub(super) images: Vec<String>,
+    pub(super) images: Vec<ImageParam>,
     /// UTF-8 text files sent with the prompt, inlined into the message.
     #[serde(default)]
     pub(super) files: Vec<FileParam>,
@@ -558,14 +604,36 @@ pub(super) struct TaskRunParams {
     pub(super) options: Option<RunOptionsParams>,
 }
 
-#[derive(Deserialize)]
+/// One `task/run` image: `"/abs/path.png"`, or `{ "name", "data" }` with the
+/// file's bytes as base64 when the client cannot share a filesystem with the
+/// server (the desktop app over SSH).
+#[derive(Deserialize, Clone)]
+#[serde(untagged)]
+pub(super) enum ImageParam {
+    Path(String),
+    Inline {
+        /// Base64 (standard alphabet) of the image file's bytes.
+        data: String,
+        /// Shown in `session/history` in place of a path.
+        #[serde(default)]
+        name: Option<String>,
+    },
+}
+
+#[derive(Deserialize, Clone)]
 pub(super) struct FileParam {
-    /// Absolute path of a UTF-8 text file.
-    pub(super) path: String,
+    /// Absolute path of a UTF-8 text file on this machine; absent when the
+    /// text comes inline in `content`.
+    #[serde(default)]
+    pub(super) path: Option<String>,
     /// What the model is told the file is called; defaults to the path's
     /// file name (a client sends `report.pdf` for text it extracted from it).
+    /// Required with `content`.
     #[serde(default)]
     pub(super) name: Option<String>,
+    /// The file's text, sent by a client on another machine instead of a path.
+    #[serde(default)]
+    pub(super) content: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -625,7 +693,7 @@ pub(super) struct TaskSteerParams {
     pub(super) prompt: String,
     /// As in `task/run`.
     #[serde(default)]
-    pub(super) images: Vec<String>,
+    pub(super) images: Vec<ImageParam>,
     #[serde(default)]
     pub(super) files: Vec<FileParam>,
 }

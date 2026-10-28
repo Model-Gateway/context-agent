@@ -25,7 +25,7 @@ import { useFocusTrap, useOverlay } from '../../components/overlays'
 import { isMac } from '../../components/platform'
 import { ModelCatalog } from '../../models/modelCatalog'
 import { getPref, usePref } from '../../models/preferences'
-import { abbreviatedPath, sortedRecentProjects } from '../../models/recentProject'
+import { abbreviatedPath, recentProjectId, sortedRecentProjects, type RecentProject } from '../../models/recentProject'
 import { TranscriptFormat } from '../../models/transcript'
 import { useApp } from '../../state/app'
 import { ChatState } from '../../state/chat'
@@ -82,6 +82,7 @@ type PaletteAction =
   | 'newChat'
   | 'newWorktree'
   | 'openProject'
+  | 'openRemoteProject'
   | 'switchModel'
   | 'rebuildIndex'
   | 'toggleInspector'
@@ -101,6 +102,7 @@ const PALETTE_ACTIONS: readonly PaletteAction[] = [
   'newChat',
   'newWorktree',
   'openProject',
+  'openRemoteProject',
   'switchModel',
   'rebuildIndex',
   'toggleInspector',
@@ -136,6 +138,7 @@ const ACTION_INFO: Record<PaletteAction, ActionInfo> = {
   newChat: { title: 'New chat', detail: 'Start an empty chat in the selected project', shortcut: 'mod+N', macShortcut: '⌘N', icon: 'newChat', needsProject: true },
   newWorktree: { title: 'New chat in a worktree', detail: 'A second checkout of the repository, so tasks run side by side', shortcut: 'mod+shift+N', macShortcut: '⌘⇧N', icon: 'worktree', needsProject: true },
   openProject: { title: 'Open project…', detail: 'Choose a repository folder', shortcut: 'mod+O', macShortcut: '⌘O', icon: 'projects', needsProject: false },
+  openRemoteProject: { title: 'Open project on remote host…', detail: 'Browse a folder on an SSH host configured in Settings', shortcut: 'mod+shift+O', macShortcut: '⌘⇧O', icon: 'remoteHost', needsProject: false },
   switchModel: { title: 'Switch model…', detail: "Pick the project's model", shortcut: 'mod+shift+M', macShortcut: '⌘⇧M', icon: 'model', needsProject: true },
   rebuildIndex: { title: 'Rebuild index', detail: 'Re-index the repository from scratch', shortcut: 'mod+shift+R', macShortcut: '⌘⇧R', icon: 'refresh', needsProject: true },
   toggleInspector: { title: 'Toggle inspector', detail: 'Show or hide the Run / Log pane', shortcut: 'mod+shift+I', macShortcut: '⌘⇧I', icon: 'inspector', needsProject: false },
@@ -165,7 +168,7 @@ type PaletteKind =
   | { kind: 'chat'; projectId: string; sessionId: string }
   | { kind: 'action'; action: PaletteAction }
   /** File → Open Recent → <name>. */
-  | { kind: 'recent'; path: string }
+  | { kind: 'recent'; recent: RecentProject }
   /** File → Open Recent → Clear Menu. */
   | { kind: 'clearRecents' }
 
@@ -470,7 +473,7 @@ function sameRowProps(
 function sameKind(a: PaletteKind, b: PaletteKind): boolean {
   if (a.kind === 'chat' && b.kind === 'chat') return a.projectId === b.projectId && a.sessionId === b.sessionId
   if (a.kind === 'action' && b.kind === 'action') return a.action === b.action
-  if (a.kind === 'recent' && b.kind === 'recent') return a.path === b.path
+  if (a.kind === 'recent' && b.kind === 'recent') return recentProjectId(a.recent) === recentProjectId(b.recent)
   return a.kind === 'clearRecents' && b.kind === 'clearRecents'
 }
 
@@ -497,7 +500,7 @@ function activate(row: PaletteRow | null): void {
       run(kind.action)
       return
     case 'recent':
-      void state.openProject(kind.path)
+      void state.openRecent(kind.recent)
       return
     case 'clearRecents':
       clearRecentProjects()
@@ -516,6 +519,9 @@ function run(action: PaletteAction): void {
       return
     case 'openProject':
       void state.chooseProject()
+      return
+    case 'openRemoteProject':
+      state.chooseRemoteProject()
       return
     case 'switchModel':
       if (!state.modelPickerVisible) state.toggleModelPicker()
@@ -677,18 +683,19 @@ function actionRows(query: string): PaletteRow[] {
     }
   })
   const recents = sortedRecentProjects(getPref('recents'))
-  const recentRows = recents.map(
-    (recent): PaletteRow => ({
-      id: `recent-${recent.path}`,
+  const recentRows = recents.map((recent): PaletteRow => {
+    const where = recent.hostId === null ? abbreviatedPath(recent.path) : `${recent.path} on ${recent.hostName ?? 'a remote host'}`
+    return {
+      id: `recent-${recentProjectId(recent)}`,
       section: 'actions',
       title: `Open ${recent.name}`,
-      snippet: recent.pinned ? `${abbreviatedPath(recent.path)} · pinned` : abbreviatedPath(recent.path),
+      snippet: recent.pinned ? `${where} · pinned` : where,
       trailing: null,
       subtitle: null,
-      icon: 'folder',
-      kind: { kind: 'recent', path: recent.path },
-    }),
-  )
+      icon: recent.hostId === null ? 'folder' : 'remoteHost',
+      kind: { kind: 'recent', recent },
+    }
+  })
   const clearRow: PaletteRow[] = recents.some((recent) => !recent.pinned)
     ? [{ id: 'action-clearRecents', section: 'actions', title: 'Clear recent projects', snippet: 'Forget every recent project that is not pinned', trailing: null, subtitle: null, icon: 'trash', kind: { kind: 'clearRecents' } }]
     : []

@@ -7,10 +7,12 @@
 // Like `ChatState`, `ProjectState` is a plain class mutated in place; every
 // change ends with `touch()`, which bumps `version` and tells the app store
 // (state/app.ts wires `ProjectState.changeSink`). The backend loads
-// (`loadSessions`, `refreshGit`, …) talk to the app's one `BackendClient`.
+// (`loadSessions`, `refreshGit`, …) talk to the project's own `BackendClient`:
+// the local one, or the connection of the SSH host the project lives on
+// (`host`, apps/macos/ARCHITECTURE.md "Remote hosts (SSH)").
 
 import { invoke } from '@tauri-apps/api/core'
-import { backend } from '../backend/client'
+import { backend as localBackend, type BackendClient } from '../backend/client'
 import { errorText } from '../backend/errors'
 import {
   runningSessionIds as infoRunningSessionIds,
@@ -32,6 +34,7 @@ import {
 import { invalidateFileReferences } from '../markdown/fileReferences'
 import type { ModelCatalog } from '../models/modelCatalog'
 import { chatStatusIsRunning } from '../models/reducer'
+import { hostDisplayName, projectKey, type SSHHost } from '../models/sshHost'
 import { ChatState } from './chat'
 import type { SidebarItem } from './app'
 
@@ -48,6 +51,10 @@ export class ProjectState {
 
   readonly id: string
   info: ProjectInfo
+  /** The backend the project is open on: the local one, or its host's connection. */
+  readonly backend: BackendClient
+  /** The SSH host the project lives on; null for a local folder. */
+  readonly host: SSHHost | null
 
   sessions: SessionSummary[] = []
   sessionsLoading = false
@@ -121,10 +128,12 @@ export class ProjectState {
 
   private _fileTree: FileTreeModel | null = null
 
-  constructor(info: ProjectInfo, models: ModelCatalog) {
+  constructor(info: ProjectInfo, models: ModelCatalog, backend: BackendClient = localBackend, host: SSHHost | null = null) {
     this.id = info.project_id
     this.info = info
     this.models = models
+    this.backend = backend
+    this.host = host
     this.runningSessionIds = infoRunningSessionIds(info)
   }
 
@@ -155,6 +164,21 @@ export class ProjectState {
 
   get root(): string {
     return this.info.root
+  }
+
+  /** What the preferences and recents key the project by (`RecentProject.key`): the path, or `ctx-ssh://<host>/path`. */
+  get key(): string {
+    return projectKey(this.info.root, this.host?.id ?? null)
+  }
+
+  /** `isRemote`: the project lives on an SSH host. */
+  get isRemote(): boolean {
+    return this.host !== null
+  }
+
+  /** `hostLabel`: the host's name for chips and tooltips; null locally. */
+  get hostLabel(): string | null {
+    return this.host === null ? null : hostDisplayName(this.host)
   }
 
   get branch(): string | null {
@@ -229,7 +253,7 @@ export class ProjectState {
   /** The Inspector Files tab's tree; kept here so expanded folders survive tab switches. */
   get fileTree(): FileTreeModel {
     if (this._fileTree === null || this._fileTree.root !== this.info.root) {
-      this._fileTree = new FileTreeModel(this.info.root, () => this.touch())
+      this._fileTree = new FileTreeModel(this.info.root, () => this.touch(), this.host === null ? null : this.backend)
     }
     return this._fileTree
   }
@@ -396,7 +420,7 @@ export class ProjectState {
       this.sessionsLoading = true
       this.touch()
       try {
-        const list = await backend.sessionsList(this.id, 100)
+        const list = await this.backend.sessionsList(this.id, 100)
         this.replaceSessions(list)
         this.sessionsError = null
       } catch (error) {
@@ -425,12 +449,12 @@ export class ProjectState {
       return
     }
     try {
-      const status = await backend.gitStatus(this.id)
+      const status = await this.backend.gitStatus(this.id)
       if (!sameJSON(status, this.gitStatus)) invalidateFileReferences()
       this.gitStatus = status
       this.gitError = null
       try {
-        this.worktrees = await backend.worktreeList(this.id)
+        this.worktrees = await this.backend.worktreeList(this.id)
       } catch {
         // Older backends have no worktree/list; keep what we had.
       }
@@ -457,7 +481,7 @@ export class ProjectState {
     this.diffLoading = true
     this.touch()
     try {
-      const result = await backend.gitDiff(this.id, path, this.showStaged)
+      const result = await this.backend.gitDiff(this.id, path, this.showStaged)
       // The selection may have moved while the diff was loading.
       if (this.selectedChangePath === path) {
         this.diff = result
@@ -478,7 +502,7 @@ export class ProjectState {
   async refreshStatus(): Promise<void> {
     let fresh: ProjectInfo
     try {
-      fresh = await backend.projectStatus(this.id)
+      fresh = await this.backend.projectStatus(this.id)
     } catch {
       return
     }
@@ -502,12 +526,12 @@ export class ProjectState {
     this.touch()
     let failure: string | null = null
     try {
-      this.tasks = await backend.tasksList(this.id, 50)
+      this.tasks = await this.backend.tasksList(this.id, 50)
     } catch (error) {
       failure = errorText(error)
     }
     try {
-      this.memories = await backend.memoryList(this.id, null, 50)
+      this.memories = await this.backend.memoryList(this.id, null, 50)
     } catch (error) {
       failure = failure ?? errorText(error)
     }
@@ -520,7 +544,7 @@ export class ProjectState {
     this.models.loading = true
     this.touch()
     try {
-      const list = await backend.modelsList(this.id, force)
+      const list = await this.backend.modelsList(this.id, force)
       this.models.apply(list)
     } catch (error) {
       this.models.error = errorText(error)
@@ -535,7 +559,7 @@ export class ProjectState {
     this.doctorRunning = true
     this.touch()
     try {
-      this.doctor = await backend.doctorRun(this.id, probe)
+      this.doctor = await this.backend.doctorRun(this.id, probe)
       this.doctorError = null
     } catch (error) {
       this.doctorError = errorText(error)
@@ -609,12 +633,15 @@ interface DirEntryInfo {
 }
 
 /// `FileTreeModel` (Views/Inspector/FilesTab.swift): lazily loaded directory
-/// listings of one project root, read from disk one folder at a time as it
-/// is expanded (`fs_list_dir`: `.git` and `.DS_Store` hidden, folders first,
-/// then names in Finder order). Every change calls `onChange` (the project's
-/// `touch`) and bumps `version`.
+/// listings of one project root, read one folder at a time as it is
+/// expanded: from disk (`fs_list_dir`: `.git` and `.DS_Store` hidden,
+/// folders first, then names in Finder order), or through the host's
+/// `fs/list` for a project on a remote host (`FileTreeModel(root:remote:)`).
+/// Every change calls `onChange` (the project's `touch`) and bumps `version`.
 export class FileTreeModel {
   readonly root: string
+  /** The host's backend when the folder is remote; null reads the local disk. */
+  readonly remote: BackendClient | null
   /** Relative directory path ("" for the root) → its sorted entries. */
   children = new Map<string, FileNode[]>()
   expanded = new Set<string>()
@@ -624,9 +651,10 @@ export class FileTreeModel {
   private readonly onChange: () => void
   private readonly loading = new Map<string, Promise<void>>()
 
-  constructor(root: string, onChange: () => void = () => undefined) {
+  constructor(root: string, onChange: () => void = () => undefined, remote: BackendClient | null = null) {
     this.root = root
     this.onChange = onChange
+    this.remote = remote
   }
 
   /** Whether `path`'s listing has arrived. */
@@ -719,12 +747,14 @@ export class FileTreeModel {
 
   private async list(path: string): Promise<FileNode[]> {
     try {
+      const relative = (name: string) => (path.length === 0 ? name : `${path}/${name}`)
+      if (this.remote) {
+        // The host's listing: folders first, then files, each by name, without `.git`.
+        const listing = await this.remote.fsList(this.absolutePath(path), false)
+        return listing.entries.map((entry) => ({ path: relative(entry.name), name: entry.name, isDirectory: entry.is_dir }))
+      }
       const entries = await invoke<DirEntryInfo[]>('fs_list_dir', { path: this.absolutePath(path) })
-      return entries.map((entry) => ({
-        path: path.length === 0 ? entry.name : `${path}/${entry.name}`,
-        name: entry.name,
-        isDirectory: entry.is_dir,
-      }))
+      return entries.map((entry) => ({ path: relative(entry.name), name: entry.name, isDirectory: entry.is_dir }))
     } catch {
       return []
     }

@@ -1,0 +1,162 @@
+/* RemoteHostsSettingsSection.swift: the host rows, the editor sheet's grid. */
+
+.empty {
+  width: 100%;
+  padding: 6px 0;
+  font-size: var(--font-size-secondary);
+  color: var(--text-tertiary);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+/* HostSettingsRow: HStack(spacing 10) · padding v 8, a divider between rows. */
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 0;
+}
+
+.rowDivider {
+  border-bottom: 1px solid var(--border);
+}
+
+.rowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  color: var(--text-secondary);
+}
+
+.rowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rowTitleLine {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rowTitle {
+  font-size: var(--font-size-secondary);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.rowTarget {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono-small);
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowStatusLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rowDot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.rowStatus {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+.rowHint {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+  color: var(--danger);
+}
+
+.rowButtons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding-top: 1px;
+}
+
+.howText {
+  font-size: var(--font-size-secondary);
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.sshLine {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono-small);
+  line-height: 1.4;
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+/* HostEditorSheet: Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing 12, verticalSpacing 10). */
+.form {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 10px;
+  width: 100%;
+}
+
+.label {
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.fieldRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.message {
+  margin-top: 14px;
+}
+
+.footerSpacer {
+  flex: 1 1 auto;
+}

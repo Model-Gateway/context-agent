@@ -139,7 +139,7 @@ struct ProjectsView: View {
     // MARK: - Filtering
 
     private func isOpen(_ recent: RecentProject) -> Bool {
-        appState.projects.contains { $0.root == recent.path }
+        appState.projects.contains { $0.key == recent.id }
     }
 
     /// Search (name or path) and filter applied to the pinned-first list,

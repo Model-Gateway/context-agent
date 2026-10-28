@@ -139,10 +139,12 @@ apps/macos/
       BackendProcess.swift                    # S1  Process + pipes + strict-LF line reader + stderr ring buffer
       BackendClient.swift                     # S1  typed async API (see below) + State + stderrLog
       BackendLocator.swift                    # S1  find the ctx binary; returns (found, searched)
+      BackendLaunch.swift                     #     how a child starts: `.local(binary)` or `.ssh(host)` → executable + arguments (`ssh -o BatchMode=yes … -- host 'env PATH=… ctx serve'`), POSIX quoting
       Environment.swift                       # S1  KeychainStore, LoginShellEnvironment (one zsh run, cached), BackendEnvironment.build
     Models/
       Transcript.swift                        # (written) TranscriptItem and friends, Transcript, TranscriptFormat
-      RecentProject.swift                     # S3  persisted recents (Application Support JSON) + pinned
+      RecentProject.swift                     # S3  persisted recents (Application Support JSON) + pinned; a recent carries `hostId`/`hostName` for a folder on a remote host, keyed by `RecentProject.key` (`ctx-ssh://<host>/path`)
+      SSHHost.swift                           #     SSHHost (name, address, user, port, identity file, remote ctx path, extra ssh options), SSHHostStore (ssh-hosts.json), RemoteProjectRef (the `ctx-ssh://` key), SSHConfigHosts (~/.ssh/config Host aliases)
       Preferences.swift                       # S3  UserDefaults-backed settings (@Observable)
       ModelCatalog.swift                      # S3  models list cache, recents per base URL, fuzzy ranking, prefix grouping
       ToolMetadata.swift                      # S2  tool name → icon, label, category chip, verbs, path argument
@@ -173,6 +175,9 @@ apps/macos/
       MainWindow.swift                        # V1  HStack: SidebarView | DetailView | InspectorView; toasts overlay; openURL handler
       Sidebar/SidebarView.swift               # V1  nav items, Projects section, Recents, account button
       Sidebar/SidebarRows.swift               # V1  NavRow, ProjectRow, WorktreeRow (nested under its parent; merge / remove confirms), SessionRow (hover, badges, context menus, inline rename, delete confirm)
+      Sidebar/HostRows.swift                  #     the "Remote" section: HostRow per configured SSH host (status dot / spinner, click → folder picker, Connect / Reconnect / Disconnect / Remove) with its projects, opening rows and pinned remote recents nested under it
+      Remote/RemoteFolderPicker.swift         #     the remote folder picker sheet (`AppState.remotePicker`): host picker, path field, parent / home, `fs/list` directory rows with a git glyph, Open
+      Remote/RemoteHostsSettingsSection.swift #     Settings → Remote hosts: host rows with state and hint, Add host… (with ~/.ssh/config aliases), the editor sheet with Test connection
       Welcome/WelcomeView.swift               # V1  hero, Open a project…, recents grid, Connect-a-model card, backend failure panel, onDrop
       Palette/CommandPalette.swift            # V1  ⌘K: chats (title + task objectives) + actions, keyboard navigation
       Detail/DetailView.swift                 # V1  TopBar (tabs, search, approvals pill, project chip, approval chip, inspector toggle, settings) + tab content
@@ -207,6 +212,7 @@ apps/macos/
       Changes/GitSheets.swift                 # PushSheet (remote, branch, upstream, force-with-lease, output), NewBranchSheet, CommitFileSheet
       App/GitActions.swift                    # AppState extension: stage/unstage/discard, commit (box, file, amend, undo), push/pull/fetch, branches, log, commit message generation
       App/WorktreeActions.swift               # AppState extension: parallel sessions through `worktree/*` (new worktree chat, send the draft in a new worktree, open / remove / merge a worktree)
+      App/RemoteHosts.swift                   # RemoteConnection (one `ssh <host> ctx serve` per host) + AppState extension: connect / disconnect / reconnect, open a project on a host, remembered remote projects at launch, host CRUD, Test connection (see "Remote hosts (SSH)")
       Changes/DiffView.swift                  # V5  unified diff in a read-only NSTextView (gutter ruler, full-width +/- tints, hunk collapse)
       Project/ProjectView.swift               # V5  index/git/validation/languages/doctor/memories/tasks cards
       Settings/SettingsView.swift             # V5  ProfileView (the account button's page) tabs: Account, General, Model, BYOK, Spending, Billing, Permissions, Appearance
@@ -608,9 +614,10 @@ closes the picker and switches in the background (the composer chip shows
 "Switching…", send disabled); a failed switch, or a model the probe rules
 out for agent runs, comes back as a toast; choosing the current model
 again re-runs the switch (and so the probe) unless it last passed; each row has the lab's logo and
-a models.dev hover card; when the project is running it opens
-read-only with "Finish or cancel the running task to switch". Return inside
-the picker/palette never reaches the composer.
+a models.dev hover card; switching while a task runs is allowed (the
+running turn keeps its model, the next turn uses the new one; the server
+clones the provider at run start). Return inside the picker/palette never
+reaches the composer.
 
 **Status bar**: running → spinner + `state.label` + "step 3" + elapsed +
 *Cancel* (⌘.); always: "ctx 12.4k/128k" when `contextStats` exists (click
@@ -1215,6 +1222,69 @@ parent's git status, commit log and project status are refreshed
 open worktrees too; the parent's context menu reopens them ("Open
 Worktree"). Worktrees are remembered in `openProjectPaths` like any project
 and never appear in Recents.
+
+## Remote hosts (SSH)
+
+Like Claude Code's and Codex's remote sessions, a project can live on
+another machine: the app runs `ctx serve` there over SSH and talks the same
+protocol through the SSH session's pipes (docs/desktop-protocol.md "Remote
+hosts"). Nothing in the Swift code reaches the network itself; `ssh` is
+the child process.
+
+- **One connection per host.** `AppState.remotes[host.id]` is a
+  `RemoteConnection` (App/RemoteHosts.swift): an `SSHHost` from
+  `SSHHostStore` (Settings → Remote hosts, `ssh-hosts.json` next to the
+  recents), its own `BackendClient` started with `BackendLaunch.ssh(host)`
+  — `ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -T
+  [-p port] [-i key] [-l user] <extras> -- <address> 'env PATH="$HOME/.cargo/bin:…:$PATH" ctx serve'`
+  (Backend/BackendLaunch.swift; `CTX_SSH_BINARY` replaces `/usr/bin/ssh`
+  for tests) — a `state` (disconnected / connecting / ready / failed) and a
+  `hint` (what ssh's last words mean: keys, PATH, the address, the host
+  key). The local `AppState.backend` is unchanged; `--mock` applies to
+  every backend. The connection is made when the first project on the host
+  is opened (`AppState.connect`, concurrent callers share one attempt) and
+  stays until Disconnect, Remove Host, or ssh exits: then
+  `handleRemoteExit` fails the host's running chats, marks the connection
+  failed and leaves the rows in place for Reconnect — never an automatic
+  retry (a dropped VPN would spawn ssh every second).
+- **A remote project is a `ProjectState` with a `backend` and a `host`.**
+  Every request about a project goes through `project.backend` (the
+  `ProjectState` loads take no backend argument any more; AppState's
+  per-project intents use `project.backend`, chat-scoped ones
+  `backend(for: projectId)`), readiness is `AppState.isReady(project)`
+  and the key check `needsAPIKey(for:)`, so a remote project never looks at
+  the local backend's state. Notifications are routed by project id, which
+  `openProject(path:host:)` keeps unique across backends (the same path on
+  two hosts hashes to one `RepositoryId`: the second open is refused with a
+  toast); `.log` lines get a `[host]` prefix, `.mcpStatus` is the local
+  backend's only. `makeProject` builds the `ModelCatalog` from the host's
+  `initialize` result.
+- **Keys.** Preferences and recents key a project by `ProjectState.key` /
+  `RecentProject.key`: the path locally, `ctx-ssh://<host uuid>/path` on a
+  host (`RemoteProjectRef`). `openProjectPaths` mixes both; the local
+  restore skips remote keys and `reopenRememberedRemoteProjects` (started
+  by `startBackend`, once per launch) reconnects each host in parallel and
+  reopens its folders. `openingProjectPaths` holds keys too (the loading
+  rows decode them).
+- **No shared filesystem.** The Files tab lists folders through `fs/list`
+  (`FileTreeModel(root:remote:)`, async rows), the folder picker is the
+  `RemoteFolderPicker` sheet over `fs/list {dirs_only}`, the Editor reads
+  and writes through `file/read` / `file/write` as always but shows a
+  placeholder for images and PDFs, Finder and "Open with Default Editor"
+  actions are hidden (`FileRow.localActions`, `AppState.reveal`), and the
+  Terminal tab's shells are `ssh -t <host> 'cd <root>; exec $SHELL -l'`
+  (`TerminalWorkspace(directory:host:)`). Attachments: `task/run` and
+  `task/steer` get the bytes (`RemoteAttachments.prepare` →
+  `InlineImage` / `FileUpload.content`) instead of paths; the transcript
+  keeps the local paths for its thumbnails, history shows names.
+- **UI.** Welcome: "Open on a remote host…" under the open button (Settings
+  → Remote hosts when none is configured). Sidebar: a "Remote" section
+  listing every configured host (HostRow) with its projects, worktrees,
+  opening rows and pinned recents beneath it; the local Projects section
+  shows local projects only. File → Open Project on Remote Host… (⌘⇧O).
+  Recents cards carry the host as a chip and open through
+  `AppState.openRecent`. The Inspector Run tab's backend card describes the
+  selected project's host connection (Reconnect instead of Retry).
 
 ## Build and run
 

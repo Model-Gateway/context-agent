@@ -1,22 +1,38 @@
 import SwiftUI
 import Foundation
 
-/// One remembered repository root (Welcome grid, sidebar "pinned", Open Recent).
+/// One remembered repository root (Welcome grid, sidebar "pinned", Open
+/// Recent): a local folder, or a folder on a remote host (`hostId`, with
+/// the host's name at the time for the card when the host is gone).
 struct RecentProject: Codable, Equatable, Hashable, Identifiable {
     var path: String
     var name: String
     var lastOpened: Date
     var pinned: Bool = false
+    var hostId: UUID? = nil
+    var hostName: String? = nil
 
-    var id: String { path }
+    var id: String { Self.key(path: path, hostId: hostId) }
     var url: URL { URL(fileURLWithPath: path) }
+    var isRemote: Bool { hostId != nil }
 
-    /// "~/Projects/context-agent"
-    var abbreviatedPath: String {
-        (path as NSString).abbreviatingWithTildeInPath
+    /// What `openProjectPaths` and the recents are keyed by: the path, or
+    /// `ctx-ssh://<host>/path` for a remote folder.
+    static func key(path: String, hostId: UUID?) -> String {
+        hostId.map { RemoteProjectRef(hostId: $0, path: path).encoded } ?? path
     }
 
+    /// "~/Projects/context-agent", or "devbox:~/code/app" for a remote folder
+    /// (with its home abbreviated when the host's home directory is known).
+    var abbreviatedPath: String {
+        guard isRemote else { return (path as NSString).abbreviatingWithTildeInPath }
+        return "\(hostName ?? "ssh"):\(path)"
+    }
+
+    /// A local folder that is still there; remote folders are taken as
+    /// existing (the host decides when they are opened).
     var exists: Bool {
+        guard !isRemote else { return true }
         var isDirectory: ObjCBool = false
         return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
@@ -56,43 +72,64 @@ final class RecentProjectStore {
         return base.appendingPathComponent("ContextAgent").appendingPathComponent(fileName)
     }
 
-    func item(for path: String) -> RecentProject? {
-        items.first { $0.path == path }
+    func item(for path: String, hostId: UUID? = nil) -> RecentProject? {
+        items.first { $0.path == path && $0.hostId == hostId }
     }
 
-    /// Records an open: moves (or inserts) the entry to the front with the current date.
-    func touch(path: String, name: String) {
-        let standardized = Self.standardize(path)
-        if let index = items.firstIndex(where: { $0.path == standardized }) {
+    /// Records an open: moves (or inserts) the entry to the front with the
+    /// current date. A remote folder is keyed by host and path and keeps
+    /// the host's name for its card.
+    func touch(path: String, name: String, host: SSHHost? = nil) {
+        let standardized = host == nil ? Self.standardize(path) : path
+        if let index = items.firstIndex(where: { $0.path == standardized && $0.hostId == host?.id }) {
             var entry = items[index]
             entry.lastOpened = Date()
             entry.name = name
+            entry.hostName = host?.displayName
             items.remove(at: index)
             items.insert(entry, at: 0)
         } else {
-            items.insert(RecentProject(path: standardized, name: name, lastOpened: Date()), at: 0)
+            items.insert(RecentProject(path: standardized, name: name, lastOpened: Date(), hostId: host?.id, hostName: host?.displayName), at: 0)
         }
         trim()
         scheduleSave()
     }
 
-    func remove(path: String) {
-        let standardized = Self.standardize(path)
-        items.removeAll { $0.path == standardized }
+    func remove(path: String, hostId: UUID? = nil) {
+        let standardized = hostId == nil ? Self.standardize(path) : path
+        items.removeAll { $0.path == standardized && $0.hostId == hostId }
         scheduleSave()
     }
 
-    func setPinned(_ pinned: Bool, path: String) {
-        let standardized = Self.standardize(path)
-        guard let index = items.firstIndex(where: { $0.path == standardized }) else { return }
+    func remove(_ recent: RecentProject) {
+        remove(path: recent.path, hostId: recent.hostId)
+    }
+
+    func setPinned(_ pinned: Bool, path: String, hostId: UUID? = nil) {
+        let standardized = hostId == nil ? Self.standardize(path) : path
+        guard let index = items.firstIndex(where: { $0.path == standardized && $0.hostId == hostId }) else { return }
         items[index].pinned = pinned
         scheduleSave()
     }
 
-    func togglePin(path: String) {
-        let standardized = Self.standardize(path)
-        guard let entry = item(for: standardized) else { return }
-        setPinned(!entry.pinned, path: standardized)
+    func togglePin(path: String, hostId: UUID? = nil) {
+        let standardized = hostId == nil ? Self.standardize(path) : path
+        guard let entry = item(for: standardized, hostId: hostId) else { return }
+        setPinned(!entry.pinned, path: standardized, hostId: hostId)
+    }
+
+    func togglePin(_ recent: RecentProject) {
+        togglePin(path: recent.path, hostId: recent.hostId)
+    }
+
+    /// Renames the host on every entry of a host (Settings edits).
+    func renameHost(_ id: UUID, to name: String) {
+        var changed = false
+        for index in items.indices where items[index].hostId == id && items[index].hostName != name {
+            items[index].hostName = name
+            changed = true
+        }
+        if changed { scheduleSave() }
     }
 
     /// Open Recent → Clear Menu: drops everything that is not pinned.
@@ -114,7 +151,7 @@ final class RecentProjectStore {
         decoder.dateDecodingStrategy = .iso8601
         if let decoded = try? decoder.decode([RecentProject].self, from: data) {
             var seen: Set<String> = []
-            items = decoded.filter { seen.insert($0.path).inserted }
+            items = decoded.filter { seen.insert($0.id).inserted }
             trim()
         }
     }

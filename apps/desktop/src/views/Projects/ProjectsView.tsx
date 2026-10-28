@@ -8,7 +8,7 @@ import { EmptyPlaceholder } from '../../components/EmptyPlaceholder'
 import { Menu, type MenuItem } from '../../components/Menu'
 import { SearchField } from '../../components/SearchField'
 import { Tooltip } from '../../components/Tooltip'
-import { abbreviatedPath, recentProjectExists, type RecentProject } from '../../models/recentProject'
+import { abbreviatedPath, recentProjectExists, recentProjectId, type RecentProject } from '../../models/recentProject'
 import { useApp } from '../../state/app'
 import { useIsReady, useRecentProjectCards } from '../../state/selectors'
 import { Icon } from '../../theme/icons'
@@ -66,15 +66,19 @@ export function ProjectsView() {
   const [sort, setSort] = useState<ProjectSort>('lastOpened')
   const exists = useExistence(all)
 
-  const openRoots = useMemo(() => new Set(projects.map((project) => project.root)), [projects])
-  const isOpen = (recent: RecentProject) => openRoots.has(recent.path)
-  const existsAt = (recent: RecentProject) => exists.get(recent.path) ?? true
+  const openKeys = useMemo(() => new Set(projects.map((project) => project.key)), [projects])
+  const isOpen = (recent: RecentProject) => openKeys.has(recentProjectId(recent))
+  const existsAt = (recent: RecentProject) => exists.get(recentProjectId(recent)) ?? true
 
   // Search (name or path) and filter applied to the pinned-first list, then
   // the chosen sort; pinned stay first either way.
   const needle = query.trim()
   const matched = all.filter((recent) => {
-    const matchesQuery = needle.length === 0 || containsInsensitive(recent.name, needle) || containsInsensitive(abbreviatedPath(recent.path), needle)
+    const matchesQuery =
+      needle.length === 0 ||
+      containsInsensitive(recent.name, needle) ||
+      containsInsensitive(abbreviatedPath(recent.path), needle) ||
+      (recent.hostName !== null && containsInsensitive(recent.hostName, needle))
     if (!matchesQuery) return false
     switch (filter) {
       case 'all':
@@ -143,7 +147,7 @@ export function ProjectsView() {
             ) : (
               <div className={styles.grid}>
                 {shown.map((recent) => (
-                  <RecentCard key={recent.path} recent={recent} isOpen={isOpen(recent)} />
+                  <RecentCard key={recentProjectId(recent)} recent={recent} isOpen={isOpen(recent)} />
                 ))}
               </div>
             )}
@@ -200,11 +204,11 @@ function FilterMenu({ filter, sort, onFilter, onSort }: { filter: ProjectFilter;
 /// and when the window regains focus.
 function useExistence(recents: RecentProject[]): Map<string, boolean> {
   const [exists, setExists] = useState<Map<string, boolean>>(() => new Map())
-  const key = recents.map((recent) => recent.path).join('\n')
+  const key = recents.map((recent) => recentProjectId(recent)).join('\n')
   useEffect(() => {
     let cancelled = false
     const check = async () => {
-      const results = await Promise.all(recents.map(async (recent) => [recent.path, await recentProjectExists(recent)] as const))
+      const results = await Promise.all(recents.map(async (recent) => [recentProjectId(recent), await recentProjectExists(recent)] as const))
       if (cancelled) return
       setExists((current) => {
         const next = new Map(results)

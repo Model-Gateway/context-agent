@@ -572,20 +572,41 @@ private struct CountersCard: View {
 private struct BackendCard: View {
     @Environment(AppState.self) private var appState
 
+    /// The selected project's host connection, when it is a remote project:
+    /// the card then describes that backend instead of the local one.
+    private var remote: RemoteConnection? {
+        appState.selectedProject.flatMap { appState.remote(of: $0) }
+    }
+
+    private var connectionLabel: String {
+        if let remote { return "\(remote.host.displayName) · \(remote.label)" }
+        return appState.connectionLabel
+    }
+
+    private var failure: BackendFailure? {
+        if let remote { return remote.state.failure }
+        return appState.connection.failure
+    }
+
+    private var config: InitializeResult? {
+        if let remote { return remote.client.initializeResult }
+        return appState.config
+    }
+
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous)
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                appState.openSettings()
+                appState.openSettings(remote == nil ? nil : .remoteHosts)
             } label: {
                 summary
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Open Settings")
-            .accessibilityLabel("Backend: \(appState.connectionLabel). Open Settings")
+            .accessibilityLabel("Backend: \(connectionLabel). Open Settings")
 
-            if let failure = appState.connection.failure {
+            if let failure {
                 failureSection(failure)
             }
         }
@@ -597,8 +618,8 @@ private struct BackendCard: View {
 
     private var summary: some View {
         // "· mock" moves to a chip on the model line to keep the status line short.
-        let isMock = appState.config?.mock == true
-        let label = isMock ? appState.connectionLabel.replacingOccurrences(of: " · mock", with: "") : appState.connectionLabel
+        let isMock = config?.mock == true
+        let label = isMock ? connectionLabel.replacingOccurrences(of: " · mock", with: "") : connectionLabel
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 statusDot
@@ -613,7 +634,7 @@ private struct BackendCard: View {
                     .foregroundStyle(Theme.textTertiary)
                     .accessibilityHidden(true)
             }
-            if let model = appState.config?.model.name, !model.isEmpty {
+            if let model = config?.model.name, !model.isEmpty {
                 HStack(spacing: 6) {
                     Text(verbatim: appState.modelDisplayName(model))
                         .font(Theme.Font.caption)
@@ -644,15 +665,35 @@ private struct BackendCard: View {
         }
     }
 
+    private enum Dot { case spinner, ready, failed, off }
+
+    private var dot: Dot {
+        if let remote {
+            switch remote.state {
+            case .connecting: return .spinner
+            case .ready: return .ready
+            case .failed: return .failed
+            case .disconnected: return .off
+            }
+        }
+        switch appState.connection {
+        case .connecting: return .spinner
+        case .ready: return .ready
+        case .failed: return .failed
+        }
+    }
+
     @ViewBuilder
     private var statusDot: some View {
-        switch appState.connection {
-        case .connecting:
+        switch dot {
+        case .spinner:
             BrailleSpinner(size: 10, tint: Theme.textSecondary)
         case .ready:
             Circle().fill(Theme.success).frame(width: 7, height: 7).accessibilityHidden(true)
         case .failed:
             Circle().fill(Theme.danger).frame(width: 7, height: 7).accessibilityHidden(true)
+        case .off:
+            Circle().fill(Theme.textTertiary).frame(width: 7, height: 7).accessibilityHidden(true)
         }
     }
 
@@ -664,25 +705,39 @@ private struct BackendCard: View {
                 .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .selectableText()
+            if let remote, let hint = remote.hint {
+                Text(verbatim: hint)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 6) {
-                Button {
-                    Task { await appState.restartBackend() }
-                } label: {
-                    HStack(spacing: 4) {
-                        if appState.backendStarting {
-                            BrailleSpinner(size: 10, tint: Theme.textSecondary)
-                        }
-                        Text("Retry")
+                if let remote {
+                    Button("Reconnect") {
+                        Task { await appState.reconnect(remote.host) }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                } else {
+                    Button {
+                        Task { await appState.restartBackend() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            if appState.backendStarting {
+                                BrailleSpinner(size: 10, tint: Theme.textSecondary)
+                            }
+                            Text("Retry")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(appState.backendStarting)
+                    Button("Choose binary…") {
+                        Task { await appState.chooseBackendBinary() }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(appState.backendStarting)
-                Button("Choose binary…") {
-                    Task { await appState.chooseBackendBinary() }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
         }
     }

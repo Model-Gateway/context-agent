@@ -1,0 +1,46 @@
+/* HostRows.swift: the Remote section's host rows and the rows nested under a host. */
+
+/* `.padding(.leading, 14)`: a project, worktree, loading or pinned row under its host. */
+.nested {
+  display: flex;
+  min-width: 0;
+  padding-left: 14px;
+}
+
+.nested > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A 7 pt dot where the badge sits, with the Swift `.padding(.trailing, 4)`. */
+.statusDot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-radius: 50%;
+}
+
+.success {
+  background: var(--success);
+}
+
+.danger {
+  background: var(--danger);
+}
+
+.warning {
+  background: var(--warning);
+}
+
+.tertiary {
+  background: var(--text-tertiary);
+}
+
+/* The "+" that replaces the dot on hover (the row opens the picker). */
+.plus {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}

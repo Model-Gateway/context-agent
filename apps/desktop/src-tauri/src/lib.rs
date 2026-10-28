@@ -2,9 +2,11 @@
 //! command registry of ARCHITECTURE.md "Rust ↔ frontend". The modules mirror
 //! the macOS app's `Backend/` folder and `App/LaunchOptions.swift`:
 //!
-//! - `backend`: the `ctx serve` child (`BackendProcess`, `RPCConnection`,
-//!   `BackendLocator`, `BackendEnvironment`) behind the `backend_*` and
-//!   `rpc_request` commands and the `backend:*` events.
+//! - `backend`: the `ctx serve` children (`BackendProcess`, `RPCConnection`,
+//!   `BackendLocator`, `BackendEnvironment`, `BackendLaunch`: the local one
+//!   and one `ssh … ctx serve` per remote host) behind the `backend_*` and
+//!   `rpc_request` commands and the `backend:*` events, each tagged with
+//!   its backend id.
 //! - `secrets`: the OS credential store (`KeychainStore`).
 //! - `fs`: the file tree, attachment reads, pasted images, the folder picker
 //!   and the reveal / open actions.
@@ -29,7 +31,7 @@ use std::time::Duration;
 
 use tauri::{Manager, RunEvent};
 
-/// How long the shell waits for the child to leave when the app quits.
+/// How long the shell waits for the children to leave when the app quits.
 const QUIT_STOP_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -43,7 +45,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(backend::Backend::default())
+        .manage(backend::Backends::default())
         // F6 registers its managed state here:
         .manage(terminal::Terminals::default())
         .manage(browser::Browsers::default())
@@ -57,10 +59,12 @@ pub fn run() {
             selftest::selftest_finish,
             backend::backend_start,
             backend::backend_stop,
+            backend::backend_remove,
             backend::backend_state,
             backend::backend_stderr,
             backend::rpc_request,
             backend::backend_candidates,
+            backend::ssh_config_hosts,
             secrets::secret_get,
             secrets::secret_set,
             secrets::secret_remove,
@@ -102,13 +106,22 @@ pub fn run() {
 
     app.run(|app, event| {
         if let RunEvent::Exit = event {
-            // Like the macOS app on quit: ask the child to shut down (then
-            // kill it) before the process goes away, so no `ctx serve` is
-            // left behind, and the installer of a downloaded update can
-            // replace ctx.exe.
-            let backend = app.state::<backend::Backend>();
+            // Like the macOS app on quit: ask every child (the local ctx and
+            // each host's ssh) to shut down, then kill it, before the
+            // process goes away, so no `ctx serve` is left behind, and the
+            // installer of a downloaded update can replace ctx.exe.
+            let backends = app.state::<backend::Backends>().all();
             tauri::async_runtime::block_on(async {
-                let _ = tokio::time::timeout(QUIT_STOP_TIMEOUT, backend.stop()).await;
+                let stops: Vec<_> = backends
+                    .into_iter()
+                    .map(|backend| tauri::async_runtime::spawn(async move { backend.stop().await }))
+                    .collect();
+                let _ = tokio::time::timeout(QUIT_STOP_TIMEOUT, async {
+                    for stop in stops {
+                        let _ = stop.await;
+                    }
+                })
+                .await;
             });
             app.state::<updater::Updates>().install_on_quit();
         }

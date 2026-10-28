@@ -8,7 +8,7 @@ import { revealLabel } from '../../components/platform'
 import { ProgressRing } from '../../components/ProgressRing'
 import { Tooltip } from '../../components/Tooltip'
 import { usePref } from '../../models/preferences'
-import { abbreviatedPath, RecentProjects, recentProjectExists, type RecentProject } from '../../models/recentProject'
+import { abbreviatedPath, localRecentProject, RecentProjects, recentProjectExists, recentProjectId, type RecentProject } from '../../models/recentProject'
 import { TranscriptFormat } from '../../models/transcript'
 import { useApp } from '../../state/app'
 import { Icon } from '../../theme/icons'
@@ -34,23 +34,25 @@ const existence = new Map<string, boolean>()
 export function checkRecentFolders(paths: readonly string[]): void {
   for (const path of paths) {
     if (existence.has(path)) continue
-    void recentProjectExists({ path, name: '', lastOpened: new Date(0), pinned: false }).then((value) => existence.set(path, value))
+    void recentProjectExists(localRecentProject(path, '', new Date(0))).then((value) => existence.set(path, value))
   }
 }
 
-function useFolderExists(path: string): boolean {
-  const [exists, setExists] = useState(() => existence.get(path) ?? true)
+function useFolderExists(path: string, remote = false): boolean {
+  const [exists, setExists] = useState(() => (remote ? true : (existence.get(path) ?? true)))
   useEffect(() => {
+    // A folder on a host cannot be checked from here.
+    if (remote) return
     let cancelled = false
     setExists(existence.get(path) ?? true)
-    void recentProjectExists({ path, name: '', lastOpened: new Date(0), pinned: false }).then((value) => {
+    void recentProjectExists(localRecentProject(path, '', new Date(0))).then((value) => {
       existence.set(path, value)
       if (!cancelled) setExists(value)
     })
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, remote])
   return exists
 }
 
@@ -69,35 +71,39 @@ function indexingLabel(fraction: number | null): string {
 /**
  * `RecentCard` (Views/Welcome/WelcomeView.swift), shared with the Projects
  * screen: a recent project as a card with its name, abbreviated path and
- * last-opened time; pinned ones carry a pin; hover reveals Remove; the
- * footer says "Opening…", "Indexing 42%", "Open" or "Missing", and while
- * the project opens and builds its index a progress ring takes the
- * folder's place; the context menu has Open, Pin / Unpin, Reveal in Finder,
+ * last-opened time; pinned ones carry a pin; a project on a remote host
+ * carries the host as a chip; hover reveals Remove; the footer says
+ * "Opening…", "Indexing 42%", "Open" or "Missing", and while the project
+ * opens and builds its index a progress ring takes the folder's place; the
+ * context menu has Open, Pin / Unpin, Reveal in Finder (local folders),
  * Copy Path and Remove from Recents.
  */
 export const RecentCard = memo(function RecentCard({ recent, isOpen }: RecentCardProps) {
-  const isOpening = useApp((state) => state.openingProjectPaths.includes(recent.path))
-  const ready = useApp((state) => state.connection.kind === 'ready')
+  const key = recentProjectId(recent)
+  const isRemote = recent.hostId !== null
+  const isOpening = useApp((state) => state.openingProjectPaths.includes(key))
+  // A remote folder opens through its host's connection, made on demand.
+  const ready = useApp((state) => isRemote || state.connection.kind === 'ready')
   // The open project while its index pass runs; on a first open that pass
   // builds the whole index. `undefined` when it is not indexing.
   const indexFraction = useApp((state) => {
     if (!isOpen) return undefined
-    const project = state.projects.find((candidate) => candidate.root === recent.path)
+    const project = state.projects.find((candidate) => candidate.key === key)
     return project?.isIndexing ? project.indexFraction : undefined
   })
   const indexing = indexFraction !== undefined
   // False for a folder being opened for the first time (not a recent yet): nothing to pin or remove.
-  const isRemembered = usePref('recents').some((item) => item.path === recent.path)
-  const exists = useFolderExists(recent.path)
+  const isRemembered = usePref('recents').some((item) => recentProjectId(item) === key)
+  const exists = useFolderExists(recent.path, isRemote)
   const [hovering, setHovering] = useState(false)
   /** The pointer is over a control with a tooltip of its own: the card's stands down. */
   const [overControl, setOverControl] = useState(false)
   const canOpen = ready && exists && !isOpening
-  const path = abbreviatedPath(recent.path)
+  const path = isRemote ? recent.path : abbreviatedPath(recent.path)
 
   const open = () => {
     if (!canOpen) return
-    void useApp.getState().openProject(recent.path)
+    void useApp.getState().openRecent(recent)
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -110,25 +116,31 @@ export const RecentCard = memo(function RecentCard({ recent, isOpen }: RecentCar
 
   const remove = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
-    RecentProjects.remove(recent.path)
+    RecentProjects.removeRecent(recent)
   }
 
-  const menu = (): MenuItem[] => [
-    { label: 'Open', disabled: !canOpen, onSelect: () => void useApp.getState().openProject(recent.path) },
-    { label: recent.pinned ? 'Unpin' : 'Pin', disabled: !isRemembered, onSelect: () => RecentProjects.togglePin(recent.path) },
-    { label: revealLabel, disabled: !exists, onSelect: () => revealFolder(recent.path) },
-    { label: 'Copy Path', onSelect: () => useApp.getState().copyToPasteboard(recent.path) },
-    { type: 'separator' },
-    { label: 'Remove from Recents', destructive: true, disabled: !isRemembered, onSelect: () => RecentProjects.remove(recent.path) },
-  ]
+  const menu = (): MenuItem[] => {
+    const items: MenuItem[] = [
+      { label: 'Open', disabled: !canOpen, onSelect: () => void useApp.getState().openRecent(recent) },
+      { label: recent.pinned ? 'Unpin' : 'Pin', disabled: !isRemembered, onSelect: () => RecentProjects.togglePin(recent.path, recent.hostId) },
+    ]
+    if (!isRemote) items.push({ label: revealLabel, disabled: !exists, onSelect: () => revealFolder(recent.path) })
+    items.push(
+      { label: 'Copy Path', onSelect: () => useApp.getState().copyToPasteboard(recent.path) },
+      { type: 'separator' },
+      { label: 'Remove from Recents', destructive: true, disabled: !isRemembered, onSelect: () => RecentProjects.removeRecent(recent) },
+    )
+    return items
+  }
 
-  const status = isOpening ? ', opening' : indexing ? `, ${indexingLabel(indexFraction).toLowerCase()}` : isOpen ? ', open' : ''
+  const hostLabel = isRemote ? (recent.hostName ?? 'remote host') : null
+  const status = (isOpening ? ', opening' : indexing ? `, ${indexingLabel(indexFraction).toLowerCase()}` : isOpen ? ', open' : '') + (hostLabel === null ? '' : `, on ${hostLabel}`)
   const active = hovering && canOpen
   const showRemove = hovering && isRemembered
 
   return (
     <ContextMenu items={menu}>
-      <Tooltip content={exists ? recent.path : `Missing: ${recent.path}`} placement="bottom" disabled={overControl}>
+      <Tooltip content={hostLabel !== null ? `${recent.path} on ${hostLabel}` : exists ? recent.path : `Missing: ${recent.path}`} placement="bottom" disabled={overControl}>
         <div
           role="button"
           tabIndex={0}
@@ -150,9 +162,16 @@ export const RecentCard = memo(function RecentCard({ recent, isOpen }: RecentCar
                 <ProgressRing fraction={isOpening ? null : (indexFraction ?? null)} />
               </span>
             ) : (
-              <Icon name="folder" size={15} strokeWidth={1.85} className={[styles.folder, exists ? '' : styles.missingFolder].filter(Boolean).join(' ')} />
+              <Icon name={isRemote ? 'remoteHost' : 'folder'} size={15} strokeWidth={1.85} className={[styles.folder, exists ? '' : styles.missingFolder].filter(Boolean).join(' ')} />
             )}
             <MiddleTruncate text={recent.name} className={styles.name} />
+            {hostLabel !== null ? (
+              <span className={styles.hostChip} onPointerEnter={() => setOverControl(true)} onPointerLeave={() => setOverControl(false)}>
+                <Tooltip content={`On the remote host ${hostLabel}`}>
+                  <Chip icon="remoteHost">{hostLabel}</Chip>
+                </Tooltip>
+              </span>
+            ) : null}
             {recent.pinned ? <Icon name="pinned" size={10} strokeWidth={2} className={styles.pin} aria-label="Pinned" /> : null}
             {/* Always laid out, shown on hover and held to the row's 20 px, so hovering never resizes the card. */}
             <span

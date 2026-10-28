@@ -4,7 +4,9 @@
 // events (src-tauri/src/terminal.rs, portable-pty: a pty on macOS and Linux,
 // ConPTY on Windows). `TerminalSession` and `TerminalWorkspace` are the
 // Swift classes of the same names: one login shell per tab in the project
-// root, a strip of tabs per project, and a shell that exits closes its tab.
+// root (`ssh -t <host> 'cd <root>; exec $SHELL -l'` for a project on a
+// remote host), a strip of tabs per project, and a shell that exits closes
+// its tab.
 // The xterm.js view itself belongs to the Terminal tab; it keeps its
 // `Terminal` on `TerminalSession.view` so switching tabs keeps scrollback and
 // running programs, as the SwiftTerm view lives as long as its session.
@@ -14,6 +16,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { errorText } from '../backend/errors'
 import { debug } from '../backend/log'
+import type { SSHHost } from '../models/sshHost'
 
 // MARK: - Wire types
 
@@ -212,10 +215,11 @@ class ProcessHandle implements TerminalProcess {
 
 /**
  * Starts the user's shell in `cwd` (`terminal_open`): the login shell on
- * macOS and Linux, PowerShell on Windows. Rejects with a presentable
- * message when the shell cannot start.
+ * macOS and Linux, PowerShell on Windows; with `host`, an `ssh -t` shell in
+ * that folder on the host. Rejects with a presentable message when the
+ * shell cannot start.
  */
-export async function openTerminal(cwd: string, size?: TerminalSize): Promise<TerminalProcess> {
+export async function openTerminal(cwd: string, size?: TerminalSize, host: SSHHost | null = null): Promise<TerminalProcess> {
   await ensureListening()
   openingCount += 1
   try {
@@ -223,6 +227,7 @@ export async function openTerminal(cwd: string, size?: TerminalSize): Promise<Te
       cwd,
       cols: size ? Math.max(1, Math.floor(size.cols)) : null,
       rows: size ? Math.max(1, Math.floor(size.rows)) : null,
+      host,
     })
     const process = new ProcessHandle(opened)
     processes.set(opened.id, process)
@@ -291,19 +296,19 @@ export class TerminalSession {
   private version = 0
   private snapshotCache: TerminalSessionSnapshot | null = null
 
-  constructor(directory: string, number: number, size?: TerminalSize) {
+  constructor(directory: string, number: number, size?: TerminalSize, host: SSHHost | null = null) {
     nextSessionNumber += 1
     this.id = `terminal-${nextSessionNumber}`
     this.number = number
     this.currentDirectory = directory
     this.size = size ?? null
-    void this.start(directory)
+    void this.start(directory, host)
   }
 
-  private async start(directory: string): Promise<void> {
+  private async start(directory: string, host: SSHHost | null): Promise<void> {
     let process: TerminalProcess
     try {
-      process = await openTerminal(directory, this.size ?? undefined)
+      process = await openTerminal(directory, this.size ?? undefined, host)
     } catch (error) {
       this.error = errorText(error)
       this.isRunning = false
@@ -469,6 +474,8 @@ export interface TerminalWorkspaceSnapshot {
  */
 export class TerminalWorkspace {
   readonly directory: string
+  /** The SSH host the shells run on; null for local shells (`TerminalWorkspace(directory:host:)`). */
+  readonly host: SSHHost | null
   sessions: TerminalSession[] = []
   selectedId: string | null = null
   private opened = 0
@@ -477,8 +484,9 @@ export class TerminalWorkspace {
   private version = 0
   private snapshotCache: TerminalWorkspaceSnapshot | null = null
 
-  constructor(directory: string) {
+  constructor(directory: string, host: SSHHost | null = null) {
     this.directory = directory
+    this.host = host
   }
 
   get selected(): TerminalSession | null {
@@ -494,7 +502,7 @@ export class TerminalWorkspace {
   /** `newSession(running:)`: a new tab, selected; `command` is typed into it. */
   newSession(command?: string, size?: TerminalSize): TerminalSession {
     this.opened += 1
-    const session = new TerminalSession(this.directory, this.opened, size)
+    const session = new TerminalSession(this.directory, this.opened, size, this.host)
     if (command !== undefined) session.run(command)
     session.onExit = (exited) => this.remove(exited)
     this.sessionSubscriptions.set(session.id, session.subscribe(() => this.changed()))

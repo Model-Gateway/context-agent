@@ -130,7 +130,9 @@ struct ModelPickerPopover: View {
         let rows = rows(for: project)
         let ids = selectableIds(rows)
         let selectedId = ids.isEmpty ? nil : ids[min(max(selected, 0), ids.count - 1)]
-        let interactive = !project.isRunning && project.switchingModel == nil
+        // A running task keeps the model it started with; the switch
+        // applies to the next turn, so the picker stays live while it runs.
+        let interactive = project.switchingModel == nil
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -215,13 +217,13 @@ struct ModelPickerPopover: View {
 
     // MARK: - Footer (states)
 
-    /// The footer only appears with something to report: a running task, a
-    /// switch in progress or failed, a first load, a list error or a model
-    /// the probe ruled out (no idle "N models · Refresh" line).
+    /// The footer only appears with something to report: a switch in
+    /// progress or failed, a first load, a list error or a model the probe
+    /// ruled out (no idle "N models · Refresh" line).
     private func hasStatus(_ project: ProjectState) -> Bool {
         let catalog = project.models
         let ruledOut = catalog.lastSwitch.map { $0.model == project.info.model && !$0.capability.agentCapable } ?? false
-        return project.isRunning || project.switchingModel != nil || catalog.switchError != nil
+        return project.switchingModel != nil || catalog.switchError != nil
             || catalog.showsLoading || catalog.error != nil || ruledOut
     }
 
@@ -229,9 +231,6 @@ struct ModelPickerPopover: View {
     private func statusFooter(_ project: ProjectState) -> some View {
         let catalog = project.models
         VStack(alignment: .leading, spacing: 5) {
-            if project.isRunning {
-                footerLine(systemImage: Icons.warning, tint: Theme.warning, "Finish or cancel the running task to switch")
-            }
             if project.switchingModel != nil {
                 HStack(spacing: 6) {
                     BrailleSpinner(size: 11, tint: Theme.textSecondary)
@@ -351,9 +350,10 @@ struct ModelPickerPopover: View {
     /// composer chip shows "Switching…", and a failure or a model the probe
     /// rules out for agent runs comes back as a toast. Choosing the current
     /// model again re-runs the switch unless it last passed the probe, so a
-    /// model that failed validation gets probed again.
+    /// model that failed validation gets probed again. Allowed while a task
+    /// runs: that turn keeps its model, the next one uses the new model.
     private func choose(_ name: String, project: ProjectState) {
-        guard !project.isRunning, project.switchingModel == nil else { return }
+        guard project.switchingModel == nil else { return }
         // The chosen row never gets a hover exit, and the popover's
         // `onDisappear` can come late: hide its card now.
         closing = true

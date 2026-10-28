@@ -15,6 +15,11 @@ struct MainWindow: View {
 
     private var paneAnimation: Animation? { reduceMotion ? nil : .easeInOut(duration: 0.2) }
 
+    /// The remote folder picker sheet (`AppState.remotePicker`).
+    private var remotePickerBinding: Binding<RemotePickerRequest?> {
+        Binding(get: { appState.remotePicker }, set: { appState.remotePicker = $0 })
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             TopBar()
@@ -38,6 +43,10 @@ struct MainWindow: View {
         .onOpenURL { url in
             guard url.isFileURL else { return }
             Task { await appState.openProject(url: url) }
+        }
+        .sheet(item: remotePickerBinding) { request in
+            RemoteFolderPicker(request: request)
+                .environment(appState)
         }
         .background(WindowConfigurator())
         .frame(minWidth: 960, minHeight: 600)

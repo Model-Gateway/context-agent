@@ -17,12 +17,21 @@
 // the intents here (`register`, `startLoads`, `refreshGit`, `patchConfig`,
 // `restartBackend`, …) and plug into the flows that need them through
 // `extendApp` / `onProjectClosed` / `onBackendStarted`.
+//
+// Projects on remote hosts (App/RemoteHosts.swift, docs/desktop-protocol.md
+// "Remote hosts"): one `ssh <host> ctx serve` connection per configured
+// host (`RemoteConnection`, state/remote.ts), started when the first
+// project on it is opened and kept until the host is disconnected. A remote
+// project is an ordinary `ProjectState` whose `backend` is that connection
+// and whose `host` names it; every per-project request goes to
+// `project.backend`, readiness and the key check are per backend, and the
+// notifications of each backend are routed by project id.
 
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { openPath } from '@tauri-apps/plugin-opener'
-import { backend } from '../backend/client'
+import { backend, BackendClient } from '../backend/client'
 import { BackendError, errorText, failureOf, type BackendFailure } from '../backend/errors'
 import { debug } from '../backend/log'
 import type { BackendNotification } from '../backend/notifications'
@@ -38,8 +47,11 @@ import {
   type ApprovalDecision,
   type BrowserRequest,
   type DoctorReport,
+  type FileUpload,
+  type FsListing,
   type GitInfo,
   type InitializeResult,
+  type InlineImage,
   type JSONObject,
   type JSONValue,
   type LspDiagnostics,
@@ -56,7 +68,7 @@ import {
 import { copyText } from '../components/clipboard'
 import { toasts, type ToastLevel } from '../components/toasts'
 import type { PathAction } from '../markdown/fileReferences'
-import { pastedAttachments, prepareAttachmentPrompt, type ComposerAttachment } from '../models/attachments'
+import { pastedAttachments, prepareAttachmentPrompt, prepareRemoteAttachments, type ComposerAttachment } from '../models/attachments'
 import { ModelCatalog } from '../models/modelCatalog'
 import { modelsDev, type ModelsDevInfo } from '../models/modelsDev'
 import { approvalModeLabel as permissionLabel } from '../models/permissions'
@@ -72,22 +84,26 @@ import {
   setPref,
   setProjectCollapsed,
 } from '../models/preferences'
-import { lastPathComponent, RecentProjects, standardizePath } from '../models/recentProject'
+import { lastPathComponent, RecentProjects, standardizePath, type RecentProject } from '../models/recentProject'
 import { chatStatusIsRunning, type LogLine } from '../models/reducer'
+import { decodeRemoteProject, hostDisplayName, hostIsValid, hostTarget, isRemoteProjectKey, normalizeHost, projectKey, sameHost, SSHHosts, type SSHHost } from '../models/sshHost'
 import { makeNoticeItem, makeUserTurn, outgoingPrompt, userTurnIsRewindable, type OutgoingPrompt, type UserTurn } from '../models/transcript'
 import type { IconName } from '../theme/icons'
 import { BrowserWorkspace } from './browser'
 import { ChatState } from './chat'
 import { isAppActive, notifier, onAppBecameActive } from './notifications'
 import { ProjectState, starterFallback } from './project'
+import { RemoteConnection, remoteFailureSummary, remoteHint, type RemotePickerRequest } from './remote'
 import {
   anyProjectRunning,
   apiKeyEnvName,
   attentionCount,
   canRewind as canRewindIn,
+  isProjectReady,
   isReady,
-  needsAPIKey,
+  needsAPIKeyFor,
   projectById,
+  projectsOn,
   selectedChat,
   selectedProject,
   worktreesOf,
@@ -200,6 +216,7 @@ export interface LaunchOptions {
 /** `SettingsTab` raw values the store itself uses (Views/Settings/SettingsView.swift). */
 export const SETTINGS_TAB_ACCOUNT = 'account'
 export const SETTINGS_TAB_GENERAL = 'general'
+export const SETTINGS_TAB_REMOTE_HOSTS = 'remoteHosts'
 
 /** `BackendLocator.buildCommand`. */
 export const BUILD_COMMAND = 'cargo build --release -p ctx-cli'
@@ -252,8 +269,21 @@ export interface AppFields {
   /** The edit / undo waiting on the keep-or-revert sheet (`RewindSheet`). */
   rewindRequest: RewindRequest | null
   rewindInFlight: boolean
+  /** The remote folder picker sheet (`RemoteFolderPicker`), when shown. */
+  remotePicker: RemotePickerRequest | null
   /** Bumped by every change of the store or of an object in it. */
   version: number
+}
+
+/** `testHost`'s answer: what the probe found, or why it failed (with the hint). */
+export type HostTestResult = { ok: true; summary: string } | { ok: false; message: string }
+
+/** `openProject`'s options. */
+export interface OpenProjectOptions {
+  select?: boolean
+  restoreSession?: boolean
+  /** The SSH host the folder is on; null (the default) opens a local folder. */
+  host?: SSHHost | null
 }
 
 /** `AppState`'s intents. */
@@ -292,12 +322,40 @@ export interface AppActions {
 
   // Projects
   chooseProject: (newProject?: boolean) => Promise<void>
-  openProject: (path: string, options?: { select?: boolean; restoreSession?: boolean }) => Promise<ProjectState | null>
-  register: (info: ProjectInfo) => ProjectState
+  openProject: (path: string, options?: OpenProjectOptions) => Promise<ProjectState | null>
+  /** Opens a remembered project, local or remote. */
+  openRecent: (recent: RecentProject, options?: Omit<OpenProjectOptions, 'host'>) => Promise<ProjectState | null>
+  register: (info: ProjectInfo, host?: SSHHost | null) => ProjectState
   startLoads: (project: ProjectState) => void
-  closeProject: (id: string) => Promise<void>
+  /** `forget` false keeps the project in the remembered-open list (a host being disconnected). */
+  closeProject: (id: string, forget?: boolean) => Promise<void>
   openSettings: (tab?: string | null) => void
   selectProject: (id: string, restoreSession?: boolean) => void
+
+  // Remote hosts (App/RemoteHosts.swift)
+  /** The host's connection object, created (disconnected) on first use. */
+  remoteFor: (host: SSHHost) => RemoteConnection
+  /** The connection of the project's host, if any. */
+  remoteOf: (project: ProjectState) => RemoteConnection | null
+  /** The backend a project id belongs to (the local one for unknown ids). */
+  backendFor: (projectId: string | null | undefined) => BackendClient
+  /** Starts `ssh <host> ctx serve` unless it is already up; null (with a toast unless `quietly`) when it cannot be reached. */
+  connectHost: (host: SSHHost, quietly?: boolean) => Promise<RemoteConnection | null>
+  /** Closes the host's projects (kept remembered) and stops its ssh. */
+  disconnectHost: (host: SSHHost) => Promise<void>
+  /** Reconnects after a failure or a dropped link and reopens the host's projects. */
+  reconnectHost: (host: SSHHost) => Promise<void>
+  /** Disconnects, forgets the host's recents and remembered folders, removes it from Settings. */
+  removeHost: (host: SSHHost) => Promise<void>
+  /** Adds or updates a host (Settings → Remote hosts); applies at the next connect. */
+  saveHost: (host: SSHHost) => SSHHost
+  /** Test connection: connects exactly as the app will and reports what answered. */
+  testHost: (host: SSHHost) => Promise<HostTestResult>
+  /** Welcome, the sidebar, mod+shift+O: the remote folder picker (Settings → Remote hosts first when no host is configured). */
+  chooseRemoteProject: (host?: SSHHost | null) => void
+  setRemotePicker: (request: RemotePickerRequest | null) => void
+  /** `fs/list {dirs_only}` on the host (connecting first), for the picker. */
+  listRemoteDirectory: (path: string | null, host: SSHHost) => Promise<FsListing>
 
   // Sessions
   selectSession: (id: string | null) => Promise<void>
@@ -367,7 +425,8 @@ export interface AppActions {
   scheduleGitRefresh: (project: ProjectState) => void
 
   // Notifications
-  handle: (notification: BackendNotification) => void
+  /** Routes one notification of the local backend (`remote` null) or of a host's connection. */
+  handle: (notification: BackendNotification, remote?: RemoteConnection | null) => void
   clearBackendLog: () => void
   refreshAttention: () => void
 }
@@ -448,10 +507,22 @@ let backendLogNextId = 0
 /// small repository's `index/ready` beats the response frame), replayed once
 /// the `ProjectState` exists.
 const pendingProjectNotifications = new Map<string, BackendNotification[]>()
-/// The remembered projects in sidebar order while launch reopens them in
-/// parallel, so rows land in place however the opens finish.
+/// The remembered projects (keys: paths, or `ctx-ssh://…` on a host) in
+/// sidebar order while launch reopens them in parallel, so rows land in
+/// place however the opens finish.
 let restoreOrder: string[] = []
 let launchOptionsPromise: Promise<LaunchOptions> | null = null
+/** host id → its `ssh … ctx serve` connection (`AppState.remotes`). */
+const remoteConnections = new Map<string, RemoteConnection>()
+/** `reopenRememberedRemoteProjects` runs once per launch. */
+let remoteRestoreStarted = false
+let remotePickerCounter = 0
+
+/** `remotes[hostId]` without creating one. */
+export function remoteConnection(hostId: string | null | undefined): RemoteConnection | null {
+  if (hostId == null) return null
+  return remoteConnections.get(hostId) ?? null
+}
 
 // MARK: - Store plumbing
 
@@ -693,7 +764,7 @@ function browser(project: ProjectState): BrowserWorkspace {
 function terminals(project: ProjectState): TerminalWorkspace {
   const existing = terminalWorkspaces.get(project.id)
   if (existing) return existing
-  const workspace = new TerminalWorkspace(project.root)
+  const workspace = new TerminalWorkspace(project.root, project.host)
   terminalWorkspaces.set(project.id, workspace)
   queueMicrotask(bumpStore)
   return workspace
@@ -762,6 +833,8 @@ async function startBackendSteps(): Promise<void> {
   } catch (error) {
     patch({ connection: { kind: 'failed', failure: backend.lastStartFailure ?? failureOf(error) } })
     abandonRestore()
+    // The hosts do not depend on the local ctx: their projects still come back.
+    void reopenRememberedRemoteProjects()
     return
   }
   patch({ config: result, connection: { kind: 'ready', result } })
@@ -769,15 +842,19 @@ async function startBackendSteps(): Promise<void> {
 
   // A new backend may see a different key or endpoint: refetch models.
   for (const project of get().projects) {
+    if (project.isRemote) continue
     project.models.baseURL = result.model.base_url
     project.models.invalidate()
     project.touch()
   }
-  if (get().projects.length === 0) {
-    await reopenRememberedProjects(launch)
-  } else {
+  if (get().projects.some((project) => !project.isRemote)) {
     await reopenProjectsInPlace()
+  } else {
+    await reopenRememberedProjects(launch)
   }
+  // The remembered projects on hosts, each host in parallel, without
+  // holding the start up (once per launch).
+  void reopenRememberedRemoteProjects()
   // A remembered ModelGateway account: refresh its summary and usage through
   // the new backend, without holding the start up.
   for (const listener of [...backendStartedListeners]) {
@@ -797,6 +874,7 @@ async function restartBackend(): Promise<void> {
   patch({ connection: { kind: 'connecting' } })
   batch(() => {
     for (const project of get().projects) {
+      if (project.isRemote) continue
       for (const chat of project.allChats) {
         if (!chat.isRunning) continue
         chat.finish(
@@ -818,37 +896,45 @@ async function restartBackend(): Promise<void> {
 /// open folders that still exist) as opening, before the backend is up, and
 /// shows the Chat tab's skeleton instead of Welcome while they load.
 async function listRememberedProjects(launch: LaunchOptions): Promise<void> {
-  let paths: string[] = []
+  const keys: string[] = []
   if (launch.project !== null) {
-    paths = [await projectFolder(launch.project)]
+    keys.push(await projectFolder(launch.project))
   } else {
     const remembered = getPref('openProjectPaths')
-    const infos = await Promise.all(remembered.map((path) => fileInfo(path)))
-    remembered.forEach((path, index) => {
-      if (infos[index]?.is_dir === true) paths.push(standardizePath(path))
-      else forgetOpenProject(path)
+    const infos = await Promise.all(remembered.map((key) => (isRemoteProjectKey(key) ? Promise.resolve(null) : fileInfo(key))))
+    remembered.forEach((key, index) => {
+      if (isRemoteProjectKey(key)) {
+        // A folder on a host is listed under its host; one whose host is
+        // gone from Settings is forgotten.
+        const ref = decodeRemoteProject(key)
+        if (ref && SSHHosts.host(ref.hostId)) keys.push(key)
+        else forgetOpenProject(key)
+      } else if (infos[index]?.is_dir === true) keys.push(standardizePath(key))
+      else forgetOpenProject(key)
     })
   }
-  restoreOrder = paths
-  patch({ openingProjectPaths: paths })
-  if (paths.length > 0 && get().sidebarItem === 'welcome') setSidebarItem('chat')
+  restoreOrder = keys
+  patch({ openingProjectPaths: keys })
+  if (keys.length > 0 && get().sidebarItem === 'welcome') setSidebarItem('chat')
 }
 
-/** The backend did not start: nothing listed by `listRememberedProjects` is coming. */
+/// The local backend did not start: none of the local folders listed by
+/// `listRememberedProjects` is coming (the hosts' folders still are).
 function abandonRestore(): void {
-  if (restoreOrder.length === 0) return
-  const order = new Set(restoreOrder)
+  const local = restoreOrder.filter((key) => !isRemoteProjectKey(key))
+  if (local.length === 0) return
+  const order = new Set(local)
   patch({ openingProjectPaths: get().openingProjectPaths.filter((path) => !order.has(path)) })
-  restoreOrder = []
+  restoreOrder = restoreOrder.filter((key) => isRemoteProjectKey(key))
   const state = get()
-  if (state.projects.length === 0 && state.sidebarItem === 'chat') setSidebarItem('welcome')
+  if (state.projects.length === 0 && state.sidebarItem === 'chat' && state.openingProjectPaths.length === 0) setSidebarItem('welcome')
 }
 
 /// Opens the remembered projects in parallel (`ctx serve` handles each
 /// request on its own task) and selects the last selected one as soon as it
 /// is open rather than after the slowest of them.
 async function reopenRememberedProjects(launch: LaunchOptions): Promise<void> {
-  const paths = restoreOrder
+  const paths = restoreOrder.filter((key) => !isRemoteProjectKey(key))
   try {
     const first = paths[0]
     if (launch.project !== null && first !== undefined) {
@@ -865,10 +951,11 @@ async function reopenRememberedProjects(launch: LaunchOptions): Promise<void> {
     if (get().selectedProjectId === null) {
       const project = get().projects[0]
       if (project) selectRestoredProject(project.id)
-      else if (get().sidebarItem === 'chat') setSidebarItem('welcome')
+      else if (get().sidebarItem === 'chat' && !restoreOrder.some((key) => isRemoteProjectKey(key))) setSidebarItem('welcome')
     }
   } finally {
-    restoreOrder = []
+    // The hosts' folders keep their ranks until their own reopen is done.
+    restoreOrder = restoreOrder.filter((key) => isRemoteProjectKey(key))
   }
 }
 
@@ -882,6 +969,7 @@ function selectRestoredProject(id: string): void {
 
 async function reopenProjectsInPlace(): Promise<void> {
   for (const project of get().projects) {
+    if (project.isRemote) continue
     try {
       const info = await backend.projectOpen(project.root, false, getPref('autoInitGit'))
       project.info = info
@@ -897,7 +985,7 @@ async function reopenProjectsInPlace(): Promise<void> {
     }
   }
   const project = selectedProject(get())
-  if (project) {
+  if (project && !project.isRemote) {
     await project.loadSessions()
     void (async () => {
       await project.refreshGit()
@@ -931,36 +1019,55 @@ async function chooseProject(newProject = false): Promise<void> {
   await openProject(path)
 }
 
-/// `openProject(url:select:restoreSession:)`: `project/open` for the folder
-/// (`projectFolder`), registered, remembered, selected (a new chat unless
+/// `openProject(path:host:select:restoreSession:)`: `project/open` for the
+/// folder (`projectFolder` locally; as given on a host, whose connection is
+/// made first), registered, remembered, selected (a new chat unless
 /// `restoreSession`) and loaded. Returns the project, null on failure.
-async function openProject(path: string, options: { select?: boolean; restoreSession?: boolean } = {}): Promise<ProjectState | null> {
+async function openProject(path: string, options: OpenProjectOptions = {}): Promise<ProjectState | null> {
   const select = options.select ?? true
   const restoreSession = options.restoreSession ?? false
-  const target = await projectFolder(path)
+  const host = options.host ?? null
+  const target = host === null ? await projectFolder(path) : path
+  const key = projectKey(target, host?.id ?? null)
   {
     const state = get()
-    if (!state.openingProjectPaths.includes(target) && !state.projects.some((project) => project.root === target)) {
-      patch({ openingProjectPaths: [...state.openingProjectPaths, target] })
+    if (!state.openingProjectPaths.includes(key) && !state.projects.some((project) => project.key === key)) {
+      patch({ openingProjectPaths: [...state.openingProjectPaths, key] })
     }
   }
   const removeOpening = () => {
     const opening = get().openingProjectPaths
-    if (opening.includes(target)) patch({ openingProjectPaths: opening.filter((entry) => entry !== target) })
+    if (opening.includes(key)) patch({ openingProjectPaths: opening.filter((entry) => entry !== key) })
   }
   try {
-    if (!isReady(get())) {
-      toast('The backend is not running; open a project once it is connected.', 'warning')
-      return null
+    let client: BackendClient
+    if (host !== null) {
+      const connection = await connectHost(host)
+      if (!connection) return null
+      client = connection.client
+    } else {
+      if (!isReady(get())) {
+        toast('The backend is not running; open a project once it is connected.', 'warning')
+        return null
+      }
+      client = backend
     }
     try {
-      const info = await backend.projectOpen(target, false, getPref('autoInitGit'))
-      const project = register(info)
+      const info = await client.projectOpen(target, false, getPref('autoInitGit'))
+      // One repository id per app: the same path on two hosts hashes to the
+      // same id and would mix their events.
+      const clash = projectById(get(), info.project_id)
+      if (clash && (clash.host?.id ?? null) !== (host?.id ?? null)) {
+        const where = clash.host === null ? 'locally' : `on ${hostDisplayName(clash.host)}`
+        toast(`${info.name} is already open ${where} at the same path; close it first.`, 'warning')
+        return null
+      }
+      const project = register(info, host)
       // The real row replaces the loading one now, even when the backend
       // resolved the folder to a different repository root.
       removeOpening()
       // A worktree is listed under its parent, not among the recents.
-      if (!project.isWorktree) RecentProjects.touch(info.root, info.name)
+      if (!project.isWorktree) RecentProjects.touch(info.root, info.name, host)
       if (info.git_initialized === true) toast(`Initialized a Git repository in ${info.name} so turns can be undone.`, 'info')
       await restorePermissionProfile(project)
       if (select) {
@@ -971,7 +1078,8 @@ async function openProject(path: string, options: { select?: boolean; restoreSes
       return project
     } catch (error) {
       const message = errorText(error)
-      toast(`Could not open ${lastPathComponent(target)}: ${message}`, 'error', message)
+      const location = host === null ? '' : ` on ${hostDisplayName(host)}`
+      toast(`Could not open ${lastPathComponent(target)}${location}: ${message}`, 'error', message)
       return null
     }
   } finally {
@@ -979,25 +1087,39 @@ async function openProject(path: string, options: { select?: boolean; restoreSes
   }
 }
 
+/** `openRecent(_:select:restoreSession:)`: opens a remembered project, local or remote. */
+async function openRecent(recent: RecentProject, options: Omit<OpenProjectOptions, 'host'> = {}): Promise<ProjectState | null> {
+  if (recent.hostId !== null) {
+    const host = SSHHosts.host(recent.hostId)
+    if (!host) {
+      toast(`The host of ${recent.name} is no longer configured; add it again in Settings → Remote hosts.`, 'warning')
+      return null
+    }
+    return openProject(recent.path, { ...options, host })
+  }
+  return openProject(recent.path, options)
+}
+
 /// Adopts a `project/open` (or `worktree/create`) result: reuses the open
-/// `ProjectState` for that id, else creates it, replays the notifications
-/// that beat the response, and remembers it for the next launch.
-function register(info: ProjectInfo): ProjectState {
+/// `ProjectState` for that id, else creates it (on `host`'s connection when
+/// given), replays the notifications that beat the response, and remembers
+/// it for the next launch.
+function register(info: ProjectInfo, host: SSHHost | null = null): ProjectState {
   let project = projectById(get(), info.project_id)
   if (project) {
     project.info = info
     project.touch()
   } else {
-    project = makeProject(info)
+    project = makeProject(info, host)
     // A project reopened at launch goes to its remembered position.
-    const rank = restoreRank(info.root)
+    const rank = restoreRank(project.key)
     const list = [...get().projects]
-    const index = list.findIndex((candidate) => restoreRank(candidate.root) > rank)
+    const index = list.findIndex((candidate) => restoreRank(candidate.key) > rank)
     list.splice(index < 0 ? list.length : index, 0, project)
     patch({ projects: list })
     replayBufferedNotifications(project.id)
   }
-  rememberOpenProject(info.root)
+  rememberOpenProject(project.key)
   return project
 }
 
@@ -1012,11 +1134,11 @@ function startLoads(project: ProjectState): void {
   })()
 }
 
-async function closeProject(id: string): Promise<void> {
+async function closeProject(id: string, forget = true): Promise<void> {
   const project = projectById(get(), id)
   if (!project) return
   // Its open worktrees go with it (their checkouts and chats are kept).
-  for (const child of worktreesOf(get(), project)) await closeProject(child.id)
+  for (const child of worktreesOf(get(), project)) await closeProject(child.id, forget)
   const timer = gitRefreshTimers.get(id)
   if (timer !== undefined) clearTimeout(timer)
   gitRefreshTimers.delete(id)
@@ -1032,9 +1154,9 @@ async function closeProject(id: string): Promise<void> {
       debug(() => `project-closed listener threw: ${errorText(error)}`)
     }
   }
-  if (isReady(get())) {
+  if (project.backend.isReady) {
     try {
-      await backend.projectClose(id)
+      await project.backend.projectClose(id)
     } catch (error) {
       const message = errorText(error)
       toast(`Could not close ${project.name}: ${message}`, 'error', message)
@@ -1042,7 +1164,7 @@ async function closeProject(id: string): Promise<void> {
   }
   project.dispose()
   patch({ projects: get().projects.filter((candidate) => candidate.id !== id) })
-  forgetOpenProject(project.root)
+  if (forget) forgetOpenProject(project.key)
   if (get().selectedProjectId === id) {
     patch({ selectedProjectId: null, selectedSessionId: null })
     const next = get().projects[0]
@@ -1132,7 +1254,7 @@ async function selectSession(id: string | null): Promise<void> {
   if (chat.transcript.isEmpty && chat.status.kind === 'idle') {
     chat.update((c) => (c.status = { kind: 'loadingHistory' }))
     try {
-      const history = await backend.sessionHistory(project.id, id)
+      const history = await project.backend.sessionHistory(project.id, id)
       if (statusKind(chat) === 'loadingHistory') {
         chat.loadHistory(history)
       } else {
@@ -1173,12 +1295,13 @@ function newChat(): void {
 /// only if the composer is still empty and the chat idle.
 function requestSuggestion(chat: ChatState, projectId: string): void {
   chat.setSuggestion(null)
-  if (!getPref('suggestNext') || !isReady(get())) return
+  const project = projectById(get(), projectId)
+  if (!getPref('suggestNext') || !project || !isProjectReady(get(), project)) return
   const sessionId = chat.sessionId
   void (async () => {
     let text: string | null
     try {
-      text = await backend.suggestNext(projectId, sessionId)
+      text = await project.backend.suggestNext(projectId, sessionId)
     } catch {
       return
     }
@@ -1195,7 +1318,7 @@ function requestSuggestion(chat: ChatState, projectId: string): void {
 function loadStarters(project: ProjectState): void {
   if (project.startersLoading) return
   const state = get()
-  if (!isReady(state) || needsAPIKey(state)) {
+  if (!isProjectReady(state, project) || needsAPIKeyFor(state, project)) {
     if (project.starters === null) project.update((p) => (p.starters = starterFallback(p.info)))
     return
   }
@@ -1206,7 +1329,7 @@ function loadStarters(project: ProjectState): void {
   void (async () => {
     let generated: Awaited<ReturnType<typeof backend.suggestStarters>> = []
     try {
-      generated = await backend.suggestStarters(projectId)
+      generated = await project.backend.suggestStarters(projectId)
     } catch {
       generated = []
     }
@@ -1236,8 +1359,8 @@ async function send(input: string | OutgoingPrompt, options: { queue?: boolean }
     setSidebarItem('welcome')
     return
   }
-  if (!isReady(get())) {
-    toast('The backend is not running.', 'error')
+  if (!isProjectReady(get(), project)) {
+    toast(project.isRemote ? `${project.hostLabel ?? 'The host'} is not connected.` : 'The backend is not running.', 'error')
     return
   }
   let chat: ChatState
@@ -1276,7 +1399,8 @@ async function send(input: string | OutgoingPrompt, options: { queue?: boolean }
 async function steer(prompt: OutgoingPrompt, chat: ChatState, project: ProjectState): Promise<void> {
   chat.update((c) => (c.steering = [...c.steering, prompt]))
   try {
-    await backend.taskSteer(project.id, chat.sessionId, prompt.text, prompt.images, prompt.files)
+    const { images, files } = await attachmentsFor(project, prompt)
+    await project.backend.taskSteer(project.id, chat.sessionId, prompt.text, images, files)
   } catch (error) {
     // `task/finished` may have moved it to the queue meanwhile.
     const index = chat.steering.indexOf(prompt)
@@ -1312,7 +1436,7 @@ async function cancelRunningTask(): Promise<void> {
   const chat = project.chat(sessionId)
   chat.update((c) => (c.cancelRequested = true))
   try {
-    await backend.taskCancel(project.id, sessionId)
+    await project.backend.taskCancel(project.id, sessionId)
   } catch (error) {
     chat.update((c) => (c.cancelRequested = false))
     if (error instanceof BackendError && error.isNoTaskRunning) {
@@ -1364,7 +1488,7 @@ async function moveToComposer(prompt: OutgoingPrompt, chat: ChatState): Promise<
 
 async function createSession(project: ProjectState): Promise<ChatState | null> {
   try {
-    const summary = await backend.sessionCreate(project.id, null)
+    const summary = await project.backend.sessionCreate(project.id, null)
     project.upsertSession(summary)
     const chat = project.chat(summary.id)
     if (get().selectedProjectId === project.id) {
@@ -1401,7 +1525,8 @@ async function run(prompt: OutgoingPrompt, chat: ChatState, project: ProjectStat
     debug_prompt: getPref('developerMode') ? true : null,
   }
   try {
-    await backend.taskRun(project.id, chat.sessionId, prompt.text, options, prompt.images, prompt.files)
+    const { images, files } = await attachmentsFor(project, prompt)
+    await project.backend.taskRun(project.id, chat.sessionId, prompt.text, options, images, files)
   } catch (error) {
     const backendError = error instanceof BackendError ? error : null
     if (backendError?.isTaskAlreadyRunning) {
@@ -1440,6 +1565,20 @@ async function run(prompt: OutgoingPrompt, chat: ChatState, project: ProjectStat
   }
 }
 
+/// What `task/run` / `task/steer` get for the prompt's attachments: the
+/// local paths for the local backend; for a project on a host, the images'
+/// bytes and the text files' content (`RemoteAttachments.prepare`), since
+/// the backend there cannot open the app's files. The transcript keeps the
+/// local paths for its thumbnails.
+async function attachmentsFor(project: ProjectState, prompt: OutgoingPrompt): Promise<{ images: Array<string | InlineImage>; files: FileUpload[] }> {
+  if (!project.isRemote) return { images: prompt.images, files: prompt.files }
+  const prepared = await prepareRemoteAttachments(prompt.images, prompt.files)
+  if (prepared.skipped.length > 0) {
+    toast(`${prepared.skipped.length} attachment${prepared.skipped.length === 1 ? ' was' : 's were'} not sent: ${prepared.skipped.map(lastPathComponent).join(', ')}`, 'warning')
+  }
+  return { images: prepared.inlineImages, files: prepared.files }
+}
+
 /** `chat.status`'s case, read afresh (TypeScript keeps an earlier narrowing across awaits). */
 function statusKind(chat: ChatState): ChatState['status']['kind'] {
   return chat.status.kind
@@ -1456,7 +1595,7 @@ async function renameSession(id: string, title: string): Promise<void> {
   const project = selectedProject(get())
   if (!project) return
   try {
-    const summary = await backend.sessionRename(project.id, id, title.trim())
+    const summary = await project.backend.sessionRename(project.id, id, title.trim())
     project.upsertSession(summary)
   } catch (error) {
     const message = errorText(error)
@@ -1468,7 +1607,7 @@ async function deleteSession(id: string): Promise<void> {
   const project = selectedProject(get())
   if (!project) return
   try {
-    await backend.sessionDelete(project.id, id)
+    await project.backend.sessionDelete(project.id, id)
     project.removeSession(id)
     if (get().selectedSessionId === id) newChat()
     refreshAttention()
@@ -1575,7 +1714,7 @@ async function performRewind(request: RewindRequest, restoreFiles: boolean): Pro
   try {
     let result: Awaited<ReturnType<typeof backend.sessionRewind>>
     try {
-      result = await backend.sessionRewind(project.id, chat.sessionId, messageId, restoreFiles)
+      result = await project.backend.sessionRewind(project.id, chat.sessionId, messageId, restoreFiles)
     } catch (error) {
       const message = errorText(error)
       toast(`Could not rewind the chat: ${message}`, 'error', message)
@@ -1591,7 +1730,7 @@ async function performRewind(request: RewindRequest, restoreFiles: boolean): Pro
     // exactly as storage now has it.
     chat.update((c) => (c.status = { kind: 'loadingHistory' }))
     try {
-      const history = await backend.sessionHistory(project.id, chat.sessionId)
+      const history = await project.backend.sessionHistory(project.id, chat.sessionId)
       chat.loadHistory(history)
     } catch (error) {
       chat.update((c) => {
@@ -1701,7 +1840,7 @@ async function respond(requestId: string, chat: ChatState, decision: ApprovalDec
       }
     }
     try {
-      await backend.approvalRespond(chat.projectId, chat.sessionId, requestId, decision)
+      await backendFor(chat.projectId).approvalRespond(chat.projectId, chat.sessionId, requestId, decision)
     } catch (error) {
       chat.update((c) => (c.approvalError = errorText(error)))
     }
@@ -1721,7 +1860,7 @@ async function respondQuestion(requestId: string, chat: ChatState, answers: Ques
     c.questionError = null
   })
   try {
-    await backend.questionRespond(chat.projectId, chat.sessionId, requestId, answers, message)
+    await backendFor(chat.projectId).questionRespond(chat.projectId, chat.sessionId, requestId, answers, message)
     if (chat.pendingQuestion?.request_id === requestId) chat.update((c) => (c.pendingQuestion = null))
   } catch (error) {
     chat.update((c) => (c.questionError = errorText(error)))
@@ -1744,7 +1883,7 @@ async function switchModel(name: string): Promise<ModelSwitchResult> {
     p.models.switchError = null
   })
   try {
-    const result = await backend.modelsSwitch(project.id, model)
+    const result = await project.backend.modelsSwitch(project.id, model)
     project.info = { ...project.info, model: result.model }
     project.models.current = result.model
     project.models.lastSwitch = result
@@ -1809,7 +1948,7 @@ async function refreshModels(force: boolean): Promise<void> {
 async function prefetchModels(project: ProjectState): Promise<void> {
   // models.dev rides along (cached, refetched once a day).
   void modelsDev.load()
-  if (!isReady(get()) || !project.models.needsLoad || project.models.loading) return
+  if (!isProjectReady(get(), project) || !project.models.needsLoad || project.models.loading) return
   await project.refreshModels(false)
 }
 
@@ -1820,7 +1959,7 @@ async function restorePermissionProfile(project: ProjectState): Promise<void> {
   const saved = getPref('permissionProfiles')[project.root]
   if (saved === undefined || saved === project.info.permission_profile) return
   try {
-    const info = await backend.permissionsSet(project.id, saved)
+    const info = await project.backend.permissionsSet(project.id, saved)
     project.update((p) => (p.info = info))
   } catch {
     const next = { ...getPref('permissionProfiles') }
@@ -1834,7 +1973,7 @@ async function setApprovalMode(profile: string): Promise<void> {
   const project = selectedProject(get())
   if (!project) return
   try {
-    const info = await backend.permissionsSet(project.id, profile)
+    const info = await project.backend.permissionsSet(project.id, profile)
     project.update((p) => (p.info = info))
     setPermissionProfile(project.root, info.permission_profile)
     selectedChat(get())?.update((c) => c.transcript.append(makeNoticeItem({ lines: [`Approval mode set to ${approvalModeLabel(info.permission_profile)}`] })))
@@ -1848,7 +1987,7 @@ async function rebuildIndex(): Promise<void> {
   const project = selectedProject(get())
   if (!project) return
   try {
-    await backend.indexRebuild(project.id)
+    await project.backend.indexRebuild(project.id)
     project.update((p) => {
       p.indexProgress = { project_id: p.id, done: 0, total: 0 }
       p.lastIndexReady = null
@@ -1888,6 +2027,7 @@ async function patchConfig(values: JSONObject): Promise<void> {
   patch({ config: result, connection: { kind: 'ready', result } })
   const endpointChanged = previous?.base_url !== result.model.base_url || previous?.api_key_env !== result.model.api_key_env
   for (const project of get().projects) {
+    if (project.isRemote) continue
     project.models.baseURL = result.model.base_url
     if (endpointChanged) {
       project.models.invalidate()
@@ -2017,11 +2157,19 @@ function reveal(path: string, project: ProjectState, action: PathAction, line: n
       return
     }
     case 'revealInFileManager':
+      if (project.isRemote) {
+        toast(`${lastPathComponent(absolute)} is on ${project.hostLabel ?? 'a remote host'}; the file manager cannot show it.`, 'info')
+        return
+      }
       void invoke<void>('reveal_in_file_manager', { path: absolute }).catch((error: unknown) => {
         toast(`Could not show ${lastPathComponent(absolute)}: ${errorText(error)}`, 'error')
       })
       return
     case 'openWithEditor':
+      if (project.isRemote) {
+        toast(`${lastPathComponent(absolute)} is on ${project.hostLabel ?? 'a remote host'}; open it in the Editor tab instead.`, 'info')
+        return
+      }
       openInEditor(absolute)
       return
     case 'openInEditor': {
@@ -2067,12 +2215,15 @@ function scheduleGitRefresh(project: ProjectState): void {
 
 // MARK: - Notifications from the backend
 
-/** `handle(_:)`: routes one backend notification (the macOS doc's "handle rules"). */
-function handle(notification: BackendNotification): void {
-  batch(() => handleNotification(notification))
+/// `handle(_:remote:)`: routes one notification of the local backend
+/// (`remote` null) or of a host's connection (the macOS doc's "handle
+/// rules"). Project ids are unique across backends (`openProject` refuses a
+/// clash), so project-scoped notifications route by id alone.
+function handle(notification: BackendNotification, remote: RemoteConnection | null = null): void {
+  batch(() => handleNotification(notification, remote))
 }
 
-function handleNotification(notification: BackendNotification): void {
+function handleNotification(notification: BackendNotification, remote: RemoteConnection | null): void {
   switch (notification.kind) {
     case 'event': {
       const project = projectById(get(), notification.projectId)
@@ -2162,25 +2313,29 @@ function handleNotification(notification: BackendNotification): void {
       return
     }
 
-    case 'log':
-      appendBackendLog(notification.level, notification.message)
-      if (notification.level.toLowerCase() === 'error') toast(notification.message, 'error', notification.message)
+    case 'log': {
+      // A host's lines carry its name; the local backend's are as they are.
+      const message = remote ? `[${remote.displayName}] ${notification.message}` : notification.message
+      appendBackendLog(notification.level, message)
+      if (notification.level.toLowerCase() === 'error') toast(message, 'error', message)
       return
+    }
 
     case 'lspDiagnostics':
       extensions.lspDiagnostics?.(notification.diagnostics)
       return
 
     case 'browserRequest':
-      handleBrowserRequest(notification.request)
+      handleBrowserRequest(notification.request, remote?.client ?? backend)
       return
 
     case 'questionRequest':
-      handleQuestionRequest(notification.request)
+      handleQuestionRequest(notification.request, remote?.client ?? backend)
       return
 
     case 'mcpStatus':
-      patch({ mcpServers: notification.servers })
+      // Settings → Apps describe the local backend's servers only.
+      if (remote === null) patch({ mcpServers: notification.servers })
       return
 
     case 'projectChanged': {
@@ -2195,7 +2350,8 @@ function handleNotification(notification: BackendNotification): void {
     }
 
     case 'exited':
-      handleExit(notification.code, notification.tail)
+      if (remote) handleRemoteExit(remote, notification.code, notification.tail)
+      else handleExit(notification.code, notification.tail)
       return
   }
 }
@@ -2219,10 +2375,10 @@ function decodeGitInfo(raw: JSONValue | undefined): GitInfo | null {
 /// The `browser` tool wants something done in the project's Browser tab:
 /// the page acts and the reply goes back with `browser/respond`. The
 /// Inspector is left on whatever tab the user has open.
-function handleBrowserRequest(request: BrowserRequest): void {
+function handleBrowserRequest(request: BrowserRequest, client: BackendClient): void {
   const project = projectById(get(), request.project_id)
   if (!project) {
-    void backend
+    void client
       .browserRespond(request.project_id, request.session_id, request.request_id, { ok: false, error: 'the project is not open in the app' })
       .catch(() => undefined)
     return
@@ -2231,7 +2387,7 @@ function handleBrowserRequest(request: BrowserRequest): void {
   void (async () => {
     const reply = await workspace.perform(request.action)
     try {
-      await backend.browserRespond(request.project_id, request.session_id, request.request_id, reply)
+      await client.browserRespond(request.project_id, request.session_id, request.request_id, reply)
     } catch (error) {
       debug(() => `browser/respond failed: ${errorText(error)}`)
     }
@@ -2240,10 +2396,10 @@ function handleBrowserRequest(request: BrowserRequest): void {
 
 /// The `ask_user` tool put questions to the user: the chat shows them above
 /// its composer (and gets the orange dot) until they are answered.
-function handleQuestionRequest(request: QuestionRequest): void {
+function handleQuestionRequest(request: QuestionRequest, client: BackendClient): void {
   const project = projectById(get(), request.project_id)
   if (!project) {
-    void backend.questionRespond(request.project_id, request.session_id, request.request_id, null, null).catch(() => undefined)
+    void client.questionRespond(request.project_id, request.session_id, request.request_id, null, null).catch(() => undefined)
     return
   }
   const chat = project.chat(request.session_id)
@@ -2264,6 +2420,7 @@ function handleQuestionRequest(request: QuestionRequest): void {
 /// stderr tail; one automatic restart after 1 s per healthy run.
 function handleExit(code: number, tail: string): void {
   for (const project of get().projects) {
+    if (project.isRemote) continue
     for (const chat of project.allChats) {
       if (!chat.isRunning) continue
       chat.finish(
@@ -2301,7 +2458,7 @@ function handleExit(code: number, tail: string): void {
 /// After `task/finished`: every chat of the project with queued prompts
 /// whose session is idle sends its next one, the finished chat first.
 function dequeue(project: ProjectState, chat: ChatState): void {
-  if (!isReady(get())) return
+  if (!isProjectReady(get(), project)) return
   const started = new Set<string>()
   for (const target of [chat, ...project.queuedChats]) {
     if (target.queued.length === 0 || project.isRunningSession(target.sessionId) || started.has(target.sessionId)) continue
@@ -2355,16 +2512,289 @@ function refreshAttention(): void {
 
 // MARK: - Helpers
 
-function makeProject(info: ProjectInfo): ProjectState {
-  const catalog = new ModelCatalog(get().config?.model.base_url ?? '')
+function makeProject(info: ProjectInfo, host: SSHHost | null): ProjectState {
+  // The catalog follows the backend the project is on: the host's endpoint
+  // for a remote project (its `initialize` result).
+  const connection = host === null ? null : remoteConnections.get(host.id)
+  const baseURL = connection?.result?.model.base_url ?? (host === null ? (get().config?.model.base_url ?? '') : '')
+  const catalog = new ModelCatalog(baseURL)
   catalog.current = info.model
-  const project = new ProjectState(info, catalog)
+  const project = new ProjectState(info, catalog, connection?.client ?? backend, host)
   project.lastTab = parseSidebarItem(lastTabFor(info.project_id)) ?? 'chat'
   project.selectedChangePath = getPref('lastChangesPath')[info.project_id] ?? null
   project.onChatCreated = (chat) => {
     chat.isVisible = () => selectedChat(get()) === chat && isAppActive()
   }
   return project
+}
+
+// MARK: - Remote hosts (App/RemoteHosts.swift)
+
+/** The host's connection object, created (disconnected) on first use; a newer host record replaces the old. */
+function remoteFor(host: SSHHost): RemoteConnection {
+  const existing = remoteConnections.get(host.id)
+  if (existing) {
+    if (!sameHost(existing.host, host)) existing.update((c) => (c.host = host))
+    return existing
+  }
+  const connection = new RemoteConnection(host)
+  connection.client.onNotification = (notification) => get().handle(notification, connection)
+  remoteConnections.set(host.id, connection)
+  bumpStore()
+  return connection
+}
+
+function remoteOf(project: ProjectState): RemoteConnection | null {
+  return project.host === null ? null : (remoteConnections.get(project.host.id) ?? null)
+}
+
+/** `backend(for:)`: the backend a project id belongs to; the local one when the project is not open. */
+function backendFor(projectId: string | null | undefined): BackendClient {
+  return projectById(get(), projectId)?.backend ?? backend
+}
+
+/// `connect(_:quietly:)`: starts `ssh <host> ctx serve` unless it is already
+/// up; null (with a toast) when it cannot be reached. Concurrent callers
+/// share one attempt.
+async function connectHost(host: SSHHost, quietly = false): Promise<RemoteConnection | null> {
+  const connection = remoteFor(host)
+  if (connection.isReady && connection.client.isReady) return connection
+  const inFlight = connection.connecting
+  if (inFlight) return (await inFlight) ? connection : null
+  const attempt = startRemote(connection)
+  connection.connecting = attempt
+  const ok = await attempt
+  connection.connecting = null
+  if (!ok && !quietly) {
+    const failure = connection.failure
+    if (failure) {
+      toast(`Could not connect to ${connection.displayName}: ${remoteFailureSummary(failure)}`, 'error', [describeDetail(failure), connection.hint].filter((part): part is string => part !== null && part.length > 0).join('\n\n'))
+    }
+  }
+  return ok ? connection : null
+}
+
+function describeDetail(failure: BackendFailure): string {
+  switch (failure.kind) {
+    case 'exited':
+      return failure.tail
+    case 'transport':
+      return failure.message
+    case 'incompatible':
+      return failure.detail
+    case 'notFound':
+      return failure.searched.join('\n')
+  }
+}
+
+async function startRemote(connection: RemoteConnection): Promise<boolean> {
+  connection.update((c) => {
+    c.state = { kind: 'connecting' }
+    c.hint = null
+  })
+  const launch = await launchOptions()
+  // The login shell's environment carries SSH_AUTH_SOCK and the user's PATH
+  // (a Homebrew ssh, say); no key is passed along. `--mock` applies to every backend.
+  try {
+    const result = await connection.client.start({ mock: mockRequested(launch), host: connection.host })
+    connection.update((c) => (c.state = { kind: 'ready', result }))
+    const who = result.host ? `${result.host.user}@${result.host.hostname}` : connection.host.address
+    appendRemoteLog(connection, `connected: ctx ${result.ctx_version} on ${who}`)
+    return true
+  } catch (error) {
+    const failure = connection.client.lastStartFailure ?? failureOf(error)
+    connection.update((c) => {
+      c.state = { kind: 'failed', failure }
+      c.hint = remoteHint(failure, c.client.stderrLog, c.host)
+    })
+    appendRemoteLog(connection, `connection failed: ${remoteFailureSummary(failure)}`, 'error')
+    return false
+  }
+}
+
+/// `disconnect(_:)`: closes the host's projects (kept remembered) and stops
+/// its ssh. Running tasks on the host are cancelled by the server as its
+/// stdin closes.
+async function disconnectHost(host: SSHHost): Promise<void> {
+  const connection = remoteConnections.get(host.id)
+  if (!connection) return
+  for (const project of projectsOn(get(), host.id)) await closeProject(project.id, false)
+  await connection.client.stop()
+  connection.update((c) => {
+    c.state = { kind: 'disconnected' }
+    c.hint = null
+  })
+}
+
+/// `reconnect(_:)`: reconnects a host after a failure or a dropped link and
+/// reopens the projects the app still lists for it.
+async function reconnectHost(host: SSHHost): Promise<void> {
+  const remembered = projectsOn(get(), host.id).map((project) => project.root)
+  const connection = remoteConnections.get(host.id)
+  if (connection && connection.client.isRunning) await connection.client.stop()
+  if (!(await connectHost(host))) return
+  for (const root of remembered) await openProject(root, { host, select: false, restoreSession: true })
+  if (remembered.length === 0) {
+    for (const key of getPref('openProjectPaths')) {
+      const ref = decodeRemoteProject(key)
+      if (ref && ref.hostId === host.id) await openProject(ref.path, { host, select: false, restoreSession: true })
+    }
+  }
+}
+
+/// `handleRemoteExit(_:code:tail:)`: the link to a host went away (ssh
+/// exited): its projects' runs are over, the rows stay with the host marked
+/// failed, Reconnect in the sidebar brings them back. No automatic retry: a
+/// dropped VPN would otherwise spawn ssh every second.
+function handleRemoteExit(connection: RemoteConnection, code: number, tail: string): void {
+  const name = connection.displayName
+  for (const project of projectsOn(get(), connection.id)) {
+    for (const chat of project.allChats) {
+      if (!chat.isRunning) continue
+      chat.finish(
+        { project_id: project.id, session_id: chat.sessionId, task_id: null, status: 'failed', error: `Connection to ${name} lost (ssh exited with code ${code})`, error_kind: 'backend_exited' },
+        'stopped',
+      )
+    }
+    project.runningSessionIds = new Set()
+    project.switchingModel = null
+    project.indexProgress = null
+    project.touch()
+  }
+  const failure: BackendFailure = { kind: 'exited', code, tail }
+  connection.update((c) => {
+    c.state = { kind: 'failed', failure }
+    c.hint = remoteHint(failure, c.client.stderrLog, c.host)
+  })
+  appendRemoteLog(connection, `ssh exited (code ${code})`, 'error')
+  toast(`Lost the connection to ${name} (ssh exited with code ${code}).`, 'error', tail.length === 0 ? undefined : tail)
+  refreshAttention()
+}
+
+function appendRemoteLog(connection: RemoteConnection, message: string, level = 'info'): void {
+  handle({ kind: 'log', level, message }, connection)
+}
+
+/// `chooseRemoteProject(host:)`: the remote folder picker (Settings → Remote
+/// hosts first when no host is configured).
+function chooseRemoteProject(host: SSHHost | null = null): void {
+  const hosts = SSHHosts.items()
+  if (hosts.length === 0 && host === null) {
+    openSettings(SETTINGS_TAB_REMOTE_HOSTS)
+    toast('Add an SSH host first; then projects on it can be opened.', 'info')
+    return
+  }
+  remotePickerCounter += 1
+  patch({ remotePicker: { id: remotePickerCounter, host: host ?? (hosts.length === 1 ? (hosts[0] ?? null) : null) } })
+}
+
+/** `listRemoteDirectory(_:on:)`: `fs/list` on the host (connecting first), for the picker. */
+async function listRemoteDirectory(path: string | null, host: SSHHost): Promise<FsListing> {
+  const connection = await connectHost(host, true)
+  if (!connection) {
+    const failure = remoteConnections.get(host.id)?.failure ?? null
+    throw BackendError.transport(failure ? remoteFailureSummary(failure) : `${hostDisplayName(host)} is not connected`)
+  }
+  return connection.client.fsList(path, true)
+}
+
+/// `reopenRememberedRemoteProjects()`: at launch, every remembered open
+/// project on a host, each host in parallel, without blocking anything. A
+/// host that cannot be reached keeps its rows out of the sidebar and its
+/// state in the Remote section; the folders stay remembered.
+async function reopenRememberedRemoteProjects(): Promise<void> {
+  if (remoteRestoreStarted) return
+  remoteRestoreStarted = true
+  const byHost = new Map<string, string[]>()
+  for (const key of getPref('openProjectPaths')) {
+    const ref = decodeRemoteProject(key)
+    if (!ref) continue
+    if (!SSHHosts.host(ref.hostId)) {
+      forgetOpenProject(key)
+      continue
+    }
+    byHost.set(ref.hostId, [...(byHost.get(ref.hostId) ?? []), ref.path])
+  }
+  const last = getPref('lastSelectedProjectId')
+  try {
+    await Promise.all(
+      [...byHost.entries()].map(async ([hostId, paths]) => {
+        const host = SSHHosts.host(hostId)
+        if (!host) return
+        const connection = await connectHost(host, true)
+        if (!connection) {
+          // Its loading rows go; the host row says why.
+          const keys = new Set(paths.map((path) => projectKey(path, hostId)))
+          patch({ openingProjectPaths: get().openingProjectPaths.filter((key) => !keys.has(key)) })
+          return
+        }
+        for (const path of paths) {
+          const project = await openProject(path, { host, select: false, restoreSession: false })
+          if (project && project.id === last && get().selectedProjectId === null) selectRestoredProject(project.id)
+        }
+      }),
+    )
+  } finally {
+    restoreOrder = []
+    if (byHost.size > 0 && get().selectedProjectId === null) {
+      const project = get().projects[0]
+      if (project) selectRestoredProject(project.id)
+      else if (get().sidebarItem === 'chat') setSidebarItem('welcome')
+    }
+  }
+}
+
+/** `saveHost(_:)`: adds or updates a host; a connected host keeps its connection until it connects next. */
+function saveHost(host: SSHHost): SSHHost {
+  const normalized = SSHHosts.upsert(host)
+  remoteConnections.get(normalized.id)?.update((c) => (c.host = normalized))
+  RecentProjects.renameHost(normalized.id, hostDisplayName(normalized))
+  bumpStore()
+  return normalized
+}
+
+/// `removeHost(_:)`: disconnects it, closes its projects, forgets its
+/// recents and remembered-open folders, drops it from Settings.
+async function removeHost(host: SSHHost): Promise<void> {
+  await disconnectHost(host)
+  const connection = remoteConnections.get(host.id)
+  remoteConnections.delete(host.id)
+  if (connection) await connection.client.remove()
+  SSHHosts.remove(host.id)
+  for (const key of getPref('openProjectPaths')) {
+    if (decodeRemoteProject(key)?.hostId === host.id) forgetOpenProject(key)
+  }
+  RecentProjects.forgetHost(host.id)
+  bumpStore()
+}
+
+/// `testHost(_:)`: `ssh <host> ctx serve` + `initialize` for the settings
+/// form: a saved host is tested on its own connection; an unsaved draft on
+/// a throwaway client that is stopped afterwards.
+async function testHost(host: SSHHost): Promise<HostTestResult> {
+  const probe = normalizeHost(host)
+  if (!hostIsValid(probe)) return { ok: false, message: "Enter the host's address first." }
+  const saved = SSHHosts.host(host.id)
+  if (saved && sameHost(saved, probe)) {
+    const connection = await connectHost(probe, true)
+    if (connection) return { ok: true, summary: connection.statusText }
+    const failed = remoteConnections.get(host.id)
+    const failure = failed?.failure ?? null
+    return { ok: false, message: [failure ? remoteFailureSummary(failure) : 'Could not connect.', failed?.hint ?? null].filter((part): part is string => part !== null).join('\n') }
+  }
+  const client = new BackendClient(`probe:${probe.id}:${Date.now()}`)
+  const launch = await launchOptions()
+  try {
+    const result = await client.start({ mock: mockRequested(launch), host: probe })
+    const who = result.host ? `${result.host.user}@${result.host.hostname} · ${result.host.os}` : hostTarget(probe)
+    await client.remove()
+    return { ok: true, summary: `ctx ${result.ctx_version} · ${who}` }
+  } catch (error) {
+    const failure = client.lastStartFailure ?? failureOf(error)
+    const hint = remoteHint(failure, client.stderrLog, probe)
+    await client.remove()
+    return { ok: false, message: [remoteFailureSummary(failure), hint].filter((part): part is string => part !== null).join('\n') }
+  }
 }
 
 // MARK: - The store
@@ -2394,11 +2824,24 @@ const actions: AppActions = {
   restartBackend,
   chooseProject,
   openProject,
+  openRecent,
   register,
   startLoads,
   closeProject,
   openSettings,
   selectProject,
+  remoteFor,
+  remoteOf,
+  backendFor,
+  connectHost,
+  disconnectHost,
+  reconnectHost,
+  removeHost,
+  saveHost,
+  testHost,
+  chooseRemoteProject,
+  setRemotePicker: (request) => patch({ remotePicker: request }),
+  listRemoteDirectory,
   selectSession,
   newChat,
   requestSuggestion,
@@ -2484,6 +2927,7 @@ function initialFields(): AppFields {
     restoringSessionId: null,
     rewindRequest: null,
     rewindInFlight: false,
+    remotePicker: null,
     version: 0,
   }
 }
@@ -2500,8 +2944,9 @@ ChatState.changeSink = (chat) => {
   bumpStore()
 }
 ProjectState.changeSink = () => bumpStore()
+RemoteConnection.changeSink = () => bumpStore()
 
-backend.onNotification = (notification) => get().handle(notification)
+backend.onNotification = (notification) => get().handle(notification, null)
 
 notifier.onOpen = (projectId, sessionId) => {
   get().selectProject(projectId)

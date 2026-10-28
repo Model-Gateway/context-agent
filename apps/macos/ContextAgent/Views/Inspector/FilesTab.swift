@@ -2,10 +2,11 @@ import SwiftUI
 import AppKit
 
 /// The Inspector Files tab: the selected project's tree, read from disk one
-/// folder at a time as it is expanded. Changed files carry their git status
-/// letter and folders holding changes a dot; a click opens a file in the
-/// Editor tab, the context menu has the usual path actions (including Open
-/// with Default Editor).
+/// folder at a time as it is expanded (through `fs/list` on the project's
+/// connection for a project on a remote host). Changed files carry their
+/// git status letter and folders holding changes a dot; a click opens a
+/// file in the Editor tab, the context menu has the usual path actions
+/// (including Open with Default Editor; Finder actions only locally).
 struct FilesTab: View {
     @Environment(AppState.self) private var appState
 
@@ -29,22 +30,30 @@ struct FileNode: Identifiable, Equatable {
     var id: String { path }
 }
 
-/// Lazily loaded directory listings of one project root.
+/// Lazily loaded directory listings of one project root: `FileManager`
+/// for a local project, `fs/list` on `remote` for one on a host.
 @MainActor
 @Observable
 final class FileTreeModel {
     let root: String
+    /// The host's connection, nil for a local project.
+    let remote: BackendClient?
     /// Relative directory path ("" for the root) → its sorted entries.
     private(set) var children: [String: [FileNode]] = [:]
     var expanded: Set<String> = []
     var selectedPath: String?
+    /// Folders whose remote listing is in flight.
+    private(set) var loading: Set<String> = []
 
     /// Never listed: git internals and Finder metadata.
     private static let hiddenNames: Set<String> = [".git", ".DS_Store"]
 
-    init(root: String) {
+    init(root: String, remote: BackendClient? = nil) {
         self.root = root
+        self.remote = remote
     }
+
+    var isRemote: Bool { remote != nil }
 
     func toggle(_ node: FileNode) {
         guard node.isDirectory else { return }
@@ -91,6 +100,10 @@ final class FileTreeModel {
     }
 
     private func load(_ path: String) {
+        if let remote {
+            loadRemote(path, through: remote)
+            return
+        }
         let url = path.isEmpty ? URL(fileURLWithPath: root) : URL(fileURLWithPath: root).appendingPathComponent(path)
         let keys: [URLResourceKey] = [.isDirectoryKey]
         guard let entries = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys) else {
@@ -106,6 +119,24 @@ final class FileTreeModel {
         .sorted { lhs, rhs in
             if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
             return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    /// `fs/list` of the folder on the host; the rows appear when it answers
+    /// (an empty list meanwhile, so the chevron shows at once).
+    private func loadRemote(_ path: String, through client: BackendClient) {
+        guard !loading.contains(path) else { return }
+        loading.insert(path)
+        if children[path] == nil { children[path] = [] }
+        let absolute = path.isEmpty ? root : root + "/" + path
+        Task { [weak self] in
+            let listing = try? await client.fsList(path: absolute)
+            guard let self else { return }
+            self.loading.remove(path)
+            guard let listing else { return }
+            self.children[path] = listing.entries
+                .filter { !Self.hiddenNames.contains($0.name) }
+                .map { FileNode(path: path.isEmpty ? $0.name : path + "/" + $0.name, name: $0.name, isDirectory: $0.isDir) }
         }
     }
 
@@ -152,6 +183,7 @@ private struct FileTreePane: View {
                             selected: tree.selectedPath == row.node.path,
                             statusCode: changes.files[row.node.path],
                             containsChanges: changes.folders.contains(row.node.path),
+                            localActions: !project.isRemote,
                             open: { open(row.node) },
                             perform: { action in appState.reveal(path: row.node.path, in: project, action: action) }
                         )
@@ -168,15 +200,16 @@ private struct FileTreePane: View {
 
     private var toolbar: some View {
         HStack(spacing: 6) {
-            Image(systemName: Icons.folder)
+            Image(systemName: project.isRemote ? Icons.remoteProject : Icons.folder)
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.textTertiary)
                 .accessibilityHidden(true)
-            Text(verbatim: project.name)
+            Text(verbatim: project.isRemote ? project.locationLabel : project.name)
                 .font(Theme.Font.caption.weight(.medium))
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .help(project.locationLabel)
             Spacer(minLength: 0)
             IconButton("arrow.down.right.and.arrow.up.left", label: "Collapse all folders", size: 11) {
                 withAnimation(.easeOut(duration: 0.15)) { tree.collapseAll() }
@@ -210,6 +243,8 @@ private struct FileRow: View, Equatable {
     var selected: Bool
     var statusCode: String?
     var containsChanges: Bool
+    /// Finder and the default editor can reach the file (a local project).
+    var localActions: Bool = true
     var open: () -> Void
     var perform: (PathAction) -> Void
 
@@ -221,6 +256,7 @@ private struct FileRow: View, Equatable {
     static func == (lhs: FileRow, rhs: FileRow) -> Bool {
         lhs.node == rhs.node && lhs.depth == rhs.depth && lhs.expanded == rhs.expanded
             && lhs.selected == rhs.selected && lhs.statusCode == rhs.statusCode && lhs.containsChanges == rhs.containsChanges
+            && lhs.localActions == rhs.localActions
     }
 
     var body: some View {
@@ -273,9 +309,13 @@ private struct FileRow: View, Equatable {
             }
             if !node.isDirectory {
                 Button("Open in Editor") { perform(.openInEditor) }
-                Button("Open with Default Editor") { perform(.openWithEditor) }
+                if localActions {
+                    Button("Open with Default Editor") { perform(.openWithEditor) }
+                }
             }
-            Button("Reveal in Finder") { perform(.revealInFinder) }
+            if localActions {
+                Button("Reveal in Finder") { perform(.revealInFinder) }
+            }
             Button("Copy Path") { perform(.copyPath) }
         }
         .accessibilityLabel(accessibilityText)

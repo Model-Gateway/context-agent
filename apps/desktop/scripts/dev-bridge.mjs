@@ -18,7 +18,14 @@
 // result.json into that directory), BRIDGE_UPDATE=<version> (plays an
 // installed copy whose feed offers that version, for the Updates settings and
 // the update sheet; the updater is off otherwise, as in every build that is
-// not installed).
+// not installed), CTX_SSH_BINARY (the ssh client the remote hosts use; the
+// self-test points it at a shim that runs the remote command locally with
+// `sh -c`, default `ssh`).
+//
+// Like the Rust shell it stands in for, the bridge keeps one `ctx serve`
+// child per backend id: `local` is the ctx binary, any other id is
+// `ssh … ctx serve` for the host `backend_start` was given, and every event
+// carries its `backend`.
 
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -57,28 +64,83 @@ function emit(event, payload) {
   for (const res of listeners) res.write(frame)
 }
 
-// --- ctx serve child --------------------------------------------------------
+// --- ctx serve children (one per backend id) ----------------------------------
 
-let child = null
-let generation = 0
+const sshBinary = process.env.CTX_SSH_BINARY || 'ssh'
+/** The remote PATH prefix and ssh options of `src-tauri/src/backend/launch.rs`. */
+const REMOTE_PATH = '$HOME/.cargo/bin:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:$PATH'
+const SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4', '-o', 'ClearAllForwardings=yes', '-T']
+
+function shellQuote(word) {
+  const plain = word.length > 0 && /^[\p{L}\p{N}\-_./~=:+@%]+$/u.test(word)
+  if (plain && !word.startsWith('~')) return word
+  if (plain && word.startsWith('~/')) return '~/' + shellQuote(word.slice(2))
+  return `'${word.replace(/'/g, "'\\''")}'`
+}
+
+/** `BackendLaunch.sshArguments(host:)`: the fixed options, port, key, user, extras, then `--` and the address. */
+function sshArguments(host) {
+  const args = [...SSH_OPTIONS]
+  if (host.port > 0) args.push('-p', String(host.port))
+  if (host.identityFile) args.push('-i', host.identityFile.replace(/^~(?=\/|$)/, process.env.HOME ?? '~'))
+  if (host.user) args.push('-l', host.user)
+  args.push(...(host.extraArguments ?? []).filter(Boolean))
+  args.push('--', host.address)
+  return args
+}
+
+/** `BackendLaunch.remoteCommand(host:serve:)`. */
+function remoteCommand(host, serveArgs) {
+  const words = [host.ctxPath || 'ctx', ...serveArgs].map(shellQuote).join(' ')
+  return `env PATH="${REMOTE_PATH}" ${words}`
+}
+
+/** @type {Map<string, { child, generation, pending: Map, stderrRing: string[], stopping: boolean, binary: string }>} */
+const backends = new Map()
 let nextId = 1
-const pending = new Map()
-let stderrRing = []
-let stopping = false
 
-function startBackend({ mock, data_dir }) {
-  stopBackendNow()
-  const args = ['serve']
-  const useMock = mock ?? !real
-  if (useMock) args.push('--mock')
-  const dir = data_dir || dataDir
-  if (dir) args.push('--data-dir', dir)
+function backendId(a) {
+  const id = typeof a?.backend === 'string' ? a.backend.trim() : ''
+  return id.length > 0 ? id : 'local'
+}
+
+function entryFor(id) {
+  let entry = backends.get(id)
+  if (!entry) {
+    entry = { child: null, generation: 0, pending: new Map(), stderrRing: [], stopping: false, binary }
+    backends.set(id, entry)
+  }
+  return entry
+}
+
+function startBackend(a) {
+  const id = backendId(a)
+  const entry = entryFor(id)
+  stopBackendNow(entry)
+  const serveArgs = ['serve']
+  const useMock = a.mock ?? !real
+  if (useMock) serveArgs.push('--mock')
+  const host = a.host ?? null
+  let program
+  let args
+  if (host) {
+    // A remote host: ssh (or the shim) runs `ctx serve` there; the data dir is the host's.
+    program = sshBinary
+    args = [...sshArguments(host), remoteCommand(host, serveArgs)]
+  } else {
+    const dir = a.data_dir || dataDir
+    if (dir) serveArgs.push('--data-dir', dir)
+    program = binary
+    args = serveArgs
+  }
   const env = { ...process.env, CTX_DESKTOP: '1' }
   if (useMock) env.CTX_MOCK_PACE_MS = env.CTX_MOCK_PACE_MS || '20'
-  const gen = ++generation
-  stopping = false
-  child = spawn(binary, args, { env, stdio: ['pipe', 'pipe', 'pipe'] })
-  stderrRing = []
+  const gen = ++entry.generation
+  entry.stopping = false
+  entry.binary = host ? `ssh ${host.user ? host.user + '@' : ''}${host.address}` : binary
+  const child = spawn(program, args, { env, stdio: ['pipe', 'pipe', 'pipe'] })
+  entry.child = child
+  entry.stderrRing = []
   let buffer = ''
   child.stdout.setEncoding('utf8')
   child.stdout.on('data', (chunk) => {
@@ -94,60 +156,77 @@ function startBackend({ mock, data_dir }) {
       } catch {
         continue
       }
-      if (frame.id !== undefined && frame.id !== null && pending.has(frame.id)) {
-        const { resolve: ok, reject } = pending.get(frame.id)
-        pending.delete(frame.id)
+      if (frame.id !== undefined && frame.id !== null && entry.pending.has(frame.id)) {
+        const { resolve: ok, reject } = entry.pending.get(frame.id)
+        entry.pending.delete(frame.id)
         if (frame.error) reject({ code: frame.error.code, message: frame.error.message, kind: frame.error.data?.kind })
         else ok(frame.result ?? null)
       } else if (frame.method) {
-        emit('backend:notification', { method: frame.method, params: frame.params ?? null })
+        emit('backend:notification', { backend: id, method: frame.method, params: frame.params ?? null })
       }
     }
   })
   child.stderr.setEncoding('utf8')
   child.stderr.on('data', (chunk) => {
     const lines = chunk.split('\n').filter(Boolean)
-    stderrRing.push(...lines)
-    if (stderrRing.length > 500) stderrRing = stderrRing.slice(-500)
-    emit('backend:stderr', { lines })
+    entry.stderrRing.push(...lines)
+    if (entry.stderrRing.length > 500) entry.stderrRing = entry.stderrRing.slice(-500)
+    emit('backend:stderr', { backend: id, lines })
   })
   child.on('error', (e) => {
-    stderrRing.push(String(e))
+    entry.stderrRing.push(String(e))
   })
   child.on('exit', (code) => {
     // Only this child's requests fail: a restart (a page reload) kills the
     // previous child after the new one already took requests.
-    for (const [id, p] of pending) {
+    for (const [requestId, p] of entry.pending) {
       if (p.gen !== gen) continue
-      pending.delete(id)
+      entry.pending.delete(requestId)
       p.reject({ code: -1, message: `ctx exited (${code})`, kind: 'transport' })
     }
-    if (gen === generation && !stopping) emit('backend:exited', { code: code ?? -1, tail: stderrRing.slice(-40).join('\n') })
-    if (gen === generation) child = null
+    if (gen === entry.generation && !entry.stopping) emit('backend:exited', { backend: id, code: code ?? -1, tail: entry.stderrRing.slice(-40).join('\n') })
+    if (gen === entry.generation) entry.child = null
   })
-  return { pid: child.pid ?? 0, binary, searched: [binary] }
+  return { pid: child.pid ?? 0, binary: entry.binary, searched: [program] }
 }
 
-function stopBackendNow() {
-  if (!child) return
-  stopping = true
+function stopBackendNow(entry) {
+  if (!entry?.child) return
+  entry.stopping = true
   try {
-    child.kill()
+    entry.child.kill()
   } catch {
     /* already gone */
   }
-  child = null
+  entry.child = null
 }
 
-function rpc(method, params) {
-  if (!child) return Promise.reject({ code: -1, message: 'the backend is not running', kind: 'not_running' })
-  const id = nextId++
+function rpc(id, method, params) {
+  const entry = backends.get(id)
+  if (!entry?.child) return Promise.reject({ code: -1, message: 'the backend is not running', kind: 'not_running' })
+  const requestId = nextId++
   return new Promise((ok, reject) => {
-    pending.set(id, { resolve: ok, reject, gen: generation })
-    const frame = { jsonrpc: '2.0', id, method }
+    entry.pending.set(requestId, { resolve: ok, reject, gen: entry.generation })
+    const frame = { jsonrpc: '2.0', id: requestId, method }
     if (params !== undefined && params !== null) frame.params = params
-    child.stdin.write(JSON.stringify(frame) + '\n')
+    entry.child.stdin.write(JSON.stringify(frame) + '\n')
   })
+}
+
+/** The `Host` aliases of ~/.ssh/config (no Include handling here). */
+function sshConfigHosts() {
+  try {
+    const text = readFileSync(join(process.env.HOME ?? '', '.ssh', 'config'), 'utf8')
+    const names = []
+    for (const raw of text.split('\n')) {
+      const parts = raw.trim().replace(/=/g, ' ').split(/\s+/)
+      if (parts[0]?.toLowerCase() !== 'host') continue
+      for (const name of parts.slice(1)) if (name && !/[*?!]/.test(name) && !names.includes(name)) names.push(name)
+    }
+    return names
+  } catch {
+    return []
+  }
 }
 
 // --- other shell commands -----------------------------------------------------
@@ -236,21 +315,33 @@ const commands = {
     return path
   },
   backend_start: (a) => startBackend(a ?? {}),
-  backend_stop: async () => {
-    if (child) {
+  backend_stop: async (a) => {
+    const id = backendId(a)
+    const entry = backends.get(id)
+    if (entry?.child) {
       try {
-        await Promise.race([rpc('shutdown'), new Promise((r) => setTimeout(r, 2000))])
+        await Promise.race([rpc(id, 'shutdown'), new Promise((r) => setTimeout(r, 2000))])
       } catch {
         /* ignore */
       }
     }
-    stopBackendNow()
+    stopBackendNow(entry)
     return null
   },
-  backend_state: () => (child ? { state: 'running', pid: child.pid } : { state: 'stopped' }),
-  backend_stderr: () => stderrRing,
+  backend_remove: async (a) => {
+    const id = backendId(a)
+    await commands.backend_stop(a)
+    if (id !== 'local') backends.delete(id)
+    return null
+  },
+  backend_state: (a) => {
+    const entry = backends.get(backendId(a))
+    return entry?.child ? { state: 'running', pid: entry.child.pid } : { state: 'stopped' }
+  },
+  backend_stderr: (a) => backends.get(backendId(a))?.stderrRing ?? [],
   backend_candidates: () => [binary],
-  rpc_request: (a) => rpc(a.method, a.params),
+  ssh_config_hosts: () => sshConfigHosts(),
+  rpc_request: (a) => rpc(backendId(a), a.method, a.params),
   secret_get: (a) => secrets.get(a.account) ?? null,
   secret_set: (a) => (secrets.set(a.account, a.value), null),
   secret_remove: (a) => (secrets.delete(a.account), null),
@@ -300,7 +391,10 @@ const commands = {
   terminal_open: (a) => {
     const id = String(nextTerminal++)
     const shell = osPlatform() === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/sh'
-    const proc = spawn(shell, osPlatform() === 'win32' ? [] : ['-i'], { cwd: a.cwd, env: { ...process.env, TERM: 'dumb' } })
+    // A project on a host: `ssh -t <host> 'cd <root>; exec $SHELL -l'` (the shim runs it here).
+    const proc = a.host
+      ? spawn(sshBinary, [...sshArguments(a.host).filter((arg) => arg !== '-T'), `cd ${shellQuote(a.cwd)}; exec $SHELL -l`], { env: { ...process.env, TERM: 'dumb' } })
+      : spawn(shell, osPlatform() === 'win32' ? [] : ['-i'], { cwd: a.cwd, env: { ...process.env, TERM: 'dumb' } })
     terminals.set(id, proc)
     const forward = (chunk) => emit('terminal:data', { id, data: chunk.toString('utf8').replace(/\n/g, '\r\n') })
     proc.stdout.on('data', forward)
@@ -367,6 +461,6 @@ createServer((req, res) => {
 })
 
 process.on('SIGINT', () => {
-  stopBackendNow()
+  for (const entry of backends.values()) stopBackendNow(entry)
   process.exit(0)
 })
