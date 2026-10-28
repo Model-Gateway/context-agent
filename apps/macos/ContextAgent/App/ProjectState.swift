@@ -76,10 +76,20 @@ final class ProjectState: Identifiable {
     /// Called for every newly created chat (AppState wires visibility).
     @ObservationIgnored var onChatCreated: ((ChatState) -> Void)?
 
-    init(info: ProjectInfo, models: ModelCatalog) {
+    /// The `ctx serve` this project lives in: the local backend, or the
+    /// connection of the host the project is on (every request about the
+    /// project goes through it).
+    let backend: BackendClient
+    /// The SSH host the project's files, index and chats are on; nil for a
+    /// local project.
+    let host: SSHHost?
+
+    init(info: ProjectInfo, models: ModelCatalog, backend: BackendClient? = nil, host: SSHHost? = nil) {
         self.id = info.projectId
         self.info = info
         self.models = models
+        self.backend = backend ?? BackendClient()
+        self.host = host
         self.runningSessionIds = info.runningSessionIds
     }
 
@@ -88,6 +98,16 @@ final class ProjectState: Identifiable {
     var name: String { info.name }
     var root: String { info.root }
     var rootURL: URL { URL(fileURLWithPath: info.root) }
+    var isRemote: Bool { host != nil }
+    /// What the preferences and recents key the project by (`RecentProject.key`).
+    var key: String { RecentProject.key(path: root, hostId: host?.id) }
+    /// "devbox" for a remote project's chips and tooltips, nil locally.
+    var hostLabel: String? { host?.displayName }
+    /// "~/code/app" locally, "devbox:/home/alice/code/app" on a host.
+    var locationLabel: String {
+        if let host { return "\(host.displayName):\(root)" }
+        return (root as NSString).abbreviatingWithTildeInPath
+    }
     var branch: String? { gitStatus?.branch ?? info.git?.branch }
     var isGitRepository: Bool { info.git != nil }
 
@@ -119,7 +139,7 @@ final class ProjectState: Identifiable {
     }
 
     /// The Inspector Files tab's tree; kept here so expanded folders survive tab switches.
-    @ObservationIgnored lazy var fileTree = FileTreeModel(root: info.root)
+    @ObservationIgnored lazy var fileTree = FileTreeModel(root: info.root, remote: host == nil ? nil : backend)
 
     var unseenCount: Int {
         chats.values.reduce(0) { $0 + ($1.unseen != nil ? 1 : 0) }
@@ -254,7 +274,7 @@ final class ProjectState: Identifiable {
     /// await it instead of skipping the load (session restore at launch).
     @ObservationIgnored private(set) var sessionsLoad: Task<Void, Never>?
 
-    func loadSessions(backend: BackendClient) async {
+    func loadSessions() async {
         let load = Task { [weak self] in
             guard let self else { return }
             self.sessionsLoading = true
@@ -273,7 +293,7 @@ final class ProjectState: Identifiable {
     }
 
     /// `git/status` (+ `git/diff` for the selected path). Errors stay inline in the Changes tab.
-    func refreshGit(backend: BackendClient) async {
+    func refreshGit() async {
         guard isGitRepository else {
             gitStatus = nil
             gitError = nil
@@ -293,14 +313,14 @@ final class ProjectState: Identifiable {
                 diff = nil
             }
             if selectedChangePath != nil {
-                await loadDiff(backend: backend)
+                await loadDiff()
             }
         } catch {
             gitError = error.localizedDescription
         }
     }
 
-    func loadDiff(backend: BackendClient) async {
+    func loadDiff() async {
         guard let path = selectedChangePath else {
             diff = nil
             return
@@ -323,7 +343,7 @@ final class ProjectState: Identifiable {
     }
 
     /// Fresh `project/status` (index stats, git, model).
-    func refreshStatus(backend: BackendClient) async {
+    func refreshStatus() async {
         if let fresh = try? await backend.projectStatus(id: id) {
             info = fresh
             let backendRunning = fresh.runningSessionIds
@@ -334,7 +354,7 @@ final class ProjectState: Identifiable {
     }
 
     /// Recent tasks and memories for the Project tab and the palette.
-    func loadExtras(backend: BackendClient) async {
+    func loadExtras() async {
         extrasLoading = true
         defer { extrasLoading = false }
         var failure: String?
@@ -351,7 +371,7 @@ final class ProjectState: Identifiable {
         extrasError = failure
     }
 
-    func refreshModels(backend: BackendClient, force: Bool) async {
+    func refreshModels(force: Bool) async {
         models.loading = true
         defer { models.loading = false }
         do {
@@ -363,7 +383,7 @@ final class ProjectState: Identifiable {
         }
     }
 
-    func runDoctor(backend: BackendClient, probe: Bool) async {
+    func runDoctor(probe: Bool) async {
         doctorRunning = true
         defer { doctorRunning = false }
         do {
@@ -387,7 +407,7 @@ extension AppState {
     func renameSession(_ id: String, title: String) async {
         guard let project = selectedProject else { return }
         do {
-            let summary = try await backend.sessionRename(projectId: project.id, sessionId: id, title: title.trimmingCharacters(in: .whitespacesAndNewlines))
+            let summary = try await project.backend.sessionRename(projectId: project.id, sessionId: id, title: title.trimmingCharacters(in: .whitespacesAndNewlines))
             project.upsert(session: summary)
         } catch {
             toasts.show("Could not rename the chat: \(error.localizedDescription)", kind: .error, details: error.localizedDescription)
@@ -397,7 +417,7 @@ extension AppState {
     func deleteSession(_ id: String) async {
         guard let project = selectedProject else { return }
         do {
-            try await backend.sessionDelete(projectId: project.id, sessionId: id)
+            try await project.backend.sessionDelete(projectId: project.id, sessionId: id)
             project.removeSession(id)
             if selectedSessionId == id { newChat() }
             refreshAttention()
@@ -414,7 +434,7 @@ extension AppState {
         project.models.switchError = nil
         defer { project.switchingModel = nil }
         do {
-            let result = try await backend.modelsSwitch(projectId: project.id, model: model)
+            let result = try await project.backend.modelsSwitch(projectId: project.id, model: model)
             project.info.model = result.model
             project.models.current = result.model
             project.models.lastSwitch = result
@@ -475,7 +495,7 @@ extension AppState {
         if force {
             guard !project.models.loading || project.models.models.isEmpty else { return }
             Task { await modelsDev.load(force: true) }
-            await project.refreshModels(backend: backend, force: true)
+            await project.refreshModels(force: true)
         } else {
             await prefetchModels(project)
         }
@@ -486,8 +506,8 @@ extension AppState {
     func prefetchModels(_ project: ProjectState) async {
         // models.dev rides along (disk cache, refetched once a day).
         Task { await modelsDev.load() }
-        guard connection.isReady, project.models.needsLoad, !project.models.loading else { return }
-        await project.refreshModels(backend: backend, force: false)
+        guard project.backend.isReady, project.models.needsLoad, !project.models.loading else { return }
+        await project.refreshModels(force: false)
     }
 
     /// `permissions/set`; appends a notice to the selected chat.
@@ -497,7 +517,7 @@ extension AppState {
     func restorePermissionProfile(_ project: ProjectState) async {
         guard let saved = preferences.permissionProfiles[project.root], saved != project.info.permissionProfile else { return }
         do {
-            project.info = try await backend.permissionsSet(projectId: project.id, profile: saved)
+            project.info = try await project.backend.permissionsSet(projectId: project.id, profile: saved)
         } catch {
             preferences.permissionProfiles.removeValue(forKey: project.root)
         }
@@ -506,7 +526,7 @@ extension AppState {
     func setApprovalMode(_ profile: String) async {
         guard let project = selectedProject else { return }
         do {
-            let info = try await backend.permissionsSet(projectId: project.id, profile: profile)
+            let info = try await project.backend.permissionsSet(projectId: project.id, profile: profile)
             project.info = info
             preferences.permissionProfiles[project.root] = info.permissionProfile
             selectedChat?.transcript.append(.notice(NoticeItem(lines: ["Approval mode set to \(Self.approvalModeLabel(info.permissionProfile))"])))
@@ -518,7 +538,7 @@ extension AppState {
     func rebuildIndex() async {
         guard let project = selectedProject else { return }
         do {
-            try await backend.indexRebuild(id: project.id)
+            try await project.backend.indexRebuild(id: project.id)
             project.indexProgress = IndexProgress(projectId: project.id, done: 0, total: 0)
             project.lastIndexReady = nil
             project.info.indexing = true
@@ -530,7 +550,7 @@ extension AppState {
     /// `doctor/run` for the selected project (results inline in its Doctor card), else without a project (Settings).
     func runDoctor(probe: Bool) async {
         if let project = selectedProject {
-            await project.runDoctor(backend: backend, probe: probe)
+            await project.runDoctor(probe: probe)
             return
         }
         doctorRunning = true
@@ -546,11 +566,11 @@ extension AppState {
     // MARK: Git / paths
 
     func refreshGit(project: ProjectState) async {
-        await project.refreshGit(backend: backend)
+        await project.refreshGit()
     }
 
     func loadProjectExtras(project: ProjectState) async {
-        await project.loadExtras(backend: backend)
+        await project.loadExtras()
     }
 
     /// Changes tab selection → loads the diff and remembers the path.
@@ -561,12 +581,12 @@ extension AppState {
         } else {
             preferences.lastChangesPath.removeValue(forKey: project.id)
         }
-        await project.loadDiff(backend: backend)
+        await project.loadDiff()
     }
 
     func setShowStaged(_ staged: Bool, in project: ProjectState) async {
         project.showStaged = staged
-        await project.loadDiff(backend: backend)
+        await project.loadDiff()
     }
 
     func reveal(path: String, in project: ProjectState, action: PathAction) {
@@ -578,12 +598,20 @@ extension AppState {
             select(project: project.id, restoreSession: false)
             sidebarItem = .changes
             Task {
-                if project.gitStatus == nil { await project.refreshGit(backend: backend) }
+                if project.gitStatus == nil { await project.refreshGit() }
                 await selectChange(path: relative, in: project)
             }
         case .revealInFinder:
+            guard !project.isRemote else {
+                toasts.show("The file is on \(project.host?.displayName ?? "the remote host"); Finder cannot show it.", kind: .info)
+                return
+            }
             NSWorkspace.shared.activateFileViewerSelecting([url])
         case .openWithEditor:
+            guard !project.isRemote else {
+                toasts.show("The file is on \(project.host?.displayName ?? "the remote host"); open it in the Editor tab instead.", kind: .info)
+                return
+            }
             openInEditor(url)
         case .openInEditor:
             openInEditor(path: Self.relativePath(absolute, root: project.root), in: project)
@@ -609,7 +637,7 @@ extension AppState {
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled, let self, let project else { return }
             self.gitRefreshTasks[project.id] = nil
-            await project.refreshGit(backend: self.backend)
+            await project.refreshGit()
         }
     }
 }

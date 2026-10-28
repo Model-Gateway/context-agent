@@ -182,32 +182,48 @@ pub(super) fn with_agent_tool_outputs(store: &SessionStore, events: Vec<AgentEve
 pub(super) const MAX_IMAGES_PER_RUN: usize = 20;
 pub(super) const MAX_FILES_PER_RUN: usize = 20;
 
-/// The image files of a `task/run`, read and encoded. A missing file, an
+/// The images of a `task/run`, read and encoded: paths on this machine, or
+/// bytes sent inline by a client on another one. A missing file, an
 /// unsupported format or an oversized file is `-32602`, so the client hears
 /// about it before a run starts.
-pub(super) fn read_images(paths: &[String]) -> RpcResult<Vec<ImageInput>> {
-    if paths.len() > MAX_IMAGES_PER_RUN {
-        return Err(RpcError::invalid_params(format!("at most {MAX_IMAGES_PER_RUN} images per message ({} sent)", paths.len())));
+pub(super) fn read_images(images: &[ImageParam]) -> RpcResult<Vec<ImageInput>> {
+    if images.len() > MAX_IMAGES_PER_RUN {
+        return Err(RpcError::invalid_params(format!("at most {MAX_IMAGES_PER_RUN} images per message ({} sent)", images.len())));
     }
-    paths
+    images
         .iter()
-        .map(|path| {
-            if !Path::new(path).is_absolute() {
-                return Err(RpcError::invalid_params(format!("image path must be absolute: {path}")));
+        .map(|image| match image {
+            ImageParam::Path(path) => {
+                if !Path::new(path).is_absolute() {
+                    return Err(RpcError::invalid_params(format!("image path must be absolute: {path}")));
+                }
+                let len = std::fs::metadata(path).map_err(|e| RpcError::invalid_params(format!("cannot read image {path}: {e}")))?.len();
+                if len > ImageInput::MAX_BYTES as u64 {
+                    return Err(RpcError::invalid_params(format!("image {path} is larger than {} MB", ImageInput::MAX_BYTES >> 20)));
+                }
+                let bytes = std::fs::read(path).map_err(|e| RpcError::invalid_params(format!("cannot read image {path}: {e}")))?;
+                ImageInput::from_bytes(&bytes, Some(path.clone())).ok_or_else(|| RpcError::invalid_params(format!("{path} is not a PNG, JPEG, GIF or WebP image")))
             }
-            let len = std::fs::metadata(path).map_err(|e| RpcError::invalid_params(format!("cannot read image {path}: {e}")))?.len();
-            if len > ImageInput::MAX_BYTES as u64 {
-                return Err(RpcError::invalid_params(format!("image {path} is larger than {} MB", ImageInput::MAX_BYTES >> 20)));
+            ImageParam::Inline { data, name } => {
+                use base64::Engine as _;
+                let label = name.clone().unwrap_or_else(|| "image".to_string());
+                // 4 base64 characters per 3 bytes: refuse before decoding a huge payload.
+                if data.len() > ImageInput::MAX_BYTES / 3 * 4 + 4 {
+                    return Err(RpcError::invalid_params(format!("image {label} is larger than {} MB", ImageInput::MAX_BYTES >> 20)));
+                }
+                let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|e| RpcError::invalid_params(format!("image {label} is not valid base64: {e}")))?;
+                if bytes.len() > ImageInput::MAX_BYTES {
+                    return Err(RpcError::invalid_params(format!("image {label} is larger than {} MB", ImageInput::MAX_BYTES >> 20)));
+                }
+                ImageInput::from_bytes(&bytes, name.clone()).ok_or_else(|| RpcError::invalid_params(format!("{label} is not a PNG, JPEG, GIF or WebP image")))
             }
-            let bytes = std::fs::read(path).map_err(|e| RpcError::invalid_params(format!("cannot read image {path}: {e}")))?;
-            ImageInput::from_bytes(&bytes, Some(path.clone())).ok_or_else(|| RpcError::invalid_params(format!("{path} is not a PNG, JPEG, GIF or WebP image")))
         })
         .collect()
 }
 
-/// The text files of a `task/run`, read and cut at `FileInput::MAX_BYTES`.
-/// A missing or binary file is `-32602`, so the client hears about it before
-/// a run starts.
+/// The text files of a `task/run`, read and cut at `FileInput::MAX_BYTES`:
+/// paths on this machine, or their text sent inline. A missing or binary
+/// file is `-32602`, so the client hears about it before a run starts.
 pub(super) fn read_files(files: &[FileParam]) -> RpcResult<Vec<FileInput>> {
     if files.len() > MAX_FILES_PER_RUN {
         return Err(RpcError::invalid_params(format!("at most {MAX_FILES_PER_RUN} files per message ({} sent)", files.len())));
@@ -215,22 +231,106 @@ pub(super) fn read_files(files: &[FileParam]) -> RpcResult<Vec<FileInput>> {
     files
         .iter()
         .map(|file| {
-            let path = Path::new(&file.path);
-            if !path.is_absolute() {
-                return Err(RpcError::invalid_params(format!("file path must be absolute: {}", file.path)));
+            if let Some(content) = &file.content {
+                let name = file
+                    .name
+                    .clone()
+                    .or_else(|| file.path.as_deref().and_then(|p| Path::new(p).file_name()).map(|n| n.to_string_lossy().into_owned()))
+                    .ok_or_else(|| RpcError::invalid_params("an inline file needs a name"))?;
+                // Listed in history under its name (the client's path, when
+                // it sent one, is on a machine this server cannot read).
+                let shown = file.path.clone().unwrap_or_else(|| name.clone());
+                return FileInput::from_bytes(name.clone(), content.as_bytes(), Some(shown)).ok_or_else(|| RpcError::invalid_params(format!("{name} is not a UTF-8 text file")));
             }
-            let cannot_read = |e: std::io::Error| RpcError::invalid_params(format!("cannot read file {}: {e}", file.path));
+            let Some(path_text) = file.path.as_deref() else {
+                return Err(RpcError::invalid_params("a file needs a path or inline content"));
+            };
+            let path = Path::new(path_text);
+            if !path.is_absolute() {
+                return Err(RpcError::invalid_params(format!("file path must be absolute: {path_text}")));
+            }
+            let cannot_read = |e: std::io::Error| RpcError::invalid_params(format!("cannot read file {path_text}: {e}"));
             let mut bytes = Vec::new();
             // One byte past the limit tells a cut file from one that fits.
             std::io::Read::read_to_end(&mut std::io::Read::take(std::fs::File::open(path).map_err(cannot_read)?, FileInput::MAX_BYTES as u64 + 1), &mut bytes).map_err(cannot_read)?;
             let len = std::fs::metadata(path).map_err(cannot_read)?.len();
-            let name = file.name.clone().unwrap_or_else(|| path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| file.path.clone()));
-            let mut input = FileInput::from_bytes(name, &bytes, Some(file.path.clone()))
-                .ok_or_else(|| RpcError::invalid_params(format!("{} is not a UTF-8 text file", file.path)))?;
+            let name = file.name.clone().unwrap_or_else(|| path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path_text.to_string()));
+            let mut input = FileInput::from_bytes(name, &bytes, Some(path_text.to_string()))
+                .ok_or_else(|| RpcError::invalid_params(format!("{path_text} is not a UTF-8 text file")))?;
             input.omitted_bytes = len.saturating_sub(input.content.len() as u64);
             Ok(input)
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Host
+// ---------------------------------------------------------------------------
+
+/// `initialize.host`: the machine this server runs on.
+pub(super) fn host_info() -> HostInfo {
+    let home = ctx_core::platform::home_dir().map(|p| p.display().to_string()).unwrap_or_default();
+    let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default();
+    HostInfo { hostname: local_hostname(), user, home_dir: home, os: std::env::consts::OS }
+}
+
+/// The machine's name: `gethostname` on Unix, else the environment.
+fn local_hostname() -> String {
+    #[cfg(unix)]
+    {
+        let mut buf = [0u8; 256];
+        // SAFETY: `buf` is a valid, writable buffer of the given length.
+        let rc = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
+        if rc == 0 {
+            let end = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
+            let name = String::from_utf8_lossy(&buf[..end]).trim().to_string();
+            if !name.is_empty() {
+                return name;
+            }
+        }
+    }
+    std::env::var("HOSTNAME").or_else(|_| std::env::var("COMPUTERNAME")).unwrap_or_default()
+}
+
+/// `fs/list`: the entries of a directory on this machine, for the desktop
+/// app's folder picker and file tree when it runs on another machine.
+/// `path` is `~`-expanded; absent or empty lists the home directory.
+/// Directories first, then files, each sorted by name; `.git` and Finder
+/// metadata are left out.
+pub(super) fn list_directory(path: Option<&str>, dirs_only: bool) -> RpcResult<FsListing> {
+    let home = ctx_core::platform::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+    let requested = match path.map(str::trim).filter(|p| !p.is_empty()) {
+        None | Some("~") => home.clone(),
+        Some(p) if p.starts_with("~/") => home.join(&p[2..]),
+        Some(p) => PathBuf::from(p),
+    };
+    if !requested.is_absolute() {
+        return Err(RpcError::invalid_params(format!("path must be absolute: {}", requested.display())));
+    }
+    let dir = ctx_core::platform::canonicalize(&requested).map_err(|e| RpcError::invalid_params(format!("cannot list {}: {e}", requested.display())))?;
+    if !dir.is_dir() {
+        return Err(RpcError::invalid_params(format!("{} is not a directory", dir.display())));
+    }
+    let read = std::fs::read_dir(&dir).map_err(|e| RpcError::invalid_params(format!("cannot list {}: {e}", dir.display())))?;
+    let mut entries: Vec<FsEntry> = read
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name == ".git" || name == ".DS_Store" {
+                return None;
+            }
+            // A symlink to a directory lists as one; a broken link is a file.
+            let is_dir = entry.path().is_dir();
+            if dirs_only && !is_dir {
+                return None;
+            }
+            let path = entry.path();
+            let is_git = is_dir && path.join(".git").exists();
+            Some(FsEntry { name: name.clone(), path: path.display().to_string(), is_dir, is_git, is_hidden: name.starts_with('.') })
+        })
+        .collect();
+    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())).then_with(|| a.name.cmp(&b.name)));
+    Ok(FsListing { parent: dir.parent().map(|p| p.display().to_string()), path: dir.display().to_string(), home: home.display().to_string(), entries })
 }
 
 /// Unknown session ids surface as `-32602` rather than a backend error.

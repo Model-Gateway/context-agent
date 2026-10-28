@@ -29,7 +29,9 @@ const NO_PATHS: ReadonlySet<string> = new Set()
  * (`ProjectState.fileTree`). Changed files carry their git status letter
  * and folders holding changes a dot; a click opens a file in the Editor
  * tab; the context menu has Show in Changes · Open in Editor · Open with
- * Default Editor · Reveal in Finder (Show in Explorer) · Copy Path.
+ * Default Editor · Reveal in Finder (Show in Explorer) · Copy Path. For a
+ * project on a remote host the tree comes from the host (`fs/list`) and the
+ * local actions (`FileRow.localActions`) are left out.
  */
 export function FilesTab() {
   const project = useSelectedProject()
@@ -180,6 +182,7 @@ function FileTreePane({ project }: { project: ProjectState }) {
                 statusCode={changes.files.get(row.node.path) ?? null}
                 containsChanges={changes.folders.has(row.node.path)}
                 entering={entering.has(row.node.path)}
+                localActions={!project.isRemote}
                 onOpen={open}
                 onAction={perform}
               />
@@ -202,6 +205,8 @@ interface FileRowProps {
   containsChanges: boolean
   /** Just brought in by a folder toggle: fades in. */
   entering: boolean
+  /** The file is on this machine: Open with Default Editor and the file manager apply. */
+  localActions: boolean
   onOpen: (node: FileNode) => void
   onAction: (node: FileNode, action: PathAction) => void
 }
@@ -220,22 +225,23 @@ function sameRow(lhs: FileRowProps, rhs: FileRowProps): boolean {
     lhs.statusCode === rhs.statusCode &&
     lhs.containsChanges === rhs.containsChanges &&
     lhs.entering === rhs.entering &&
+    lhs.localActions === rhs.localActions &&
     lhs.onOpen === rhs.onOpen &&
     lhs.onAction === rhs.onAction
   )
 }
 
 /** `FileRow`: chevron, folder / file glyph, name tinted by its git status, status letter or a folder's dot. */
-const FileRow = memo(function FileRow({ node, depth, expanded, selected, statusCode, containsChanges, entering, onOpen, onAction }: FileRowProps) {
+const FileRow = memo(function FileRow({ node, depth, expanded, selected, statusCode, containsChanges, entering, localActions, onOpen, onAction }: FileRowProps) {
   const tint = statusCode !== null ? ChangesStatus.tint(statusCode) : undefined
   const menu = (): MenuItem[] => {
     const items: MenuItem[] = []
     if (statusCode !== null) items.push({ label: 'Show in Changes', onSelect: () => onAction(node, 'showInChanges') })
     if (!node.isDirectory) {
       items.push({ label: 'Open in Editor', onSelect: () => onAction(node, 'openInEditor') })
-      items.push({ label: 'Open with Default Editor', onSelect: () => onAction(node, 'openWithEditor') })
+      if (localActions) items.push({ label: 'Open with Default Editor', onSelect: () => onAction(node, 'openWithEditor') })
     }
-    items.push({ label: revealLabel, onSelect: () => onAction(node, 'revealInFileManager') })
+    if (localActions) items.push({ label: revealLabel, onSelect: () => onAction(node, 'revealInFileManager') })
     items.push({ label: 'Copy Path', onSelect: () => onAction(node, 'copyPath') })
     return items
   }

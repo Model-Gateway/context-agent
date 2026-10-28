@@ -160,6 +160,8 @@ const SHORTCUTS: readonly Shortcut[] = [
   { mod: true, key: 'n', run: () => app().newChat() },
   { mod: true, shift: true, key: 'n', run: () => newWorktreeChat() },
   { mod: true, key: 'o', run: () => void app().chooseProject() },
+  // File → Open Project on Remote Host… (⌘⇧O).
+  { mod: true, shift: true, key: 'o', run: () => app().chooseRemoteProject() },
   { mod: true, key: 's', run: () => saveSelectedDocument() },
   { mod: true, shift: true, key: 'w', run: () => closeSelectedDocument() },
   // Edit

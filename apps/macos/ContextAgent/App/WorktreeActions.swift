@@ -13,8 +13,8 @@ extension AppState {
     /// its empty chat. `name` becomes the folder and branch name.
     @discardableResult
     func newWorktree(in project: ProjectState, name: String? = nil, select: Bool = true) async -> ProjectState? {
-        guard connection.isReady else {
-            toasts.show("The backend is not running.", kind: .error)
+        guard isReady(project) else {
+            toasts.show(project.isRemote ? "\(project.host?.displayName ?? "The host") is not connected." : "The backend is not running.", kind: .error)
             return nil
         }
         guard project.isGitRepository else {
@@ -25,8 +25,8 @@ extension AppState {
         project.creatingWorktree = true
         defer { project.creatingWorktree = false }
         do {
-            let info = try await backend.worktreeCreate(projectId: project.id, name: name)
-            let worktree = register(info)
+            let info = try await project.backend.worktreeCreate(projectId: project.id, name: name)
+            let worktree = register(info, host: project.host)
             await restorePermissionProfile(worktree)
             if select {
                 self.select(project: worktree.id, restoreSession: false)
@@ -34,7 +34,7 @@ extension AppState {
             }
             startLoads(for: worktree)
             // The parent's worktree list and the chip in the sidebar.
-            Task { await project.refreshGit(backend: backend) }
+            Task { await project.refreshGit() }
             return worktree
         } catch {
             toasts.show("Could not create a worktree: \(error.localizedDescription)", kind: .error, details: error.localizedDescription)
@@ -80,9 +80,10 @@ extension AppState {
         await send(prompt)
     }
 
-    /// Opens a worktree of the repository that is not open yet (`worktree/list`).
-    func openWorktree(_ entry: WorktreeEntry) async {
-        await openProject(url: URL(fileURLWithPath: entry.path), select: true, restoreSession: true)
+    /// Opens a worktree of the repository that is not open yet (`worktree/list`),
+    /// on the project's host when it has one.
+    func openWorktree(_ entry: WorktreeEntry, of project: ProjectState) async {
+        await openProject(path: entry.path, host: project.host, select: true, restoreSession: true)
     }
 
     /// Removes a worktree's checkout (uncommitted changes in it are lost) and,
@@ -95,11 +96,11 @@ extension AppState {
         terminals.removeValue(forKey: project.id)?.terminateAll()
         browsers.removeValue(forKey: project.id)?.tearDown()
         do {
-            let result = try await backend.worktreeRemove(projectId: project.id, deleteBranch: deleteBranch, force: true)
+            let result = try await project.backend.worktreeRemove(projectId: project.id, deleteBranch: deleteBranch, force: true)
             forget(project)
             if let parent {
                 if selectedProjectId == nil { select(project: parent.id) }
-                Task { await parent.refreshGit(backend: backend) }
+                Task { await parent.refreshGit() }
             }
             let branch = result.branch.map { " (branch \($0)\(result.branchDeleted ? " deleted" : " kept"))" } ?? ""
             toasts.show("Removed worktree \(project.worktreeLabel)\(branch).", kind: .info)
@@ -118,7 +119,7 @@ extension AppState {
         let parent = parentProject(of: project)
         let target = parent?.branch ?? "the parent branch"
         do {
-            let result = try await backend.worktreeMerge(projectId: project.id, deleteAfter: deleteAfter)
+            let result = try await project.backend.worktreeMerge(projectId: project.id, deleteAfter: deleteAfter)
             if result.removed {
                 gitRefreshTasks[project.id]?.cancel()
                 gitRefreshTasks[project.id] = nil
@@ -129,16 +130,16 @@ extension AppState {
             }
             if let parent {
                 Task {
-                    await parent.refreshGit(backend: backend)
+                    await parent.refreshGit()
                     await self.loadCommitLog(parent)
-                    await parent.refreshStatus(backend: backend)
+                    await parent.refreshStatus()
                 }
             }
             let removed = result.removed ? " and removed the worktree" : ""
             toasts.show("Merged \(project.worktreeLabel) into \(target) (\(result.shortMerged))\(removed).", kind: .success, details: result.subject)
         } catch {
             toasts.show("Could not merge \(project.worktreeLabel) into \(target): \(error.localizedDescription)", kind: .error, details: error.localizedDescription)
-            if let parent { Task { await parent.refreshGit(backend: backend) } }
+            if let parent { Task { await parent.refreshGit() } }
         }
     }
 

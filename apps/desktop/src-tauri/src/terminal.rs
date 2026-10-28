@@ -11,7 +11,9 @@
 //! is started with `execName: "-zsh"`), and PowerShell on Windows (`pwsh.exe`
 //! when it is on `PATH`, else Windows PowerShell). The environment is the
 //! app's with `TERM=xterm-256color`, `COLORTERM=truecolor` and
-//! `TERM_PROGRAM=ContextAgent`, as in `TerminalSession.init`.
+//! `TERM_PROGRAM=ContextAgent`, as in `TerminalSession.init`. A project on
+//! a remote host gets `ssh -t <host> 'cd <root>; exec $SHELL -l'` instead
+//! (`TerminalWorkspace(directory:host:)`), on the same pty.
 
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
@@ -26,6 +28,7 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::backend::launch::{ssh_shell_arguments, BackendLaunch, SshHost};
 use crate::backend::{debug, lock};
 
 /// Emitted for output: `{ id, data }` with `data` a UTF-8 string.
@@ -308,8 +311,9 @@ fn spawn_pump(app: AppHandle, id: String, chunks: mpsc::Receiver<Vec<u8>>, done:
 
 // MARK: - Commands
 
-/// `terminal_open({ cwd, cols?, rows? }) -> { id, shell, pid }`: starts the
-/// shell in `cwd` on a new pty (`TerminalSession.init`).
+/// `terminal_open({ cwd, cols?, rows?, host? }) -> { id, shell, pid }`: starts
+/// the shell in `cwd` on a new pty (`TerminalSession.init`); with `host`, an
+/// `ssh -t` shell in that folder on the host (`cwd` is then a remote path).
 #[tauri::command]
 pub async fn terminal_open(
     app: AppHandle,
@@ -317,22 +321,52 @@ pub async fn terminal_open(
     cwd: String,
     cols: Option<u16>,
     rows: Option<u16>,
+    host: Option<SshHost>,
 ) -> Result<TerminalOpened, String> {
     let number = terminals.next_id.fetch_add(1, Ordering::Relaxed) + 1;
     let id = format!("term-{number}");
-    let directory = start_directory(&cwd)?;
+    let program = match host {
+        Some(host) => ShellProgram::Ssh { host, directory: cwd.trim().to_owned() },
+        None => ShellProgram::Local(start_directory(&cwd)?),
+    };
     let size = pty_size(cols, rows);
     let app_for_open = app.clone();
     let id_for_open = id.clone();
-    let (session, opened) = tauri::async_runtime::spawn_blocking(move || open_session(app_for_open, id_for_open, &directory, size))
+    let (session, opened) = tauri::async_runtime::spawn_blocking(move || open_session(app_for_open, id_for_open, program, size))
         .await
         .map_err(|error| format!("Could not start the shell: {error}"))??;
     terminals.insert(id, session);
     Ok(opened)
 }
 
-fn open_session(app: AppHandle, id: String, directory: &Path, size: PtySize) -> Result<(Arc<Session>, TerminalOpened), String> {
-    let (mut command, shell) = shell_command();
+/// What a tab runs: the user's shell in a local folder, or ssh to a host.
+enum ShellProgram {
+    Local(PathBuf),
+    Ssh { host: SshHost, directory: String },
+}
+
+/// `ssh -t … -- <address> 'cd <root>; exec $SHELL -l'` on the pty: the
+/// user's shell on the host, with a tty so prompts and programs behave as
+/// in Terminal. The login shell's environment is kept (SSH_AUTH_SOCK).
+fn ssh_command(host: &SshHost, directory: &str) -> (CommandBuilder, String) {
+    let mut command = CommandBuilder::new(BackendLaunch::ssh_binary());
+    for argument in ssh_shell_arguments(host, directory) {
+        command.arg(argument);
+    }
+    (command, "ssh".to_owned())
+}
+
+fn open_session(app: AppHandle, id: String, program: ShellProgram, size: PtySize) -> Result<(Arc<Session>, TerminalOpened), String> {
+    let (mut command, shell) = match &program {
+        ShellProgram::Local(_) => shell_command(),
+        ShellProgram::Ssh { host, directory } => ssh_command(host, directory),
+    };
+    let directory: PathBuf = match &program {
+        ShellProgram::Local(directory) => directory.clone(),
+        // ssh itself runs at home; the `cd` happens on the host.
+        ShellProgram::Ssh { .. } => dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")),
+    };
+    let directory = directory.as_path();
     command.cwd(directory);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");

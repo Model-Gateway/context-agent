@@ -90,7 +90,28 @@ struct WelcomeView: View {
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.textTertiary)
             }
+            remoteButton
+                .padding(.top, 2)
         }
+    }
+
+    /// "Open on a remote host…" (⌘⇧O): the remote folder picker, or
+    /// Settings → Remote hosts when none is configured yet.
+    private var remoteButton: some View {
+        Button {
+            appState.chooseRemoteProject()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: Icons.remoteHost)
+                    .font(.system(size: 11, weight: .medium))
+                Text(appState.hosts.hosts.isEmpty ? "Open on a remote host via SSH…" : "Open on a remote host…")
+            }
+            .font(Theme.Font.secondary)
+            .foregroundStyle(Theme.accent)
+        }
+        .buttonStyle(.plain)
+        .help(appState.hosts.hosts.isEmpty ? "Add an SSH host in Settings, then open projects that live on it" : "Browse a configured host's folders (⌘⇧O)")
+        .accessibilityLabel("Open a project on a remote host")
     }
 
     private var disabledReason: String? {
@@ -202,7 +223,7 @@ private struct RecentsGrid: View {
             } else {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                     ForEach(recents) { recent in
-                        RecentCard(recent: recent, isOpen: appState.projects.contains { $0.root == recent.path })
+                        RecentCard(recent: recent, isOpen: appState.projects.contains { $0.key == recent.id })
                     }
                 }
             }
@@ -218,16 +239,17 @@ struct RecentCard: View {
     @Environment(AppState.self) private var appState
     @State private var hovering = false
 
-    private var isOpening: Bool { appState.openingProjectPaths.contains(recent.path) }
-    private var canOpen: Bool { appState.connection.isReady && recent.exists && !isOpening }
+    private var isOpening: Bool { appState.openingProjectPaths.contains(recent.id) }
+    /// A remote folder opens through its host's connection (made on demand).
+    private var canOpen: Bool { (recent.isRemote || appState.connection.isReady) && recent.exists && !isOpening }
     /// False for a folder being opened for the first time (not a recent yet):
     /// nothing to pin or remove.
-    private var isRemembered: Bool { appState.recents.item(for: recent.path) != nil }
+    private var isRemembered: Bool { appState.recents.item(for: recent.path, hostId: recent.hostId) != nil }
 
     /// The open project while its index pass runs; on a first open that
     /// pass builds the whole index.
     private var indexingProject: ProjectState? {
-        guard isOpen, let project = appState.projects.first(where: { $0.root == recent.path }), project.isIndexing else { return nil }
+        guard isOpen, let project = appState.projects.first(where: { $0.key == recent.id }), project.isIndexing else { return nil }
         return project
     }
 
@@ -247,7 +269,7 @@ struct RecentCard: View {
         let shape = RoundedRectangle(cornerRadius: Theme.Metrics.radius, style: .continuous)
         Button {
             guard canOpen else { return }
-            Task { await appState.openProject(url: recent.url) }
+            Task { await appState.openRecent(recent) }
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
@@ -259,7 +281,7 @@ struct RecentCard: View {
                         } else if let project = indexingProject {
                             ProgressRing(fraction: project.indexFraction)
                         } else {
-                            Image(systemName: Icons.folder)
+                            Image(systemName: recent.isRemote ? Icons.remoteProject : Icons.folder)
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundStyle(recent.exists ? Theme.textSecondary : Theme.textTertiary)
                         }
@@ -281,7 +303,7 @@ struct RecentCard: View {
                     // Always laid out, shown on hover, and held to the row's
                     // 20 pt height, so hovering never resizes the card.
                     IconButton(Icons.close, label: "Remove from recents", size: 11) {
-                        appState.recents.remove(path: recent.path)
+                        appState.recents.remove(recent)
                     }
                     .frame(width: 20, height: 20)
                     .opacity(hovering && isRemembered ? 1 : 0)
@@ -308,6 +330,9 @@ struct RecentCard: View {
                             .foregroundStyle(Theme.textSecondary)
                     } else if isOpen {
                         Chip("Open", style: .tinted(Theme.success))
+                    } else if recent.isRemote {
+                        Chip(recent.hostName ?? "SSH", style: .tinted(Theme.accent))
+                            .help("On a remote host")
                     } else if !recent.exists {
                         Chip("Missing", style: .tinted(Theme.warning))
                             .help("The folder no longer exists at this path")
@@ -327,23 +352,25 @@ struct RecentCard: View {
         .help(recent.exists ? recent.path : "Missing: \(recent.path)")
         .contextMenu {
             Button("Open") {
-                Task { await appState.openProject(url: recent.url) }
+                Task { await appState.openRecent(recent) }
             }
             .disabled(!canOpen)
             Button(recent.pinned ? "Unpin" : "Pin") {
-                appState.recents.togglePin(path: recent.path)
+                appState.recents.togglePin(recent)
             }
             .disabled(!isRemembered)
-            Button("Reveal in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([recent.url])
+            if !recent.isRemote {
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([recent.url])
+                }
+                .disabled(!recent.exists)
             }
-            .disabled(!recent.exists)
             Button("Copy Path") {
                 appState.copyToPasteboard(recent.path)
             }
             Divider()
             Button("Remove from Recents", role: .destructive) {
-                appState.recents.remove(path: recent.path)
+                appState.recents.remove(recent)
             }
             .disabled(!isRemembered)
         }

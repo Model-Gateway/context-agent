@@ -10,18 +10,20 @@ import type { Unseen } from '../../models/reducer'
 import { restoreRank, useApp, type AppStore } from '../../state/app'
 import type { ChatState } from '../../state/chat'
 import type { ProjectState } from '../../state/project'
-import { hiddenWorktrees, isCollapsed, parentProject, pendingProjectPaths, selectedProject, topLevelProjects, visibleWorktrees, worktreesOf } from '../../state/selectors'
+import { hiddenWorktrees, isCollapsed, parentProject, pendingProjectPaths, pendingProjectPathsOn, selectedProject, topLevelProjects, visibleWorktrees, worktreesOf } from '../../state/selectors'
 import { useGateway } from '../../state/gateway'
 import { Icon } from '../../theme/icons'
+import { RemoteHostsSection } from './HostRows'
 import { NavRow, OpeningProjectRow, PinnedRecentRow, ProjectRow, SessionRow, SessionRowsSkeleton, SidebarSectionHeader, WorktreeRow, type SessionIndicator } from './SidebarRows'
 import styles from './SidebarView.module.css'
 
 /**
  * `SidebarView` (Views/Sidebar/SidebarView.swift): the left pane under the
- * top bar: the fixed navigation rows, the "Projects" section (open projects
- * with their worktrees, folders still opening, then pinned recents that are
- * not open), the "Chats" section (the selected project's chats) and the
- * account button at the bottom.
+ * top bar: the fixed navigation rows, the "Projects" section (open local
+ * projects with their worktrees, folders still opening, then pinned recents
+ * that are not open), the "Remote" section (every configured SSH host with
+ * its projects beneath it, HostRows.tsx), the "Chats" section (the selected
+ * project's chats) and the account button at the bottom.
  */
 export function SidebarView() {
   return (
@@ -30,6 +32,7 @@ export function SidebarView() {
       <div className={styles.scroll}>
         <div className={styles.sections}>
           <ProjectsSection />
+          <RemoteHostsSection />
           <ChatsSection />
         </div>
       </div>
@@ -78,11 +81,12 @@ function selectApps() {
 /** An open project with the worktree rows under it, or a folder still opening. */
 type ProjectEntry = { kind: 'open'; project: ProjectState } | { kind: 'opening'; path: string }
 
-/// Open projects with the folders still opening slotted in at their
-/// remembered launch position (new opens go last), so rows fill in place.
+/// Open local projects with the local folders still opening slotted in at
+/// their remembered launch position (new opens go last), so rows fill in
+/// place. Projects on hosts are listed by the Remote section.
 function projectEntries(state: AppStore): ProjectEntry[] {
-  const entries: ProjectEntry[] = topLevelProjects(state).map((project) => ({ kind: 'open', project }))
-  for (const path of pendingProjectPaths(state)) {
+  const entries: ProjectEntry[] = topLevelProjects(state, null).map((project) => ({ kind: 'open', project }))
+  for (const path of pendingProjectPathsOn(state, null)) {
     const rank = restoreRank(path)
     const index = entries.findIndex((entry) => restoreRank(entry.kind === 'open' ? entry.project.root : entry.path) > rank)
     entries.splice(index < 0 ? entries.length : index, 0, { kind: 'opening', path })
@@ -125,8 +129,8 @@ function ProjectsSection() {
   const content = useMemo(() => {
     const state = useApp.getState()
     const entries = projectEntries(state)
-    const open = new Set([...state.projects.map((project) => project.root), ...state.openingProjectPaths])
-    const pinned = pinnedRecentProjects(recents).filter((recent) => !open.has(recent.path))
+    const open = new Set([...state.projects.map((project) => project.key), ...state.openingProjectPaths])
+    const pinned = pinnedRecentProjects(recents).filter((recent) => recent.hostId === null && !open.has(recent.path))
     return { entries, pinned, state }
   }, [signature, recents])
 
@@ -158,7 +162,7 @@ function ProjectsSection() {
 }
 
 function isPinned(recents: ReturnType<typeof RecentProjects.items>, root: string): boolean {
-  return recents.find((recent) => recent.path === root)?.pinned === true
+  return recents.find((recent) => recent.hostId === null && recent.path === root)?.pinned === true
 }
 
 /** One project row and the worktree rows nested under it. */

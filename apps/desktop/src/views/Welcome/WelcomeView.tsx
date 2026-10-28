@@ -3,7 +3,8 @@ import { describe } from '../../backend/errors'
 import { BrailleSpinner } from '../../components/BrailleSpinner'
 import { MiddleTruncate } from '../../components/MiddleTruncate'
 import { Tooltip } from '../../components/Tooltip'
-import { abbreviatedPath } from '../../models/recentProject'
+import { abbreviatedPath, recentProjectId } from '../../models/recentProject'
+import { useSSHHosts } from '../../models/sshHost'
 import { useApp, type ConnectionState } from '../../state/app'
 import { useConnectionLabel, useNeedsAPIKey, useRecentProjectCards } from '../../state/selectors'
 import { Icon } from '../../theme/icons'
@@ -53,6 +54,7 @@ function disabledReason(connection: ConnectionState): string | null {
 
 function Hero({ connection }: { connection: ConnectionState }) {
   const reason = disabledReason(connection)
+  const hosts = useSSHHosts()
   return (
     <div className={styles.hero}>
       <LogoView size={34} />
@@ -65,6 +67,12 @@ function Hero({ connection }: { connection: ConnectionState }) {
           </button>
         </Tooltip>
         <p className={styles.openHint}>{reason ?? 'or drop a folder here'}</p>
+        <Tooltip content={hosts.length === 0 ? 'Add an SSH host in Settings → Remote hosts first' : 'Browse a folder on one of your SSH hosts'} shortcut="mod+shift+O">
+          <button type="button" className={styles.remoteLink} onClick={() => useApp.getState().chooseRemoteProject()}>
+            <Icon name="remoteHost" size={11} strokeWidth={2} />
+            <span>Open on a remote host…</span>
+          </button>
+        </Tooltip>
       </div>
     </div>
   )
@@ -77,7 +85,7 @@ function Hero({ connection }: { connection: ConnectionState }) {
 function RecentsGrid() {
   const recents = useRecentProjectCards()
   const projects = useApp((state) => state.projects)
-  const openRoots = useMemo(() => new Set(projects.map((project) => project.root)), [projects])
+  const openKeys = useMemo(() => new Set(projects.map((project) => project.key)), [projects])
   return (
     <section className={styles.recents} aria-labelledby="welcome-recents-title">
       <div className={styles.recentsHeader}>
@@ -101,7 +109,7 @@ function RecentsGrid() {
       ) : (
         <div className={styles.grid}>
           {recents.map((recent) => (
-            <RecentCard key={recent.path} recent={recent} isOpen={openRoots.has(recent.path)} />
+            <RecentCard key={recentProjectId(recent)} recent={recent} isOpen={openKeys.has(recentProjectId(recent))} />
           ))}
         </div>
       )}

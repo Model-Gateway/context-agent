@@ -1,0 +1,203 @@
+/* RemoteFolderPicker.swift: 620 × 520 — header (title + host picker, path row), the folder list, the footer. */
+
+.sheet {
+  --picker-height: 520px;
+}
+
+/* VStack(alignment .leading, spacing 10) · padding 16. */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.titleIcon {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+/* HStack(spacing 6): parent, the path field (mono), Go, home, dotfolders. */
+.pathRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The parent-folder button draws the send glyph (an up arrow). */
+.pathRow > :first-child {
+  flex: 0 0 auto;
+}
+
+.pathField {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--text-primary);
+}
+
+.pathField:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.pathField:disabled {
+  opacity: 0.5;
+}
+
+/* The folder list: `LazyVStack(spacing 0)` in a scroll view, 320 px tall so the sheet keeps its height. */
+.content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 340px;
+  min-height: 0;
+  margin: 0 -4px;
+}
+
+.content > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  overflow-y: auto;
+}
+
+.noFolders {
+  margin: 0;
+  padding: 14px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-tertiary);
+}
+
+.loadingOverlay {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+}
+
+.connecting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+
+/* FolderRow: HStack(spacing 8) · padding h 14 · 26 tall. */
+.folderRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 14px;
+  color: var(--text-primary);
+  cursor: default;
+  user-select: none;
+}
+
+.folderRow:hover {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
+.folderSelected,
+.folderSelected:hover {
+  background: var(--accent-soft);
+}
+
+.folderIcon {
+  display: inline-flex;
+  justify-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  color: var(--accent);
+}
+
+.folderHidden .folderIcon {
+  color: var(--text-tertiary);
+}
+
+.folderName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-secondary);
+}
+
+.folderHidden .folderName {
+  color: var(--text-secondary);
+}
+
+.gitGlyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity var(--duration-hover) var(--ease-out);
+}
+
+.chevronShown {
+  opacity: 1;
+}
+
+/* Footer: the path (mono, middle-truncated), the git chip, Cancel, Open. */
+.footerPath {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.footerPathText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-mono);
+  color: var(--text-secondary);
+}
+
+.footerSpacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}

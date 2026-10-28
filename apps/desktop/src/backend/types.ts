@@ -831,6 +831,43 @@ export interface InitializeResult {
   pricing?: PricingSettings | null
   spend: SpendSettings
   mcp: McpSettings
+  /** Where the backend runs (`initialize.host`); absent on older backends. */
+  host?: HostInfo | null
+}
+
+/** `HostInfo`: `initialize.host`, who and where the server is. */
+export interface HostInfo {
+  hostname: string
+  user: string
+  home_dir: string
+  /** "macos", "linux", "windows", … */
+  os: string
+}
+
+/** `FsListing`: `fs/list`'s result, a directory of the backend's machine. */
+export interface FsListing {
+  path: string
+  parent?: string | null
+  home: string
+  entries: FsEntry[]
+}
+
+/** `FsEntry`: one entry of `fs/list`. */
+export interface FsEntry {
+  name: string
+  path: string
+  is_dir: boolean
+  /** A directory holding a `.git` entry (a repository root). */
+  is_git: boolean
+  is_hidden: boolean
+}
+
+/// `InlineImage`: an image sent with `task/run` / `task/steer` as its bytes
+/// (`{ name, data }`, base64) for a backend that cannot read the app's
+/// files (a remote host).
+export interface InlineImage {
+  name: string
+  data: string
 }
 
 /// `InitializeResult.init(from:)`: backends older than spending limits or
@@ -1365,10 +1402,13 @@ export function normalizeHistoryMessage(raw: HistoryMessage): HistoryMessage {
   return { ...raw, kind: parseHistoryMessageKind(raw.kind) }
 }
 
-/** `FileUpload` (Models/AttachmentUpload.swift): a text file sent with a prompt. */
+/// `FileUpload` (Models/AttachmentUpload.swift): a text file sent with a
+/// prompt: `{ path, name }` for a backend that reads the file itself, or
+/// with `content` for one that cannot (a remote host).
 export interface FileUpload {
   path: string
   name: string
+  content?: string | null
 }
 
 /** `UsageTotals` of a history turn. */

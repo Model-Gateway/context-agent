@@ -184,7 +184,7 @@ struct MentionMenu: View {
             // A short pause so fast typing sends one search, not one per key.
             try? await Task.sleep(nanoseconds: 60_000_000)
             guard !Task.isCancelled, appState.connection.isReady else { return }
-            let found = (try? await appState.backend.filesSearch(projectId: projectId, query: query)) ?? []
+            let found = (try? await appState.backend(for: projectId).filesSearch(projectId: projectId, query: query)) ?? []
             guard !Task.isCancelled else { return }
             files = found
         }

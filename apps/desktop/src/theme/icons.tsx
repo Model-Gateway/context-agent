@@ -108,7 +108,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 // Apps (catalog app symbols and the connect page's "where it runs" row).
-import { Drama, FileDown, Laptop, LibraryBig, ListOrdered, Package, SquareMousePointer } from 'lucide-react'
+import { Drama, FileDown, House, Laptop, LibraryBig, ListOrdered, Package, Server, SquareMousePointer } from 'lucide-react'
 // The command palette's Toggle sidebar (View → Toggle Sidebar has no symbol in Swift).
 import { PanelLeft } from 'lucide-react'
 
@@ -204,6 +204,9 @@ export const Icons = {
   chevronDown: ChevronDown,
   chevronRight: ChevronRight,
   folder: Folder,
+  remoteHost: Server, // server.rack
+  home: House, // house
+  showHidden: Eye, // eye
   branch: Split, // arrow.triangle.branch
   pin: Pin,
   close: X, // xmark

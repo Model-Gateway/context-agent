@@ -10,6 +10,7 @@
 import { create } from 'zustand'
 import type { GatewayAccount } from '../backend/types'
 import type { RecentProject } from './recentProject'
+import type { SSHHost } from './sshHost'
 
 // MARK: - Appearance
 
@@ -107,7 +108,11 @@ export interface PreferenceValues {
   /// Remembered repository roots (Welcome grid, sidebar "pinned", Open
   /// Recent): newest first, at most 30. Swift keeps them in
   /// `recent-projects.json` (`RecentProjectStore`); see models/recentProject.ts.
+  /// A project on a remote host carries its `hostId`.
   recents: RecentProject[]
+  /// The SSH hosts of Settings → Remote hosts, in the order they were
+  /// added (Swift: `ssh-hosts.json` next to the recents); see models/sshHost.ts.
+  sshHosts: SSHHost[]
 }
 
 /** A preference's name (the storage key without the `ctx.` prefix). */
@@ -156,6 +161,7 @@ export const PREFERENCE_DEFAULTS: Readonly<PreferenceValues> = Object.freeze({
   attributeProjects: true,
   gatewayPreviousEndpoint: {},
   recents: [],
+  sshHosts: [],
 })
 
 const PREF_KEYS = Object.keys(PREFERENCE_DEFAULTS) as PrefKey[]
@@ -198,17 +204,46 @@ const recents: Decoder<RecentProject[]> = (raw) => {
     if (!isPlainObject(entry)) continue
     const path = entry.path
     const name = entry.name
-    if (typeof path !== 'string' || typeof name !== 'string' || seen.has(path)) continue
+    const hostId = typeof entry.hostId === 'string' && entry.hostId.length > 0 ? entry.hostId : null
+    if (typeof path !== 'string' || typeof name !== 'string') continue
+    const key = hostId === null ? path : `${hostId}\u0000${path}`
+    if (seen.has(key)) continue
     const opened = typeof entry.lastOpened === 'string' ? new Date(entry.lastOpened) : null
-    seen.add(path)
+    seen.add(key)
     out.push({
       path,
       name,
       lastOpened: opened && !Number.isNaN(opened.getTime()) ? opened : new Date(0),
       pinned: entry.pinned === true,
+      hostId,
+      hostName: typeof entry.hostName === 'string' && entry.hostName.length > 0 ? entry.hostName : null,
     })
   }
   return trimRecentProjects(out)
+}
+const sshHosts: Decoder<SSHHost[]> = (raw) => {
+  if (!Array.isArray(raw)) return undefined
+  const seen = new Set<string>()
+  const out: SSHHost[] = []
+  for (const entry of raw) {
+    if (!isPlainObject(entry)) continue
+    const id = entry.id
+    const address = entry.address
+    if (typeof id !== 'string' || id.length === 0 || typeof address !== 'string' || seen.has(id)) continue
+    seen.add(id)
+    const port = typeof entry.port === 'number' && Number.isFinite(entry.port) ? Math.max(0, Math.trunc(entry.port)) : 0
+    out.push({
+      id,
+      name: typeof entry.name === 'string' ? entry.name : '',
+      address,
+      user: typeof entry.user === 'string' ? entry.user : '',
+      port,
+      identityFile: typeof entry.identityFile === 'string' ? entry.identityFile : '',
+      ctxPath: typeof entry.ctxPath === 'string' ? entry.ctxPath : '',
+      extraArguments: stringArray(entry.extraArguments) ?? [],
+    })
+  }
+  return out
 }
 
 const DECODERS: { [K in PrefKey]: Decoder<PreferenceValues[K]> } = {
@@ -240,6 +275,7 @@ const DECODERS: { [K in PrefKey]: Decoder<PreferenceValues[K]> } = {
   attributeProjects: bool,
   gatewayPreviousEndpoint: stringMap,
   recents,
+  sshHosts,
 }
 
 function isPlainObject(raw: unknown): raw is Record<string, unknown> {

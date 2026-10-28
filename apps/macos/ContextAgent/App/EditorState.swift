@@ -190,7 +190,7 @@ extension AppState {
     func load(_ document: EditorDocument, in project: ProjectState) async {
         document.loading = true
         do {
-            let content = try await backend.fileRead(projectId: project.id, path: document.path)
+            let content = try await project.backend.fileRead(projectId: project.id, path: document.path)
             document.load(content)
             connectLanguageServer(document, in: project)
         } catch {
@@ -212,7 +212,7 @@ extension AppState {
         guard let workspace = editors[project.id] else { return }
         for document in workspace.documents where document.kind == .text && !document.isDirty && !document.loading && document.loadError == nil {
             Task {
-                guard let content = try? await backend.fileRead(projectId: project.id, path: document.path) else { return }
+                guard let content = try? await project.backend.fileRead(projectId: project.id, path: document.path) else { return }
                 if content.hash != document.hash, !document.isDirty {
                     document.load(content)
                     scheduleLanguageServerSync(document, in: project)
@@ -229,7 +229,7 @@ extension AppState {
         defer { document.saving = false }
         let text = document.text
         do {
-            let result = try await backend.fileWrite(projectId: project.id, path: document.path, content: text, expectedHash: overwrite ? nil : document.hash)
+            let result = try await project.backend.fileWrite(projectId: project.id, path: document.path, content: text, expectedHash: overwrite ? nil : document.hash)
             document.hash = result.hash
             document.savedText = text
             document.isDirty = document.text != text
@@ -260,7 +260,7 @@ extension AppState {
         document.lspSync?.cancel()
         document.autoSave?.cancel()
         if document.lspServer != nil {
-            Task { try? await backend.lspClose(projectId: project.id, path: document.path) }
+            Task { try? await project.backend.lspClose(projectId: project.id, path: document.path) }
         }
     }
 
@@ -392,7 +392,7 @@ extension AppState {
     func connectLanguageServer(_ document: EditorDocument, in project: ProjectState) {
         Task {
             do {
-                let status = try await backend.lspOpen(projectId: project.id, path: document.path, text: document.text)
+                let status = try await project.backend.lspOpen(projectId: project.id, path: document.path, text: document.text)
                 document.lspServer = status.server
                 document.lspTriggers = status.triggerCharacters ?? []
                 document.lspDirty = false
@@ -420,7 +420,7 @@ extension AppState {
         document.lspSync?.cancel()
         document.lspDirty = false
         do {
-            try await backend.lspChange(projectId: project.id, path: document.path, text: document.text)
+            try await project.backend.lspChange(projectId: project.id, path: document.path, text: document.text)
         } catch {
             document.lspDirty = true
             BackendLog.debug("lsp/change \(document.path): \(error.localizedDescription)")
@@ -431,20 +431,20 @@ extension AppState {
     func languageServerCompletions(for document: EditorDocument, line: Int, character: Int, in project: ProjectState) async -> [LspCompletionItem] {
         guard document.lspServer != nil else { return [] }
         await flushLanguageServerSync(document, in: project)
-        return (try? await backend.lspCompletion(projectId: project.id, path: document.path, line: line, character: character))?.items ?? []
+        return (try? await project.backend.lspCompletion(projectId: project.id, path: document.path, line: line, character: character))?.items ?? []
     }
 
     func languageServerHover(for document: EditorDocument, line: Int, character: Int, in project: ProjectState) async -> String? {
         guard document.lspServer != nil else { return nil }
         await flushLanguageServerSync(document, in: project)
-        return (try? await backend.lspHover(projectId: project.id, path: document.path, line: line, character: character))?.contents
+        return (try? await project.backend.lspHover(projectId: project.id, path: document.path, line: line, character: character))?.contents
     }
 
     // MARK: Symbols
 
     /// Definitions of `name` from the index; the current file's first.
     func findSymbols(_ query: String, mode: SymbolsFindMode, limit: Int = 50, in project: ProjectState, preferring path: String? = nil) async -> [SymbolInfo] {
-        guard let symbols = try? await backend.symbolsFind(projectId: project.id, query: query, mode: mode, limit: limit) else { return [] }
+        guard let symbols = try? await project.backend.symbolsFind(projectId: project.id, query: query, mode: mode, limit: limit) else { return [] }
         guard let path else { return symbols }
         return symbols.sorted { lhs, rhs in
             let lhsLocal = lhs.path == path, rhsLocal = rhs.path == path
@@ -458,7 +458,7 @@ extension AppState {
         Task {
             if document.lspServer != nil {
                 await flushLanguageServerSync(document, in: project)
-                if let location = (try? await backend.lspDefinition(projectId: project.id, path: document.path, line: line, character: character))?.first {
+                if let location = (try? await project.backend.lspDefinition(projectId: project.id, path: document.path, line: line, character: character))?.first {
                     openInEditor(path: location.path, line: location.line, in: project)
                     return
                 }

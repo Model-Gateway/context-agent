@@ -22,7 +22,6 @@
 // `defaultEditorPath`, is read by `reveal(…, 'openWithEditor')` in state/app.ts.
 
 import { useCallback, useSyncExternalStore } from 'react'
-import { backend } from '../backend/client'
 import { BackendError, errorText } from '../backend/errors'
 import { debug } from '../backend/log'
 import {
@@ -407,7 +406,7 @@ export function documentFilePath(document: EditorDocument, project: ProjectState
 export async function load(document: EditorDocument, project: ProjectState): Promise<void> {
   document.update((d) => (d.loading = true))
   try {
-    const content = await backend.fileRead(project.id, document.path)
+    const content = await project.backend.fileRead(project.id, document.path)
     document.update((d) => d.load(content))
     connectLanguageServer(document, project)
   } catch (error) {
@@ -436,7 +435,7 @@ export function refreshCleanDocuments(project: ProjectState): void {
     void (async () => {
       let content: FileContent
       try {
-        content = await backend.fileRead(project.id, document.path)
+        content = await project.backend.fileRead(project.id, document.path)
       } catch {
         return
       }
@@ -456,7 +455,7 @@ export async function save(document: EditorDocument, project: ProjectState, over
   document.update((d) => (d.saving = true))
   const text = document.text
   try {
-    const result = await backend.fileWrite(project.id, document.path, text, overwrite ? null : document.hash)
+    const result = await project.backend.fileWrite(project.id, document.path, text, overwrite ? null : document.hash)
     document.hash = result.hash
     document.savedText = text
     document.isDirty = document.text !== text
@@ -499,7 +498,7 @@ function discard(document: EditorDocument, project: ProjectState): void {
   editors(project).close(document)
   document.cancelTimers()
   if (document.lspServer !== null) {
-    void backend.lspClose(project.id, document.path).catch(() => undefined)
+    void project.backend.lspClose(project.id, document.path).catch(() => undefined)
   }
 }
 
@@ -634,7 +633,7 @@ async function autoSave(document: EditorDocument, project: ProjectState): Promis
 export function connectLanguageServer(document: EditorDocument, project: ProjectState): void {
   void (async () => {
     try {
-      const status = await backend.lspOpen(project.id, document.path, document.text)
+      const status = await project.backend.lspOpen(project.id, document.path, document.text)
       document.lspDirty = false
       document.update((d) => {
         d.lspServer = status.server ?? null
@@ -666,7 +665,7 @@ export async function flushLanguageServerSync(document: EditorDocument, project:
   document.lspSync = null
   document.lspDirty = false
   try {
-    await backend.lspChange(project.id, document.path, document.text)
+    await project.backend.lspChange(project.id, document.path, document.text)
   } catch (error) {
     document.lspDirty = true
     debug(() => `lsp/change ${document.path}: ${errorText(error)}`)
@@ -678,7 +677,7 @@ export async function languageServerCompletions(document: EditorDocument, line: 
   if (document.lspServer === null) return []
   await flushLanguageServerSync(document, project)
   try {
-    return (await backend.lspCompletion(project.id, document.path, line, character)).items
+    return (await project.backend.lspCompletion(project.id, document.path, line, character)).items
   } catch {
     return []
   }
@@ -689,7 +688,7 @@ export async function languageServerHover(document: EditorDocument, line: number
   if (document.lspServer === null) return null
   await flushLanguageServerSync(document, project)
   try {
-    return (await backend.lspHover(project.id, document.path, line, character)).contents ?? null
+    return (await project.backend.lspHover(project.id, document.path, line, character)).contents ?? null
   } catch {
     return null
   }
@@ -701,7 +700,7 @@ export async function languageServerHover(document: EditorDocument, line: number
 export async function findSymbols(query: string, mode: SymbolsFindMode, limit: number, project: ProjectState, preferring: string | null = null): Promise<SymbolInfo[]> {
   let symbols: SymbolInfo[]
   try {
-    symbols = await backend.symbolsFind(project.id, query, mode, limit)
+    symbols = await project.backend.symbolsFind(project.id, query, mode, limit)
   } catch {
     return []
   }
@@ -718,7 +717,7 @@ export function jumpToDefinition(name: string, line: number, character: number, 
       await flushLanguageServerSync(document, project)
       let location: { path: string; line: number } | undefined
       try {
-        location = (await backend.lspDefinition(project.id, document.path, line, character))[0]
+        location = (await project.backend.lspDefinition(project.id, document.path, line, character))[0]
       } catch {
         location = undefined
       }

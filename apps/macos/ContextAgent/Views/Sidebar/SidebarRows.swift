@@ -27,14 +27,14 @@ private struct SidebarRowChrome: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     func sidebarRow(selected: Bool, hovering: Bool) -> some View {
         modifier(SidebarRowChrome(isSelected: selected, isHovering: hovering))
     }
 }
 
 /// A 16 pt sidebar symbol in `textSecondary` (or `accent` on a selected row).
-private struct RowIcon: View {
+struct RowIcon: View {
     var systemImage: String
     var tint: Color = Theme.textSecondary
 
@@ -117,7 +117,7 @@ struct ProjectRow: View {
     private var isSelected: Bool { appState.selectedProjectId == project.id }
 
     private var isPinned: Bool {
-        appState.recents.item(for: project.root)?.pinned == true
+        appState.recents.item(for: project.root, hostId: project.host?.id)?.pinned == true
     }
 
     private var openRoots: Set<String> { Set(appState.projects.map(\.root)) }
@@ -225,7 +225,7 @@ struct ProjectRow: View {
                 Menu("Open Worktree") {
                     ForEach(closedWorktrees) { entry in
                         Button {
-                            Task { await appState.openWorktree(entry) }
+                            Task { await appState.openWorktree(entry, of: project) }
                         } label: {
                             Text(verbatim: entry.branch.map { $0.hasPrefix("ctx/") ? String($0.dropFirst(4)) : $0 } ?? entry.name)
                         }
@@ -237,10 +237,10 @@ struct ProjectRow: View {
             }
             Divider()
             Button(isPinned ? "Unpin" : "Pin") {
-                if appState.recents.item(for: project.root) == nil {
-                    appState.recents.touch(path: project.root, name: project.name)
+                if appState.recents.item(for: project.root, hostId: project.host?.id) == nil {
+                    appState.recents.touch(path: project.root, name: project.name, host: project.host)
                 }
-                appState.recents.togglePin(path: project.root)
+                appState.recents.togglePin(path: project.root, hostId: project.host?.id)
             }
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([project.rootURL])
@@ -403,8 +403,12 @@ struct OpeningProjectRow: View {
 
     @Environment(AppState.self) private var appState
 
+    /// `path` is a `ProjectState.key`: a folder, or `ctx-ssh://<host>/folder`.
     private var name: String {
-        appState.recents.item(for: path)?.name ?? URL(fileURLWithPath: path).lastPathComponent
+        if let ref = RemoteProjectRef(encoded: path) {
+            return appState.recents.item(for: ref.path, hostId: ref.hostId)?.name ?? (ref.path as NSString).lastPathComponent
+        }
+        return appState.recents.item(for: path)?.name ?? URL(fileURLWithPath: path).lastPathComponent
     }
 
     var body: some View {
@@ -457,10 +461,10 @@ struct PinnedRecentRow: View {
 
     var body: some View {
         Button {
-            Task { await appState.openProject(url: recent.url) }
+            Task { await appState.openRecent(recent) }
         } label: {
             HStack(spacing: 10) {
-                RowIcon(systemImage: Icons.folder, tint: Theme.textTertiary)
+                RowIcon(systemImage: recent.isRemote ? Icons.remoteProject : Icons.folder, tint: Theme.textTertiary)
                 Text(verbatim: recent.name)
                     .font(Theme.Font.sidebar)
                     .foregroundStyle(Theme.textSecondary)
@@ -475,24 +479,26 @@ struct PinnedRecentRow: View {
             .sidebarRow(selected: false, hovering: hovering)
         }
         .buttonStyle(.plain)
-        .disabled(!appState.connection.isReady)
+        .disabled(!(recent.isRemote || appState.connection.isReady))
         .onHover { inside in
             withAnimation(.easeOut(duration: 0.12)) { hovering = inside }
         }
         .help(recent.abbreviatedPath)
         .contextMenu {
             Button("Open") {
-                Task { await appState.openProject(url: recent.url) }
+                Task { await appState.openRecent(recent) }
             }
             Button("Unpin") {
-                appState.recents.setPinned(false, path: recent.path)
+                appState.recents.setPinned(false, path: recent.path, hostId: recent.hostId)
             }
-            Button("Reveal in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([recent.url])
+            if !recent.isRemote {
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([recent.url])
+                }
             }
             Divider()
             Button("Remove from Recents") {
-                appState.recents.remove(path: recent.path)
+                appState.recents.remove(recent)
             }
         }
         .accessibilityLabel("Pinned project \(recent.name), not open")

@@ -10,6 +10,7 @@ import { useApp } from '../state/app'
 import { installGlobalKeys } from '../state/keys'
 import { usePendingDiscountDrop, type PendingApproval } from '../state/selectors'
 import { RewindSheet } from './Chat/RewindSheet'
+import { RemoteFolderPicker } from './Remote/RemoteFolderPicker'
 import { DetailView } from './Detail/DetailView'
 import { InspectorView } from './Inspector/InspectorView'
 import { CommandPalette } from './Palette/CommandPalette'
@@ -88,6 +89,7 @@ export function MainWindow() {
       <ToastHost />
       <CommandPalette />
       <RewindSheet />
+      <RemoteFolderPicker />
       <DiscountDropAlert />
     </div>
   )

@@ -27,7 +27,7 @@ extension AppState {
             ok = false
             toasts.show("\(label) failed: \(error.localizedDescription)", kind: .error, details: error.localizedDescription)
         }
-        await project.refreshGit(backend: backend)
+        await project.refreshGit()
         reconcileDiffMode(project)
         if refreshLog {
             await loadCommitLog(project)
@@ -60,13 +60,13 @@ extension AppState {
     /// Empty `paths` stages everything.
     func stage(_ paths: [String], in project: ProjectState) async {
         await gitAction(paths.isEmpty ? "Staging all changes" : "Staging", in: project) {
-            try await backend.gitStage(projectId: project.id, paths: paths)
+            try await project.backend.gitStage(projectId: project.id, paths: paths)
         }
     }
 
     func unstage(_ paths: [String], in project: ProjectState) async {
         await gitAction(paths.isEmpty ? "Unstaging all changes" : "Unstaging", in: project) {
-            try await backend.gitUnstage(projectId: project.id, paths: paths)
+            try await project.backend.gitUnstage(projectId: project.id, paths: paths)
         }
     }
 
@@ -75,7 +75,7 @@ extension AppState {
     func discard(_ paths: [String], in project: ProjectState) async {
         var result: GitDiscardResult?
         let ok = await gitAction(paths.isEmpty ? "Discarding all changes" : "Discarding changes", in: project) {
-            result = try await backend.gitDiscard(projectId: project.id, paths: paths)
+            result = try await project.backend.gitDiscard(projectId: project.id, paths: paths)
         }
         if ok, let result {
             var parts: [String] = []
@@ -93,7 +93,7 @@ extension AppState {
     func commit(message: String, amend: Bool = false, all: Bool = false, paths: [String] = [], in project: ProjectState) async -> GitCommitResult? {
         var result: GitCommitResult?
         let ok = await gitAction(amend ? "Amending" : "Committing", in: project, refreshLog: true) {
-            result = try await backend.gitCommit(projectId: project.id, message: message, amend: amend, all: all, paths: paths)
+            result = try await project.backend.gitCommit(projectId: project.id, message: message, amend: amend, all: all, paths: paths)
         }
         guard ok, let result else { return nil }
         toasts.show("\(amend ? "Amended" : "Committed") \(result.shortHash) · \(ChatState.clip(result.subject, 60))", kind: .success)
@@ -127,7 +127,7 @@ extension AppState {
     func undoLastCommit(in project: ProjectState) async {
         var undone: GitCommitResult?
         let ok = await gitAction("Undoing last commit", in: project, refreshLog: true) {
-            undone = try await backend.gitUndoCommit(projectId: project.id)
+            undone = try await project.backend.gitUndoCommit(projectId: project.id)
         }
         guard ok, let undone else { return }
         if project.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -145,7 +145,7 @@ extension AppState {
         project.generatingMessage = true
         defer { project.generatingMessage = false }
         do {
-            let generated = try await backend.gitCommitMessage(projectId: project.id)
+            let generated = try await project.backend.gitCommitMessage(projectId: project.id)
             project.commitMessage = generated.message
             if let error = generated.error {
                 toasts.show("The model could not write the message; using a summary of the files instead.", kind: .warning, details: error)
@@ -169,12 +169,12 @@ extension AppState {
         project.gitBusy = force ? "Force pushing" : "Pushing"
         defer { project.gitBusy = nil }
         do {
-            let output = try await backend.gitPush(projectId: project.id, remote: remote, branch: branch, setUpstream: setUpstream, force: force)
-            await project.refreshGit(backend: backend)
+            let output = try await project.backend.gitPush(projectId: project.id, remote: remote, branch: branch, setUpstream: setUpstream, force: force)
+            await project.refreshGit()
             await loadBranches(project)
             return output.output
         } catch {
-            await project.refreshGit(backend: backend)
+            await project.refreshGit()
             throw error
         }
     }
@@ -182,7 +182,7 @@ extension AppState {
     func pull(rebase: Bool, in project: ProjectState) async {
         var output = ""
         let ok = await gitAction(rebase ? "Pulling (rebase)" : "Pulling", in: project, refreshLog: true) {
-            output = try await backend.gitPull(projectId: project.id, rebase: rebase).output
+            output = try await project.backend.gitPull(projectId: project.id, rebase: rebase).output
         }
         if ok {
             let line = output.split(separator: "\n").last.map(String.init) ?? "Pulled."
@@ -193,7 +193,7 @@ extension AppState {
     func fetch(in project: ProjectState) async {
         var output = ""
         let ok = await gitAction("Fetching", in: project, refreshLog: true) {
-            output = try await backend.gitFetch(projectId: project.id).output
+            output = try await project.backend.gitFetch(projectId: project.id).output
         }
         if ok {
             toasts.show("Fetched all remotes.", kind: .success, details: output.isEmpty ? nil : output)
@@ -204,7 +204,7 @@ extension AppState {
 
     func loadBranches(_ project: ProjectState) async {
         guard project.isGitRepository else { return }
-        if let branches = try? await backend.gitBranches(projectId: project.id) {
+        if let branches = try? await project.backend.gitBranches(projectId: project.id) {
             project.branches = branches
         }
     }
@@ -215,17 +215,17 @@ extension AppState {
         guard !name.isEmpty else { return }
         var now: String?
         let ok = await gitAction(create ? "Creating branch" : "Switching branch", in: project, refreshLog: true) {
-            now = try await backend.gitCheckout(projectId: project.id, branch: name, create: create)
+            now = try await project.backend.gitCheckout(projectId: project.id, branch: name, create: create)
         }
         if ok {
             toasts.show(create ? "Created and switched to \(now ?? name)." : "Switched to \(now ?? name).", kind: .success)
-            await project.refreshStatus(backend: backend)
+            await project.refreshStatus()
         }
     }
 
     func loadCommitLog(_ project: ProjectState) async {
         guard project.isGitRepository else { return }
-        if let log = try? await backend.gitLog(projectId: project.id, limit: 20) {
+        if let log = try? await project.backend.gitLog(projectId: project.id, limit: 20) {
             project.commitLog = log
         }
     }

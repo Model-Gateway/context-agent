@@ -101,6 +101,9 @@ enum Icons {
     static let plan = "creditcard"
     static let contextCredit = "gift"
     static let worktree = "arrow.branch"
+    /// A machine reached over SSH (Settings → Remote hosts, the sidebar).
+    static let remoteHost = "server.rack"
+    static let remoteProject = "externaldrive.connected.to.line.below"
 
     /// The glyph of a `suggest/starters` kind (empty chat suggestions).
     static func starter(_ kind: String) -> String {

@@ -43,6 +43,11 @@ final class BackendClient {
     static let initializeTimeout: TimeInterval = 30
 
     var state: State = .stopped
+    /// How the running (or last) child was started; nil before the first start.
+    var launch: BackendLaunch?
+    /// The remote host of an SSH launch, else nil.
+    var host: SSHHost? { launch?.host }
+    var isRemote: Bool { launch?.isRemote == true }
     /// Delivered on the main actor, in the order the backend sent them.
     /// `.exited` is sent only for exits that were not requested by `stop()`
     /// and did not happen while `start()` was still initialising (those are
@@ -73,24 +78,38 @@ final class BackendClient {
         return false
     }
 
+    /// Running and past `initialize`: requests can be sent.
+    var isReady: Bool { isRunning && initializeResult != nil }
+
     // MARK: - Lifecycle
 
     /// Spawns `ctx serve [--mock] [--data-dir DIR]`, sends `initialize` and
     /// checks the protocol version. Throws `BackendError`; an incompatible
     /// binary throws `.rpc(kind: "incompatible")` (`isIncompatible`).
     func start(binary: URL, environment: [String: String], dataDir: URL?, mock: Bool) async throws -> InitializeResult {
+        try await start(launch: .local(binary: binary), environment: environment, dataDir: dataDir, mock: mock)
+    }
+
+    /// `start(binary:…)` for any launch: the local binary, or `ssh <host>
+    /// ctx serve` (`BackendLaunch`), which speaks the same protocol over the
+    /// SSH session's pipes. `dataDir` applies to the local binary only (the
+    /// remote server uses its own).
+    func start(launch: BackendLaunch, environment: [String: String], dataDir: URL?, mock: Bool) async throws -> InitializeResult {
         if process != nil { await stop() }
         stopRequested = false
         initialized = false
         state = .starting
         isMock = mock
-        binaryURL = binary
+        self.launch = launch
+        let binary = launch.executable
+        binaryURL = launch.isRemote ? nil : binary
         initializeResult = nil
         stderrLog = []
 
-        var arguments = ["serve"]
-        if mock { arguments.append("--mock") }
-        if let dataDir { arguments += ["--data-dir", dataDir.path] }
+        var serveArguments = ["serve"]
+        if mock { serveArguments.append("--mock") }
+        if let dataDir, !launch.isRemote { serveArguments += ["--data-dir", dataDir.path] }
+        let arguments = launch.arguments(serve: serveArguments)
         var environment = environment
         if mock, (environment["CTX_MOCK_PACE_MS"] ?? "").isEmpty {
             // Pace the scripted mock (20 ms per streamed delta, ~1.4 s per run)
@@ -114,7 +133,7 @@ final class BackendClient {
             try proc.launch()
         } catch {
             continuation.finish()
-            let message = "Could not launch \(binary.path): \(error.localizedDescription)"
+            let message = "Could not launch \(launch.label): \(error.localizedDescription)"
             lastStartFailure = .launchFailed(message)
             state = .failed(message)
             throw BackendError.transport(message)
@@ -163,7 +182,7 @@ final class BackendClient {
             guard result.protocolVersion == Self.protocolVersion else {
                 let detail = "ctx \(result.ctxVersion) speaks desktop protocol \(result.protocolVersion); this app needs protocol \(Self.protocolVersion)."
                 await stop()
-                lastStartFailure = .incompatible(found: binary.path, detail: detail)
+                lastStartFailure = .incompatible(found: launch.label, detail: detail)
                 state = .failed(detail)
                 throw BackendError.incompatible(detail)
             }
@@ -178,13 +197,14 @@ final class BackendClient {
             let tail = proc.stderrTail()
             await stop()
             if let code, Self.looksIncompatible(stderr: tail) {
-                let detail = "\(binary.path) does not support `ctx serve` (exit \(code)): \(Self.firstLine(of: tail))"
-                lastStartFailure = .incompatible(found: binary.path, detail: detail)
+                let detail = "\(launch.label) does not support `ctx serve` (exit \(code)): \(Self.firstLine(of: tail))"
+                lastStartFailure = .incompatible(found: launch.label, detail: detail)
                 state = .failed(detail)
                 throw BackendError.incompatible(detail)
             }
             if let code {
-                let message = "ctx exited (\(code)) before answering initialize" + (tail.isEmpty ? "" : ": \(Self.firstLine(of: tail))")
+                let what = launch.isRemote ? "\(launch.label) exited (\(code))" : "ctx exited (\(code))"
+                let message = what + " before answering initialize" + (tail.isEmpty ? "" : ": \(Self.lastLine(of: tail))")
                 lastStartFailure = .exited(code: code, tail: tail)
                 state = .failed(message)
                 throw BackendError.transport(message)
@@ -327,27 +347,55 @@ final class BackendClient {
         try await request("session/history", params: object(["project_id": .string(projectId), "session_id": .string(sessionId)]))
     }
 
-    func taskRun(projectId: String, sessionId: String, prompt: String, images: [String] = [], files: [FileUpload] = [], options: TaskRunOptions = .default) async throws {
+    func taskRun(projectId: String, sessionId: String, prompt: String, images: [String] = [], inlineImages: [InlineImage] = [], files: [FileUpload] = [], options: TaskRunOptions = .default) async throws {
         let encodedOptions = try Self.encode(options, context: "task/run options")
         _ = try await call("task/run", params: object([
             "project_id": .string(projectId),
             "session_id": .string(sessionId),
             "prompt": .string(prompt),
-            "images": images.isEmpty ? nil : .array(images.map(JSONValue.string)),
-            "files": files.isEmpty ? nil : .array(files.map { .object(["path": .string($0.path), "name": .string($0.name)]) }),
+            "images": Self.imageParams(paths: images, inline: inlineImages),
+            "files": Self.fileParams(files),
             "options": encodedOptions,
         ]))
     }
 
+    /// `task/run` / `task/steer` `images`: paths as strings, inline images as
+    /// `{name, data}` objects; nil when there are none.
+    nonisolated static func imageParams(paths: [String], inline: [InlineImage]) -> JSONValue? {
+        let values = paths.map(JSONValue.string) + inline.map { JSONValue.object(["name": .string($0.name), "data": .string($0.data)]) }
+        return values.isEmpty ? nil : .array(values)
+    }
+
+    /// `files`: `{path, name}` for files the backend reads itself, `{name,
+    /// content[, path]}` for text sent inline.
+    nonisolated static func fileParams(_ files: [FileUpload]) -> JSONValue? {
+        guard !files.isEmpty else { return nil }
+        return .array(files.map { file in
+            var object: [String: JSONValue] = ["name": .string(file.name)]
+            if let content = file.content {
+                object["content"] = .string(content)
+                if !file.path.isEmpty { object["path"] = .string(file.path) }
+            } else {
+                object["path"] = .string(file.path)
+            }
+            return .object(object)
+        })
+    }
+
+    /// `fs/list`: a directory of the backend's machine (`path` nil = home).
+    func fsList(path: String?, dirsOnly: Bool = false) async throws -> FsListing {
+        try await request("fs/list", params: object(["path": path.map(JSONValue.string), "dirs_only": .bool(dirsOnly)]))
+    }
+
     /// Hands a message to `sessionId`'s running turn (read at its next step);
     /// `BackendError.noTaskRunning` when the run is idle or ending.
-    func taskSteer(projectId: String, sessionId: String, prompt: String, images: [String] = [], files: [FileUpload] = []) async throws {
+    func taskSteer(projectId: String, sessionId: String, prompt: String, images: [String] = [], inlineImages: [InlineImage] = [], files: [FileUpload] = []) async throws {
         _ = try await call("task/steer", params: object([
             "project_id": .string(projectId),
             "session_id": .string(sessionId),
             "prompt": .string(prompt),
-            "images": images.isEmpty ? nil : .array(images.map(JSONValue.string)),
-            "files": files.isEmpty ? nil : .array(files.map { .object(["path": .string($0.path), "name": .string($0.name)]) }),
+            "images": Self.imageParams(paths: images, inline: inlineImages),
+            "files": Self.fileParams(files),
         ]))
     }
 
@@ -767,6 +815,12 @@ final class BackendClient {
 
     nonisolated private static func firstLine(of text: String) -> String {
         text.split(whereSeparator: \.isNewline).map(String.init).first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
+    }
+
+    /// ssh prints its own diagnosis last ("Permission denied (publickey).",
+    /// "bash: ctx: command not found"), after any banner.
+    nonisolated private static func lastLine(of text: String) -> String {
+        text.split(whereSeparator: \.isNewline).map(String.init).last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
     }
 
     /// Decodes a typed value from a `result` / `params` subtree by re-encoding it.

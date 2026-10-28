@@ -19,12 +19,13 @@ const GeneralSettingsSection = lazy(() => import('./SettingsSections').then((mod
 const ModelSettingsSection = lazy(() => import('./SettingsSections').then((module) => ({ default: module.ModelSettingsSection })))
 const PermissionsSettingsSection = lazy(() => import('./SettingsSections').then((module) => ({ default: module.PermissionsSettingsSection })))
 const AppearanceSettingsSection = lazy(() => import('./SettingsSections').then((module) => ({ default: module.AppearanceSettingsSection })))
+const RemoteHostsSettingsSection = lazy(() => import('./RemoteHostsSettingsSection').then((module) => ({ default: module.RemoteHostsSettingsSection })))
 
 /** `SettingsTab`: a profile page tab; the raw value is remembered (`settingsTab`). */
-export type SettingsTab = 'account' | 'general' | 'model' | 'byok' | 'spending' | 'billing' | 'permissions' | 'appearance'
+export type SettingsTab = 'account' | 'general' | 'model' | 'byok' | 'spending' | 'billing' | 'permissions' | 'remoteHosts' | 'appearance'
 
 /** `SettingsTab.allCases`. */
-export const SETTINGS_TABS: readonly SettingsTab[] = ['account', 'general', 'model', 'byok', 'spending', 'billing', 'permissions', 'appearance']
+export const SETTINGS_TABS: readonly SettingsTab[] = ['account', 'general', 'model', 'byok', 'spending', 'billing', 'permissions', 'remoteHosts', 'appearance']
 
 /** `SettingsTab.title`. */
 export function settingsTabTitle(tab: SettingsTab): string {
@@ -43,6 +44,8 @@ export function settingsTabTitle(tab: SettingsTab): string {
       return 'Billing'
     case 'permissions':
       return 'Permissions'
+    case 'remoteHosts':
+      return 'Remote hosts'
     case 'appearance':
       return 'Appearance'
   }
@@ -55,6 +58,8 @@ function settingsTabSubtitle(tab: SettingsTab): string | null {
       return 'Your own endpoint and key'
     case 'billing':
       return 'ModelGateway'
+    case 'remoteHosts':
+      return 'Projects over SSH'
     default:
       return null
   }
@@ -77,6 +82,8 @@ function settingsTabIcon(tab: SettingsTab): IconName {
       return 'billing'
     case 'permissions':
       return 'approval'
+    case 'remoteHosts':
+      return 'remoteHost'
     case 'appearance':
       return 'appearance'
   }
@@ -158,6 +165,8 @@ function TabContent({ tab }: { tab: SettingsTab }) {
       return <BillingSettingsSection />
     case 'permissions':
       return <PermissionsSettingsSection />
+    case 'remoteHosts':
+      return <RemoteHostsSettingsSection />
     case 'appearance':
       return <AppearanceSettingsSection />
   }

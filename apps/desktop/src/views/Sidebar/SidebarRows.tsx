@@ -215,7 +215,7 @@ export const ProjectRow = memo(function ProjectRow({ project, name, branch, isSe
     // NSMenu's "Open Worktree" submenu, flattened under a header (Menu has no submenus).
     if (closedWorktrees.length > 0) {
       items.push({ type: 'header', label: 'Open Worktree' })
-      for (const entry of closedWorktrees) items.push({ id: `worktree:${entry.path}`, label: worktreeEntryLabel(entry), onSelect: () => void openWorktree(entry) })
+      for (const entry of closedWorktrees) items.push({ id: `worktree:${entry.path}`, label: worktreeEntryLabel(entry), onSelect: () => void openWorktree(entry, project) })
     }
     if (hasWorktrees) items.push({ label: isCollapsed ? 'Show Worktrees' : 'Hide Worktrees', onSelect: toggleCollapsed })
     items.push(
@@ -223,15 +223,15 @@ export const ProjectRow = memo(function ProjectRow({ project, name, branch, isSe
       {
         label: isPinned ? 'Unpin' : 'Pin',
         onSelect: () => {
-          if (RecentProjects.item(project.root) === null) RecentProjects.touch(project.root, project.name)
-          RecentProjects.togglePin(project.root)
+          const hostId = project.host?.id ?? null
+          if (RecentProjects.item(project.root, hostId) === null) RecentProjects.touch(project.root, project.name, project.host)
+          RecentProjects.togglePin(project.root, hostId)
         },
       },
-      { label: revealLabel, onSelect: () => revealFolder(project.root) },
-      { label: 'Copy Path', onSelect: () => useApp.getState().copyToPasteboard(project.root) },
-      { type: 'separator' },
-      { label: 'Close…', onSelect: () => void askClose() },
     )
+    // `FileRow.localActions`: the file manager cannot show a folder on a host.
+    if (!project.isRemote) items.push({ label: revealLabel, onSelect: () => revealFolder(project.root) })
+    items.push({ label: 'Copy Path', onSelect: () => useApp.getState().copyToPasteboard(project.root) }, { type: 'separator' }, { label: 'Close…', onSelect: () => void askClose() })
     return items
   }
 
@@ -333,10 +333,9 @@ export const WorktreeRow = memo(function WorktreeRow({ project, label, branch, r
   const changes = `${dirtyCount} uncommitted change${dirtyCount === 1 ? '' : 's'}`
 
   const menu = (): MenuItem[] => {
-    const items: MenuItem[] = [
-      { label: revealLabel, onSelect: () => revealFolder(project.root) },
-      { label: 'Copy Path', onSelect: () => useApp.getState().copyToPasteboard(project.root) },
-    ]
+    const items: MenuItem[] = []
+    if (!project.isRemote) items.push({ label: revealLabel, onSelect: () => revealFolder(project.root) })
+    items.push({ label: 'Copy Path', onSelect: () => useApp.getState().copyToPasteboard(project.root) })
     if (branch !== null) items.push({ label: 'Copy Branch Name', onSelect: () => useApp.getState().copyToPasteboard(branch) })
     items.push(
       { type: 'separator' },
@@ -513,25 +512,28 @@ export function SessionRowsSkeleton({ count = 5 }: { count?: number }) {
 
 // MARK: - PinnedRecentRow
 
-/** `PinnedRecentRow`: a pinned recent project that is not open: muted; a click opens it. */
+/// `PinnedRecentRow`: a pinned recent project that is not open (local, or
+/// on the host it is listed under): muted; a click opens it.
 export const PinnedRecentRow = memo(function PinnedRecentRow({ recent, ready }: { recent: RecentProject; ready: boolean }) {
   const [hovering, hover] = useHover()
-  const open = () => void useApp.getState().openProject(recent.path)
-  const menu = (): MenuItem[] => [
-    { label: 'Open', onSelect: open },
-    { label: 'Unpin', onSelect: () => RecentProjects.setPinned(false, recent.path) },
-    { label: revealLabel, onSelect: () => revealFolder(recent.path) },
-    { type: 'separator' },
-    { label: 'Remove from Recents', onSelect: () => RecentProjects.remove(recent.path) },
-  ]
+  const open = () => void useApp.getState().openRecent(recent)
+  const menu = (): MenuItem[] => {
+    const items: MenuItem[] = [
+      { label: 'Open', onSelect: open },
+      { label: 'Unpin', onSelect: () => RecentProjects.setPinned(false, recent.path, recent.hostId) },
+    ]
+    if (recent.hostId === null) items.push({ label: revealLabel, onSelect: () => revealFolder(recent.path) })
+    items.push({ type: 'separator' }, { label: 'Remove from Recents', onSelect: () => RecentProjects.removeRecent(recent) })
+    return items
+  }
   return (
     <ContextMenu items={menu}>
-      <Tooltip content={abbreviatedPath(recent.path)}>
+      <Tooltip content={recent.hostId === null ? abbreviatedPath(recent.path) : `${recent.path} on ${recent.hostName ?? 'a remote host'}`}>
         <button
           type="button"
           className={rowClass(false, hovering && ready, ready ? '' : styles.disabledRow)}
           disabled={!ready}
-          aria-label={`Pinned project ${recent.name}, not open`}
+          aria-label={`Pinned project ${recent.name}, not open${recent.hostName === null ? '' : `, on ${recent.hostName}`}`}
           onClick={open}
           {...hover}
         >

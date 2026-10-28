@@ -45,6 +45,11 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("o", modifiers: .command)
 
+            Button("Open Project on Remote Host…") {
+                appState.chooseRemoteProject()
+            }
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+
             Menu("Open Recent") {
                 let recents = appState.recentProjects
                 if recents.isEmpty {
@@ -52,7 +57,7 @@ struct AppCommands: Commands {
                 } else {
                     ForEach(recents) { recent in
                         Button {
-                            Task { await appState.openProject(url: recent.url) }
+                            Task { await appState.openRecent(recent) }
                         } label: {
                             Text(verbatim: recent.pinned ? "\(recent.name)  (pinned)" : recent.name)
                         }

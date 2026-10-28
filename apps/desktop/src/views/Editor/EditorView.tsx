@@ -284,12 +284,20 @@ const EditorTabChip = memo(function EditorTabChip({
 
 // MARK: - Document
 
-/** `DocumentPane`: the viewer for the document's kind. */
+/// `DocumentPane`: the viewer for the document's kind. Images and PDFs of a
+/// project on a remote host are not fetched (the asset protocol reads this
+/// machine's disk): a placeholder names the file and its host instead.
 function DocumentPane({ project, document }: { project: ProjectState; document: EditorDocument }) {
   const kind = useDocumentValue(document, (d) => d.kind, 'text')
   return (
     <div className={styles.document}>
-      {kind === 'image' ? (
+      {(kind === 'image' || kind === 'pdf') && project.isRemote ? (
+        <EmptyPlaceholder
+          icon={kind === 'image' ? 'file' : 'file'}
+          title={`${document.path.split('/').pop() ?? document.path} is on ${project.hostLabel ?? 'a remote host'}`}
+          subtitle={`${kind === 'image' ? 'Images' : 'PDFs'} of a remote project are not shown here. Open it on the host, or ask the agent about it.`}
+        />
+      ) : kind === 'image' ? (
         <ImageDocumentView path={documentFilePath(document, project)} />
       ) : kind === 'pdf' ? (
         <PDFDocumentView path={documentFilePath(document, project)} />

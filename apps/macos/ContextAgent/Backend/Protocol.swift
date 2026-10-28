@@ -787,6 +787,8 @@ struct InitializeResult: Codable, Equatable {
     var pricing: PricingSettings?
     var spend: SpendSettings = SpendSettings()
     var mcp: McpSettings = McpSettings()
+    /// The machine the server runs on (absent from older backends).
+    var host: HostInfo? = nil
 
     enum CodingKeys: String, CodingKey {
         case protocolVersion = "protocol_version"
@@ -794,7 +796,7 @@ struct InitializeResult: Codable, Equatable {
         case dataDir = "data_dir"
         case configFile = "config_file"
         case configSources = "config_sources"
-        case mock, model, permissions, pricing, spend, mcp
+        case mock, model, permissions, pricing, spend, mcp, host
     }
 
     init(protocolVersion: Int, ctxVersion: String, dataDir: String, configFile: String, configSources: [String], mock: Bool, model: ModelSettings, permissions: PermissionSettings, pricing: PricingSettings?, spend: SpendSettings = SpendSettings(), mcp: McpSettings = McpSettings()) {
@@ -826,7 +828,54 @@ struct InitializeResult: Codable, Equatable {
         spend = try c.decodeIfPresent(SpendSettings.self, forKey: .spend) ?? SpendSettings()
         // Backends older than MCP support leave it out.
         mcp = try c.decodeIfPresent(McpSettings.self, forKey: .mcp) ?? McpSettings()
+        host = try c.decodeIfPresent(HostInfo.self, forKey: .host)
     }
+}
+
+/// `initialize.host`: where the backend runs.
+struct HostInfo: Codable, Equatable {
+    var hostname: String
+    var user: String
+    var homeDir: String
+    /// "macos", "linux", "windows", …
+    var os: String
+
+    enum CodingKeys: String, CodingKey {
+        case hostname, user, os
+        case homeDir = "home_dir"
+    }
+}
+
+/// `fs/list` result: one directory of the backend's machine.
+struct FsListing: Codable, Equatable {
+    var path: String
+    var parent: String?
+    var home: String
+    var entries: [FsEntry]
+}
+
+struct FsEntry: Codable, Equatable, Hashable, Identifiable {
+    var name: String
+    var path: String
+    var isDir: Bool
+    var isGit: Bool
+    var isHidden: Bool
+
+    var id: String { path }
+
+    enum CodingKeys: String, CodingKey {
+        case name, path
+        case isDir = "is_dir"
+        case isGit = "is_git"
+        case isHidden = "is_hidden"
+    }
+}
+
+/// A `task/run` image sent as bytes (a backend on another machine cannot
+/// read the app's files): the base64 of a PNG, JPEG, GIF or WebP file.
+struct InlineImage: Equatable, Hashable {
+    var name: String
+    var data: String
 }
 
 // MARK: - MCP

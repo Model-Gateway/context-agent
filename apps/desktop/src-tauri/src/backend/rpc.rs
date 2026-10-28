@@ -7,7 +7,7 @@
 //! (`mod.rs`) hands complete stdout lines to [`RpcConnection::receive`] in the
 //! order the child wrote them. A response resolves its pending request; a
 //! notification is emitted to the frontend as the `backend:notification`
-//! event (`{ method, params }`), still in frame order.
+//! event (`{ backend, method, params }`), still in frame order.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -22,7 +22,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use super::{debug, lock};
 
-/// The event every notification frame is emitted as (`{ method, params }`).
+/// The event every notification frame is emitted as (`{ backend, method, params }`).
 pub const NOTIFICATION_EVENT: &str = "backend:notification";
 
 /// `BackendError` as the frontend sees it: a rejected `rpc_request` carries
@@ -143,9 +143,11 @@ struct Request<'a> {
     params: Option<&'a Value>,
 }
 
-/// The `backend:notification` payload (`RPCNotification` without `raw`).
+/// The `backend:notification` payload (`RPCNotification` without `raw`),
+/// tagged with the backend it came from.
 #[derive(Debug, Clone, Serialize)]
 pub struct Notification {
+    pub backend: String,
     pub method: String,
     pub params: Value,
 }
@@ -164,6 +166,8 @@ pub struct Outgoing {
 /// Serialises every write to the child and matches responses to callers.
 pub struct RpcConnection {
     app: AppHandle,
+    /// The backend id the notifications are tagged with.
+    backend: String,
     next_id: AtomicU64,
     pending: PendingMap,
     writer: mpsc::UnboundedSender<Outgoing>,
@@ -173,12 +177,13 @@ pub struct RpcConnection {
 
 impl RpcConnection {
     /// Creates the connection and its writer task over the child's stdin.
-    pub fn new(app: AppHandle, stdin: ChildStdin) -> Arc<Self> {
+    pub fn new(app: AppHandle, stdin: ChildStdin, backend: String) -> Arc<Self> {
         let (writer, receiver) = mpsc::unbounded_channel();
         let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
         tauri::async_runtime::spawn(writer_task(stdin, receiver, Arc::clone(&pending)));
         Arc::new(Self {
             app,
+            backend,
             next_id: AtomicU64::new(1),
             pending,
             writer,
@@ -264,6 +269,7 @@ impl RpcConnection {
             let _ = sender.send(outcome);
         } else if let Some(method) = frame.method {
             let payload = Notification {
+                backend: self.backend.clone(),
                 method,
                 params: frame.params.unwrap_or(Value::Null),
             };

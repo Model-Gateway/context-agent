@@ -592,6 +592,7 @@ dependencies = [
  "ctx-telemetry",
  "ctx-tools",
  "futures",
+ "libc",
  "parking_lot",
  "ratatui",
  "reqwest",

@@ -6,7 +6,6 @@
 // own (own run slot, index and chats) and nested under the parent in the
 // sidebar. Nothing waits, and the two never edit the same files.
 
-import { backend } from '../backend/client'
 import { errorText } from '../backend/errors'
 import { worktreeShortMerged, type WorktreeEntry } from '../backend/types'
 import { toasts, type ToastLevel } from '../components/toasts'
@@ -41,7 +40,7 @@ export async function newWorktree(project: ProjectState, options: { name?: strin
   if (project.creatingWorktree) return null
   project.update((p) => (p.creatingWorktree = true))
   try {
-    const info = await backend.worktreeCreate(project.id, options.name ?? null)
+    const info = await project.backend.worktreeCreate(project.id, options.name ?? null)
     const worktree = useApp.getState().register(info)
     await useApp.getState().restorePermissionProfile(worktree)
     if (select) {
@@ -110,9 +109,9 @@ export async function sendInNewWorktree(): Promise<void> {
 /** Swift's name for `sendInNewWorktree`. */
 export const sendDraftInNewWorktree = sendInNewWorktree
 
-/** `openWorktree(_:)`: opens a worktree of the repository that is not open yet (`worktree/list`). */
-export async function openWorktree(entry: WorktreeEntry): Promise<void> {
-  await useApp.getState().openProject(entry.path, { select: true, restoreSession: true })
+/** `openWorktree(_:)`: opens a worktree of `project`'s repository that is not open yet (`worktree/list`), on the project's host. */
+export async function openWorktree(entry: WorktreeEntry, project: ProjectState): Promise<void> {
+  await useApp.getState().openProject(entry.path, { select: true, restoreSession: true, host: project.host })
 }
 
 /// `removeWorktree(_:deleteBranch:)`: removes a worktree's checkout
@@ -123,7 +122,7 @@ export async function removeWorktree(project: ProjectState, deleteBranch: boolea
   const parent = parentProject(useApp.getState(), project)
   tearDownWorkspaces(project)
   try {
-    const result = await backend.worktreeRemove(project.id, deleteBranch, true)
+    const result = await project.backend.worktreeRemove(project.id, deleteBranch, true)
     forget(project)
     if (parent) {
       if (useApp.getState().selectedProjectId === null) useApp.getState().selectProject(parent.id)
@@ -147,7 +146,7 @@ export async function mergeWorktree(project: ProjectState, deleteAfter: boolean)
   const parent = parentProject(useApp.getState(), project)
   const target = parent?.branch ?? 'the parent branch'
   try {
-    const result = await backend.worktreeMerge(project.id, deleteAfter)
+    const result = await project.backend.worktreeMerge(project.id, deleteAfter)
     if (result.removed) {
       tearDownWorkspaces(project)
       forget(project)
@@ -205,7 +204,7 @@ function forget(project: ProjectState): void {
       version: state.version + 1,
     }
   })
-  forgetOpenProject(project.root)
+  forgetOpenProject(project.key)
   project.dispose()
   useApp.getState().refreshAttention()
 }

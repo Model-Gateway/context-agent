@@ -184,3 +184,11 @@
   display: inline-flex;
   flex: 0 0 auto;
 }
+
+/* The remote Backend card's failure section: the hint and Reconnect (`failureSection` for a host). */
+.remoteFailure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}

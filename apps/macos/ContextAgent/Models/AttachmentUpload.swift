@@ -7,9 +7,54 @@ import os
 
 /// A text file for `task/run` `files`: `name` is what the model is told the
 /// file is called (the original document's name for text extracted from it).
+/// `content` carries the text itself for a backend on another machine,
+/// which cannot read `path` (`RemoteAttachments`).
 struct FileUpload: Codable, Equatable, Hashable {
     var path: String
     var name: String
+    var content: String? = nil
+}
+
+/// Attachments for a project on a remote host: the backend there cannot
+/// open the app's files, so images go as their base64 bytes and text files
+/// as their content, read here just before `task/run` / `task/steer`. The
+/// prompt keeps its local paths for the transcript's thumbnails and chips.
+enum RemoteAttachments {
+    struct Prepared: Equatable {
+        var inlineImages: [InlineImage] = []
+        var files: [FileUpload] = []
+        /// Attachments that could not be read (gone since they were attached).
+        var skipped: [String] = []
+    }
+
+    /// Read off the main actor: a pasted screenshot is a few megabytes.
+    static func prepare(images: [String], files: [FileUpload]) async -> Prepared {
+        await Task.detached(priority: .userInitiated) { inline(images: images, files: files) }.value
+    }
+
+    nonisolated static func inline(images: [String], files: [FileUpload]) -> Prepared {
+        var prepared = Prepared()
+        for path in images {
+            // A name from history (a remote run's image) has no bytes here.
+            guard path.hasPrefix("/"), let data = try? Data(contentsOf: URL(fileURLWithPath: path)), !data.isEmpty else {
+                prepared.skipped.append(path)
+                continue
+            }
+            prepared.inlineImages.append(InlineImage(name: (path as NSString).lastPathComponent, data: data.base64EncodedString()))
+        }
+        for file in files {
+            if file.content != nil {
+                prepared.files.append(file)
+                continue
+            }
+            guard file.path.hasPrefix("/"), let data = try? Data(contentsOf: URL(fileURLWithPath: file.path)), let text = String(data: data, encoding: .utf8) else {
+                prepared.skipped.append(file.path)
+                continue
+            }
+            prepared.files.append(FileUpload(path: file.path, name: file.name, content: text))
+        }
+        return prepared
+    }
 }
 
 /// What `task/run` gets for a draft's attachments, besides the "Attached

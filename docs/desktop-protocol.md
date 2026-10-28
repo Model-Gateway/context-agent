@@ -79,10 +79,14 @@ repository id (`RepositoryId`, 24 hex chars) of the opened root.
  "permissions":{"profile":"approval_required","allowed_commands":[],"denied_commands":[],"allow_network_commands":false},
  "pricing":{"input_per_million":2.0 | null,"cached_input_per_million":0.5 | null,"output_per_million":8.0 | null,
             "models":{"gpt-4.1":{"input":2.0,"output":8.0,"cache_read":0.5}}} | null,
- "spend":{"period":"day" | "week" | "month","max_usd":50.0,"models":{"gpt-4.1":10.0}}}
+ "spend":{"period":"day" | "week" | "month","max_usd":50.0,"models":{"gpt-4.1":10.0}},
+ "host":{"hostname":"devbox","user":"alice","home_dir":"/home/alice","os":"linux"}}
 ```
 Must be the first call. `model`, `permissions`, `pricing`, `spend` describe the
-user-level configuration (before any per-project override).
+user-level configuration (before any per-project override). `host` is the
+machine the server runs on (`gethostname`, `$USER`, the home directory,
+`std::env::consts::OS`): the desktop app shows it for a backend reached over
+SSH and starts its remote folder picker in `home_dir` (see **Remote hosts**).
 
 `pricing` holds the user's own prices (USD per million tokens): `models` prices one
 model each (`config/patch` replaces the whole map with `"pricing.models": {…}`);
@@ -322,7 +326,7 @@ message is the entry with the highest `after_message_id` below it. `tree` is
 `null` when the root is no git work tree. The objects are unreferenced:
 `git gc` prunes them after `gc.pruneExpire` (two weeks by default).
 
-### `task/run` `{ "project_id", "session_id", "prompt", "images"?: ["/abs/path.png"], "files"?: [{ "path": "/abs/notes.txt", "name"?: "report.pdf" }], "options"?: { "max_steps"?: 40, "proactive_retrieval"?: true, "memory_context"?: true, "stream"?: true, "debug_prompt"?: false } }` → `{ "accepted": true }`
+### `task/run` `{ "project_id", "session_id", "prompt", "images"?: ["/abs/path.png" | { "name"?: "shot.png", "data": "<base64>" }], "files"?: [{ "path": "/abs/notes.txt", "name"?: "report.pdf" } | { "name": "notes.txt", "path"?: "/client/notes.txt", "content": "…" }], "options"?: { "max_steps"?: 40, "proactive_retrieval"?: true, "memory_context"?: true, "stream"?: true, "debug_prompt"?: false } }` → `{ "accepted": true }`
 Starts the agent loop for the prompt in that session. `images` (at most
 20 absolute paths of PNG, JPEG, GIF or WebP files, each at most 20 MB; the
 format is read from the file's signature) are read before the run starts —
@@ -330,7 +334,11 @@ a missing, unsupported or oversized file is `-32602` and starts nothing —
 and go to the model with the prompt as `image_url` content parts (base64
 data URLs). They are stored inline in the user message, so a continued task
 replays them, and `session/history` lists their paths in the message's
-`images`. `files` (at most 20) are UTF-8 text files read the same way —
+`images`. A client on another machine (the desktop app over SSH, see
+**Remote hosts**) sends an image's bytes instead: `{ "name", "data" }` with
+`data` the file's base64 (same size limit and format check; bad base64 is
+`-32602`), and `session/history` then lists its `name` where a path would
+be. `files` (at most 20) are UTF-8 text files read the same way —
 missing, relative or binary (a NUL byte or invalid UTF-8) is `-32602` — and
 appended to the message text the model sees as
 `<<<BEGIN ATTACHED FILE :: <name>>>> … <<<END ATTACHED FILE>>>` blocks;
@@ -339,7 +347,9 @@ for text it extracted from a PDF or Word document). Each file keeps its
 first 200 KB (`FileInput::MAX_BYTES`, cut on a character boundary) and a
 note of how many bytes were left out. They are stored inline too, and
 `session/history` lists `{path, name}` in the message's `files` while its
-`text` stays the prompt alone. Exactly one task may
+`text` stays the prompt alone. A file sent inline (`content` with a `name`;
+`-32602` without one) is cut the same way and listed with its `path` when
+the client sent one, else its name. Exactly one task may
 run per session (`-32002` otherwise); sessions of one project run at the same
 time, in the same checkout (see "Concurrent sessions" below). Events stream as `event`
 notifications; the run ends with a `task/finished` notification, which is
@@ -370,7 +380,7 @@ where `remembering` shares the project's `RememberingApprovals` answers (so
 `effort` is the project's current `model.reasoning_effort` (a `config/patch`
 reaches the next run without reopening the project).
 
-### `task/steer` `{ "project_id", "session_id", "prompt", "images"?, "files"? }` → `{}`
+### `task/steer` `{ "project_id", "session_id", "prompt", "images"?, "files"? }` → `{}` (`images` and `files` as in `task/run`)
 Hands a message to the session's running turn (attachments as in `task/run`). The runtime gives it to the model before its next step and reports it with a `steered` event; a turn that was about to finish keeps going to answer it. `-32003` when the session has no run or its run is ending (the message was not taken): the client sends it with `task/run` after `task/finished`. A message the run never read (it was cancelled, failed or ran out of steps) is dropped with the run; the client, which saw no `steered` event for it, sends it again as the next turn.
 
 ### `task/cancel` `{ "project_id", "session_id"? }` → `{}` (`-32003` when idle). With `session_id`, cancels that session's run; without it, every run of the project. Cancels cooperatively; `task/finished` follows. A run parked on a pending approval is unblocked by answering it with `deny`; a run still waiting for the background index or a capability probe is cancelled immediately (`task/finished` with `status: null`, `error_kind: "cancelled"`).
@@ -548,6 +558,18 @@ credentials and remembered model are shared as for any project.
 - `worktree/list` `{ "project_id" }` → `{ "worktrees": [{"path","branch": "ctx/x"|null,"head","is_main": true,"managed": false}] }` — `git worktree list --porcelain` of the project's repository, the main checkout first; `managed` marks those under the data dir.
 - `worktree/remove` `{ "project_id", "delete_branch": false, "force": false }` → `{ "removed": "/path", "branch": "ctx/x"|null, "branch_deleted": false }` — `project_id` must be a linked worktree (`-32602` otherwise) and idle (`-32002` while its task runs). The project is closed as by `project/close`, then `git worktree remove [--force] <path>` runs in the main checkout (`--force` discards uncommitted changes; without it a dirty worktree is `-32000`), and with `delete_branch` the branch is deleted (`git branch -D`; a failure there only logs and leaves `branch_deleted: false`). The worktree's stores under `repositories/<id>` are kept, so a worktree created again at the same path finds its chats.
 - `worktree/merge` `{ "project_id", "delete_after": false }` → `{ "merged": "<sha>", "subject": "Merge branch 'ctx/x'", "removed": false }` — lands the worktree's branch in the main checkout. `project_id` must be a linked worktree (`-32602` otherwise); `-32002` while a task runs in the worktree or in the parent project (the open project whose root is the main checkout). `-32000` when the worktree has uncommitted changes (commit them in its Changes tab first), when the parent checkout is on no branch, when the branch has nothing the parent lacks, or when `git merge` refuses because the parent's working tree is dirty in a way it cannot keep (git decides; its first stderr line is the message). `git merge --no-ff --no-edit ctx/<slug>` runs in the main checkout; on a conflict the merge is aborted (`git merge --abort`, the parent is left as it was) and the `-32000` message lists the conflicting paths. With `delete_after` a successful merge is followed by `worktree/remove {delete_branch: true}` (`removed: true`; a failure there is `-32000` whose message starts with the merge that did land). `merged` is the parent's new HEAD.
+
+### `fs/list` `{ "path"?: "/abs/dir" | "~/code", "dirs_only"?: false }` → `{ "path": "/abs/dir", "parent": "/abs" | null, "home": "/home/alice", "entries": [{ "name", "path", "is_dir", "is_git", "is_hidden" }] }`
+A directory of the machine the server runs on, with no project involved:
+the desktop app's folder picker and file tree for a backend on another
+machine (**Remote hosts**), where `NSOpenPanel` and `FileManager` cannot
+see the files. `path` is `~`-expanded; absent or empty lists the home
+directory. The listed path is canonical; `parent` is absent at the root.
+Entries come directories first, then files, each sorted by name, without
+`.git` and `.DS_Store`; `is_git` marks a directory holding a `.git` entry (a
+repository root), `is_hidden` a dotfile, and `dirs_only` leaves files out. A
+relative path, a missing one or a file is `-32602`. Symlinked directories
+list as directories.
 
 ### `file/read` `{ "project_id", "path": "src/a.rs", "max_bytes"?: 262144 }` → `{ "path":"…","content":"…","truncated":false,"language":"rust"|null,"size":1234,"hash":"sha256:…" }`
 At most `max_bytes` (clamped to 1 … 16 MiB) are read from the file — never
@@ -921,6 +943,39 @@ always answer in their own words, or skip. The model reads the answers as
 row's summary is "the user answered …". Policy: `ActionKind::AskUser`,
 read-only and always allowed. The persisted tool call (arguments) and its
 output are the history's record of the exchange.
+
+## Remote hosts
+
+The desktop app can run `ctx serve` on another machine over SSH, the way
+Claude Code and Codex run on a remote host: the app spawns
+`ssh [-p port] [-i identity] [-l user] -T <host> -- <ctx> serve` and talks
+the same newline-delimited JSON-RPC over the SSH session's stdin/stdout,
+one child per configured host next to the local one. Nothing in the
+protocol changes for the server: it is an ordinary `ctx serve` whose
+client happens to be far away. What follows from that:
+
+- **Everything is the remote machine's.** `project/open` paths, `file/read`,
+  the index, sessions, memories, `~/.context-agent` configuration, API keys
+  and MCP servers are all the remote host's. `initialize` reports the
+  remote `data_dir`, `model` and `host`; `config/patch` edits the remote
+  configuration file. The remote `ctx` must be installed and configured
+  (a key in its `config.toml` or environment, or `ctx` signed in to
+  ModelGateway there) — the app never copies credentials over.
+- **No shared filesystem.** The app browses folders with `fs/list` and
+  sends attachments inline (`task/run` `images` as `{name, data}` and
+  `files` as `{name, content}`); `session/history` lists them by name.
+  Paths in events and history are remote paths, shown as such.
+- **stdout is the protocol.** `ssh` adds nothing to stdout itself; the
+  remote command runs under the user's shell as `$SHELL -c`, which
+  sources no interactive rc files, so a `.bashrc` that prints does not
+  corrupt the stream. Logs go to stderr as always and reach the app's
+  backend log through the SSH session's stderr, prefixed with the host.
+- **Authentication is ssh's.** The app runs `ssh` with `BatchMode=yes`:
+  keys, `ssh-agent` and `~/.ssh/config` (ProxyJump, IdentityFile, User)
+  work as in a terminal; a password prompt cannot be answered and fails
+  the connection with ssh's message. `ServerAliveInterval` keeps idle
+  sessions open and detects a dropped link, which the app reports as the
+  host's backend having exited; the user reconnects from the sidebar.
 
 ## Environment
 

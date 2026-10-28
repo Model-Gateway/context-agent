@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A profile page tab; the raw value is remembered (`Preferences.settingsTab`).
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case account, general, model, byok, spending, billing, permissions, appearance
+    case account, general, model, byok, spending, billing, permissions, remoteHosts, appearance
 
     var id: String { rawValue }
 
@@ -15,6 +15,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .spending: "Spending"
         case .billing: "Billing"
         case .permissions: "Permissions"
+        case .remoteHosts: "Remote hosts"
         case .appearance: "Appearance"
         }
         }
@@ -23,6 +24,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .byok: "Your own endpoint and key"
         case .billing: "ModelGateway"
+        case .remoteHosts: "SSH"
         default: nil
         }
     }
@@ -36,6 +38,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .spending: Icons.spending
         case .billing: Icons.billing
         case .permissions: Icons.approval
+        case .remoteHosts: Icons.remoteHost
         case .appearance: Icons.appearance
         }
     }
@@ -97,6 +100,7 @@ struct ProfileView: View {
         case .spending: SpendingSettingsSection()
         case .billing: BillingSettingsSection()
         case .permissions: PermissionsSettingsSection()
+        case .remoteHosts: RemoteHostsSettingsSection()
         case .appearance: AppearanceSettingsSection()
         }
     }

@@ -796,6 +796,11 @@ private final class Session {
     }
 
     private func stopBackend() async {
+        // Remote hosts first: their `ssh` children must not outlive the app.
+        for host in appState.hosts.hosts where appState.remotes[host.id]?.client.isRunning == true {
+            await appState.disconnect(host)
+            log("disconnected \(host.displayName)")
+        }
         guard appState.backend.state != .stopped else { return }
         let backend = appState.backend
         let stopper = Task { @MainActor in await backend.stop() }

@@ -333,6 +333,8 @@ struct Server {
     open_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// Process-level redaction for `log` notifications and error strings.
     redactor: Redactor,
+    /// `initialize.host`: the machine this server runs on, read once.
+    host: HostInfo,
     /// Cancelled on shutdown; every project's token is a child, so probes
     /// and runs stop with the process.
     lifetime: CancellationToken,
@@ -588,6 +590,7 @@ pub async fn run(cli: &Cli, mock: bool) -> Result<i32> {
         orphaned_runs: Mutex::new(HashMap::new()),
         open_locks: Mutex::new(HashMap::new()),
         redactor,
+        host: host_info(),
         lifetime: CancellationToken::new(),
         shutdown: Notify::new(),
         lsp: Arc::new(LspSessions::default()),
@@ -805,6 +808,7 @@ impl Server {
             "worktree/merge" => self.worktree_merge(parse(params)?).await,
             "file/read" => self.file_read(parse(params)?).await,
             "files/search" => self.files_search(parse(params)?).await,
+            "fs/list" => self.fs_list(parse(params)?).await,
             "file/write" => self.file_write(parse(params)?).await,
             "symbols/find" => self.symbols_find(parse(params)?).await,
             "lsp/status" => self.lsp_status(parse(params)?).await,
@@ -882,11 +886,19 @@ impl Server {
             pricing: c.pricing.as_ref().map(|p| PricingInfo { input_per_million: p.input_per_million, cached_input_per_million: p.cached_input_per_million, output_per_million: p.output_per_million, models: p.models.clone() }),
             spend: c.spend.clone(),
             mcp: c.mcp.clone(),
+            host: self.host.clone(),
         }
     }
 
     /// `files/search`: the repository files best matching `query` for `@`
     /// completion (ignore rules applied; the walk is cached for ten seconds).
+    /// `fs/list`: a directory of this machine (the desktop app's remote
+    /// folder picker and file tree); no project needed.
+    async fn fs_list(&self, params: FsListParams) -> RpcResult<Value> {
+        let listing = blocking_rpc(move || list_directory(params.path.as_deref(), params.dirs_only)).await?;
+        to_value(&listing)
+    }
+
     async fn files_search(&self, params: FilesSearchParams) -> RpcResult<Value> {
         let project = self.project(&params.project_id)?;
         let limit = params.limit.unwrap_or(20).clamp(1, 100);

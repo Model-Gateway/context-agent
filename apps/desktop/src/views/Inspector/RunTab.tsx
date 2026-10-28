@@ -7,9 +7,13 @@ import { Tooltip } from '../../components/Tooltip'
 import { executionStateLabel, tokenUsageTotal, type ContextStats, type TaskOutcome } from '../../backend/types'
 import { chatStatusIsRunning, chatStatusProgress } from '../../models/reducer'
 import { TranscriptFormat } from '../../models/transcript'
-import { approvalModeLabel, useApp, useSelectedChat, useSelectedProject } from '../../state/app'
+import { approvalModeLabel, remoteConnection, useApp, useSelectedChat, useSelectedProject } from '../../state/app'
 import { ChatState } from '../../state/chat'
+import type { ProjectState } from '../../state/project'
 import { connectionFailure, useConnectionLabel } from '../../state/selectors'
+import { SETTINGS_TAB_REMOTE_HOSTS } from '../../state/app'
+import { Button } from '../../components/Button'
+import { hostTarget } from '../../models/sshHost'
 import { Icon } from '../../theme/icons'
 import { BackendFailurePanel } from '../Welcome/BackendFailurePanel'
 import { ChangesCard } from './ChangesCard'
@@ -222,15 +226,96 @@ function finishedOutcome(chat: ChatState): TaskOutcome | null {
  * `BackendCard`: the connection dot and label, the user-level default model
  * and the selected project's approval mode; a click opens Settings. While
  * the connection has failed it also shows the failure (the Shell's compact
- * `BackendFailurePanel`: its summary, Retry and Choose binary…).
+ * `BackendFailurePanel`: its summary, Retry and Choose binary…). For a
+ * project on a remote host the card describes the host's connection
+ * instead (its state, the host, Reconnect after a failure).
  */
 function BackendCard() {
+  const project = useSelectedProject()
+  if (project && project.host !== null) return <RemoteBackendCard project={project} />
+  return <LocalBackendCard project={project} />
+}
+
+/** The Backend card of a project on a remote host: the host's connection, its model and the project's approval mode. */
+function RemoteBackendCard({ project }: { project: ProjectState }) {
+  const host = project.host
+  const connection = useApp(() => (host ? remoteConnection(host.id) : null))
+  useApp(() => connection?.version ?? -1)
+  const modelName = connection?.result?.model.name ?? ''
+  const modelLabel = useApp((state) => (modelName.length > 0 ? state.modelDisplayName(modelName) : ''))
+  const [overChip, setOverChip] = useState(false)
+  const kind = connection?.state.kind ?? 'disconnected'
+  const label = connection ? connection.label.replace(' · mock', '') : 'Not connected'
+  const chipHover = {
+    onPointerEnter: () => setOverChip(true),
+    onPointerLeave: () => setOverChip(false),
+  }
+  if (!host) return null
+  return (
+    <div className={styles.backendCard}>
+      <Tooltip content={`${hostTarget(host)} · Open Settings → Remote hosts`} disabled={overChip}>
+        <button
+          type="button"
+          className={styles.backendSummary}
+          aria-label={`Host ${project.hostLabel ?? ''}: ${label}. Open Settings`}
+          onClick={() => useApp.getState().openSettings(SETTINGS_TAB_REMOTE_HOSTS)}
+        >
+          <span className={styles.backendStatusLine}>
+            <StatusDot kind={kind === 'ready' ? 'ready' : kind === 'connecting' ? 'connecting' : 'failed'} />
+            <span className={styles.backendLabel}>{label}</span>
+            <span className={styles.flexSpacer} />
+            <Icon name="remoteHost" size={11} strokeWidth={1.75} className={styles.tertiaryIcon} />
+          </span>
+          <span className={styles.backendModelLine}>
+            <MiddleText text={connection?.hostSummary ?? hostTarget(host)} className={styles.backendModel} />
+            <span className={styles.chipHover} {...chipHover}>
+              <Tooltip content="The project lives on this SSH host">
+                <Chip icon="remoteHost">{project.hostLabel ?? host.address}</Chip>
+              </Tooltip>
+            </span>
+            {connection?.result?.mock ? (
+              <span className={styles.chipHover} {...chipHover}>
+                <Tooltip content="Mock backend on the host: no API key, scripted replies">
+                  <Chip>mock</Chip>
+                </Tooltip>
+              </span>
+            ) : null}
+          </span>
+          {modelName.length > 0 ? (
+            <span className={styles.backendModelLine}>
+              <MiddleText text={modelLabel} className={styles.backendModel} />
+              <span className={styles.chipHover} {...chipHover}>
+                <Tooltip content="The host's default model">
+                  <Chip>default</Chip>
+                </Tooltip>
+              </span>
+            </span>
+          ) : null}
+          <span className={styles.backendApprovalLine}>
+            <Icon name="approval" size={10} strokeWidth={2} className={styles.tertiaryIcon} />
+            <MiddleText text={`${approvalModeLabel(project.info.permission_profile)} · ${project.name}`} grow className={styles.backendApproval} />
+          </span>
+        </button>
+      </Tooltip>
+      {kind === 'failed' || kind === 'disconnected' ? (
+        <div className={styles.remoteFailure}>
+          {connection?.hint ? <p className={`${styles.error} ${styles.clamp4} selectable`}>{connection.hint}</p> : null}
+          <Button size="small" variant="prominent" icon="refresh" onClick={() => void useApp.getState().reconnectHost(host)}>
+            Reconnect
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** The Backend card of the local backend (and of no project). */
+function LocalBackendCard({ project }: { project: ProjectState | null }) {
   const connection = useApp((state) => state.connection)
   const isMock = useApp((state) => state.config?.mock === true)
   const modelName = useApp((state) => state.config?.model.name ?? '')
   const modelLabel = useApp((state) => (modelName.length > 0 ? state.modelDisplayName(modelName) : ''))
   const connectionLabel = useConnectionLabel()
-  const project = useSelectedProject()
   // The chips carry their own help; the card's "Open Settings" stays out of their way.
   const [overChip, setOverChip] = useState(false)
   const failure = connectionFailure(connection)

@@ -8,7 +8,6 @@
 // `commitFromBox` is plugged into the store's mod+Return (`primaryAction`)
 // through `extendApp` when this module loads.
 
-import { backend } from '../backend/client'
 import { BackendError, errorText } from '../backend/errors'
 import { gitShortHash, gitStagedFiles, type GitCommitResult, type GitDiscardResult } from '../backend/types'
 import { toasts, type ToastLevel } from '../components/toasts'
@@ -84,14 +83,14 @@ export async function selectChangeInSection(path: string, staged: boolean, proje
 /** `stage(_:in:)`: empty `paths` stages everything. */
 export async function stage(paths: string[], project: ProjectState): Promise<void> {
   await gitAction(paths.length === 0 ? 'Staging all changes' : 'Staging', project, async () => {
-    await backend.gitStage(project.id, paths)
+    await project.backend.gitStage(project.id, paths)
   })
 }
 
 /** `unstage(_:in:)`: empty `paths` unstages everything. */
 export async function unstage(paths: string[], project: ProjectState): Promise<void> {
   await gitAction(paths.length === 0 ? 'Unstaging all changes' : 'Unstaging', project, async () => {
-    await backend.gitUnstage(project.id, paths)
+    await project.backend.gitUnstage(project.id, paths)
   })
 }
 
@@ -100,7 +99,7 @@ export async function unstage(paths: string[], project: ProjectState): Promise<v
 export async function discard(paths: string[], project: ProjectState): Promise<void> {
   let result: GitDiscardResult | null = null
   const ok = await gitAction(paths.length === 0 ? 'Discarding all changes' : 'Discarding changes', project, async () => {
-    result = await backend.gitDiscard(project.id, paths)
+    result = await project.backend.gitDiscard(project.id, paths)
   })
   const discarded = result as GitDiscardResult | null
   if (ok && discarded) {
@@ -135,7 +134,7 @@ export async function commit(message: string, project: ProjectState, options: Co
     amend ? 'Amending' : 'Committing',
     project,
     async () => {
-      result = await backend.gitCommit(project.id, message, amend, all, paths)
+      result = await project.backend.gitCommit(project.id, message, amend, all, paths)
     },
     true,
   )
@@ -179,7 +178,7 @@ export async function undoLastCommit(project: ProjectState): Promise<void> {
     'Undoing last commit',
     project,
     async () => {
-      undone = await backend.gitUndoCommit(project.id)
+      undone = await project.backend.gitUndoCommit(project.id)
     },
     true,
   )
@@ -199,7 +198,7 @@ export async function generateCommitMessage(project: ProjectState): Promise<stri
   if (project.generatingMessage) return null
   project.update((p) => (p.generatingMessage = true))
   try {
-    const generated = await backend.gitCommitMessage(project.id)
+    const generated = await project.backend.gitCommitMessage(project.id)
     project.update((p) => (p.commitMessage = generated.message))
     if (generated.error != null) {
       toast('The model could not write the message; using a summary of the files instead.', 'warning', generated.error)
@@ -235,7 +234,7 @@ export async function push(project: ProjectState, options: PushOptions): Promise
   project.update((p) => (p.gitBusy = options.force ? 'Force pushing' : 'Pushing'))
   try {
     try {
-      const output = await backend.gitPush(project.id, options.remote, options.branch, options.setUpstream, options.force)
+      const output = await project.backend.gitPush(project.id, options.remote, options.branch, options.setUpstream, options.force)
       await project.refreshGit()
       await loadBranches(project)
       return output.output
@@ -255,7 +254,7 @@ export async function pull(rebase: boolean, project: ProjectState): Promise<void
     rebase ? 'Pulling (rebase)' : 'Pulling',
     project,
     async () => {
-      output = (await backend.gitPull(project.id, rebase)).output
+      output = (await project.backend.gitPull(project.id, rebase)).output
     },
     true,
   )
@@ -273,7 +272,7 @@ export async function fetch(project: ProjectState): Promise<void> {
     'Fetching',
     project,
     async () => {
-      output = (await backend.gitFetch(project.id)).output
+      output = (await project.backend.gitFetch(project.id)).output
     },
     true,
   )
@@ -286,7 +285,7 @@ export async function fetch(project: ProjectState): Promise<void> {
 export async function loadBranches(project: ProjectState): Promise<void> {
   if (!project.isGitRepository) return
   try {
-    const branches = await backend.gitBranches(project.id)
+    const branches = await project.backend.gitBranches(project.id)
     project.update((p) => (p.branches = branches))
   } catch {
     // `try?` in Swift: the menu keeps what it had.
@@ -302,7 +301,7 @@ export async function checkout(branch: string, create: boolean, project: Project
     create ? 'Creating branch' : 'Switching branch',
     project,
     async () => {
-      now = await backend.gitCheckout(project.id, name, create)
+      now = await project.backend.gitCheckout(project.id, name, create)
     },
     true,
   )
@@ -317,7 +316,7 @@ export async function checkout(branch: string, create: boolean, project: Project
 export async function loadCommitLog(project: ProjectState): Promise<void> {
   if (!project.isGitRepository) return
   try {
-    const log = await backend.gitLog(project.id, 20)
+    const log = await project.backend.gitLog(project.id, 20)
     project.update((p) => (p.commitLog = log))
   } catch {
     // `try?` in Swift: the list keeps what it had.
