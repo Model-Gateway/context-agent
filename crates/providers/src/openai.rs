@@ -160,6 +160,10 @@ impl OpenAiCompatibleProvider {
                     parts.extend(u.images.iter().map(|image| json!({"type": "image_url", "image_url": {"url": image.data_url()}})));
                     out.push(json!({"role": "user", "content": parts}));
                 }
+                // A turn with neither text nor tool calls (a reply cut off
+                // while reasoning) carries nothing, and strict servers reject
+                // an assistant message without content.
+                AgentMessage::Assistant(a) if a.tool_calls.is_empty() && a.text.as_deref().is_none_or(str::is_empty) => {}
                 AgentMessage::Assistant(a) => {
                     let mut msg = json!({"role": "assistant"});
                     msg["content"] = match &a.text {
@@ -1114,6 +1118,18 @@ mod tests {
         let dev = EffectiveCapabilities { developer_role: true, ..Default::default() };
         let out = OpenAiCompatibleProvider::translate_messages(&messages, &dev);
         assert_eq!(out[1]["role"], "developer");
+    }
+
+    #[test]
+    fn empty_assistant_turns_are_not_sent() {
+        // Sessions saved before the runtime stopped recording replies cut off
+        // while reasoning still hold these turns.
+        let empty = |text: Option<&str>| AgentMessage::Assistant(AssistantMessage { text: text.map(str::to_string), tool_calls: vec![], provider_metadata: None });
+        let messages = vec![AgentMessage::user("do it"), empty(None), AgentMessage::user("go on"), empty(Some("")), AgentMessage::assistant_text("done")];
+        let out = OpenAiCompatibleProvider::translate_messages(&messages, &EffectiveCapabilities::default());
+        let roles: Vec<&str> = out.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, ["user", "user", "assistant"]);
+        assert_eq!(out[2]["content"], "done");
     }
 
     #[test]

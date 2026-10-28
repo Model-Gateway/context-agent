@@ -279,6 +279,48 @@ async fn transient_failure_of_every_model_repeats_the_step_after_a_pause() {
 }
 
 #[tokio::test]
+async fn replies_cut_off_while_reasoning_never_finish_the_task() {
+    use ctx_core::{FinishReason, ModelRequest, ModelResult, ProviderMetadata};
+    let dir = repo();
+    let data = tempfile::tempdir().unwrap();
+    let ctx = RepositoryContext::open_ephemeral(dir.path(), config(dir.path(), data.path())).unwrap();
+    // A reasoning model that spends its whole output budget thinking: no
+    // text, no tool call, finish reason length.
+    let cut_off = |cuts: usize| {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        MockProvider::dynamic(move |_request: &ModelRequest| {
+            let text = (calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= cuts).then(|| "Done: nothing to change.".to_string());
+            let finish_reason = if text.is_some() { FinishReason::Stop } else { FinishReason::Length };
+            Ok(ModelResult { text, tool_calls: vec![], finish_reason, usage: None, provider_metadata: ProviderMetadata::default() })
+        })
+    };
+
+    let provider = Arc::new(cut_off(3));
+    let (rt, _events) = runtime(ctx.clone(), provider.clone());
+    let session = rt.sessions().start("test", "mock").unwrap();
+    let outcome = rt.run(&session, "Check whether pricing needs changes").await.unwrap();
+    assert_eq!(outcome.status, TaskStatus::Completed, "{outcome:#?}");
+    assert_eq!(outcome.summary, "Done: nothing to change.");
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 4);
+    // Empty cut-off replies are not kept, and the model is told once to act.
+    let last = &requests[3].messages;
+    assert!(!last.iter().any(|m| matches!(m, AgentMessage::Assistant(a) if a.text.is_none() && a.tool_calls.is_empty())), "{last:#?}");
+    let notes = last.iter().filter(|m| matches!(m, AgentMessage::User(u) if u.text.contains("hit the output limit while you were still reasoning"))).count();
+    assert_eq!(notes, 1, "{last:#?}");
+
+    // Cut off every time: the task fails and says why, instead of
+    // finishing with an empty summary.
+    let provider = Arc::new(cut_off(usize::MAX));
+    let (rt, _events) = runtime(ctx.clone(), provider.clone());
+    let session = rt.sessions().start("test", "mock").unwrap();
+    let outcome = rt.run(&session, "Check whether pricing needs changes").await.unwrap();
+    assert_eq!(outcome.status, TaskStatus::Failed, "{outcome:#?}");
+    assert!(outcome.summary.contains("raise model.max_output_tokens"), "{}", outcome.summary);
+    assert_eq!(provider.requests().len(), 5);
+}
+
+#[tokio::test]
 async fn compaction_checkpoints_long_conversations() {
     let dir = repo();
     let data = tempfile::tempdir().unwrap();

@@ -38,6 +38,16 @@ pub const STREAM_RESUME_NOTE: &str = "[Context runtime] The response stream was 
 /// the step fails.
 const MAX_STREAM_RESUMES: u32 = 3;
 
+/// Sent after a reply that hit the output limit while the model was still
+/// reasoning, before any text or tool call. Asking it to continue does not
+/// work: the reasoning is not sent back, so it starts the analysis over and
+/// runs into the limit again. Hidden from the transcript.
+pub const REASONING_CUT_NOTE: &str = "[Context runtime] Your previous reply hit the output limit while you were still reasoning, before you made a tool call; that reasoning is lost. Do not redo the analysis. Act now: make a tool call that tests your current best hypothesis (run a command or write a short script), and keep your reasoning brief.";
+
+/// How many replies in a row may be cut off while still reasoning before
+/// the step fails.
+const MAX_REASONING_CUTS: u32 = 4;
+
 /// How long a step that failed during a ModelGateway update waits for the
 /// gateway to come back before the failure counts like any other outage,
 /// and how often it checks.
@@ -271,7 +281,11 @@ struct RunState {
     consecutive_failures: u32,
     recent_calls: VecDeque<(String, bool)>,
     steps_without_progress: u32,
+    /// Consecutive replies cut off by the output limit after some text.
     continuation_nudges: u32,
+    /// Consecutive replies cut off by the output limit with nothing but
+    /// reasoning, up to [`MAX_REASONING_CUTS`].
+    reasoning_cuts: u32,
     /// Consecutive responses whose stream broke off mid-way and were
     /// resumed, up to [`MAX_STREAM_RESUMES`].
     stream_resumes: u32,
@@ -770,6 +784,7 @@ impl AgentRuntime {
             recent_calls: VecDeque::new(),
             steps_without_progress: 0,
             continuation_nudges: 0,
+            reasoning_cuts: 0,
             stream_resumes: 0,
             model_failures: 0,
             discount_drop_accepted: false,
@@ -1169,7 +1184,33 @@ impl AgentRuntime {
         }
         run.stream_resumes = 0;
 
-        self.append(run, AgentMessage::Assistant(AssistantMessage { text: result.text.clone(), tool_calls: result.tool_calls.clone(), provider_metadata: Some(result.provider_metadata.clone()) })).await;
+        // ----- cut off while still reasoning: nothing to keep -----------------
+        // An empty cut-off reply is not the model's answer: never finish on
+        // it. Tell it to act instead of reasoning on, and repeat the step.
+        if result.finish_reason == FinishReason::Length && result.text.is_none() && result.tool_calls.is_empty() {
+            if run.reasoning_cuts >= MAX_REASONING_CUTS {
+                return Err(ProviderError::InvalidResponse(format!(
+                    "the model hit the output limit ({max_output} tokens) {} times in a row while still reasoning, without replying or calling a tool; raise model.max_output_tokens",
+                    run.reasoning_cuts + 1
+                ))
+                .into());
+            }
+            run.reasoning_cuts += 1;
+            tracing::warn!(attempt = run.reasoning_cuts, max_output, "reply cut off while reasoning; asking the model to act");
+            if run.reasoning_cuts == 1 {
+                self.append(run, AgentMessage::user(REASONING_CUT_NOTE)).await;
+            }
+            return Ok(StepOutcome::Continue);
+        }
+        run.reasoning_cuts = 0;
+        if result.finish_reason != FinishReason::Length {
+            run.continuation_nudges = 0;
+        }
+
+        // A reply with neither text nor tool calls carries nothing to keep.
+        if result.text.is_some() || !result.tool_calls.is_empty() {
+            self.append(run, AgentMessage::Assistant(AssistantMessage { text: result.text.clone(), tool_calls: result.tool_calls.clone(), provider_metadata: Some(result.provider_metadata.clone()) })).await;
+        }
 
         // ----- no tool calls: the model is done (or cut off) ------------------
         if result.tool_calls.is_empty() {
