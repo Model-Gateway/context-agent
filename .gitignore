@@ -7,6 +7,10 @@
 /benchmarks/results/
 /benchmarks/swebench/.venv/
 /benchmarks/swebench/runs/
+/benchmarks/terminalbench/.venv/
+/benchmarks/terminalbench/jobs/
+/benchmarks/terminalbench/tasks/
+/benchmarks/terminalbench/__pycache__/
 /dist/
 xcuserdata/
 .claude/
