@@ -1,7 +1,7 @@
 /** Facts and links the landing page repeats; one place to update per release. */
 export const site = {
   name: "Context",
-  version: "0.1.5",
+  version: "0.1.6",
   tagline: "A local-first coding agent that finishes the task and shows its work.",
   description:
     "Context is a local-first coding agent written in Rust, with a native macOS app, a Windows app and a terminal UI. Bring any OpenAI-compatible model; your code, history and index stay on your machine.",
