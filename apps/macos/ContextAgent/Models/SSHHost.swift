@@ -40,6 +40,24 @@ struct SSHHost: Codable, Equatable, Hashable, Identifiable {
     }
 
     /// "alice@devbox:2222" — what ssh will connect to, for the forms and tooltips.
+    /// The editor's single "SSH host" field: "alice@devbox" when a user is
+    /// set, else the address.
+    var login: String {
+        let user = user.trimmingCharacters(in: .whitespaces)
+        let address = address.trimmingCharacters(in: .whitespaces)
+        return user.isEmpty ? address : "\(user)@\(address)"
+    }
+
+    /// Splits the "SSH host" field ("root@192.168.1.67", "devbox") into
+    /// user and address at the last `@`.
+    static func splitLogin(_ text: String) -> (user: String, address: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard let at = trimmed.lastIndex(of: "@"), at != trimmed.startIndex else {
+            return ("", trimmed.hasPrefix("@") ? String(trimmed.dropFirst()) : trimmed)
+        }
+        return (String(trimmed[..<at]), String(trimmed[trimmed.index(after: at)...]))
+    }
+
     var target: String {
         var text = user.isEmpty ? address : "\(user)@\(address)"
         if port > 0 { text += ":\(port)" }

@@ -642,9 +642,13 @@ struct ModelSettings: Codable, Equatable {
     /// `model.credential`: the stored credential the key comes from
     /// ("modelgateway" while signed in), else nil.
     var credential: String?
+    /// The key is the app's sign-in forwarded to a remote host
+    /// (`auth/forward`), not one of the host's own.
+    var keyForwarded: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case name, credential
+        case keyForwarded = "key_forwarded"
         case baseUrl = "base_url"
         case apiKeyEnv = "api_key_env"
         case apiKeySet = "api_key_set"

@@ -276,7 +276,7 @@ export interface AppFields {
 }
 
 /** `testHost`'s answer: what the probe found, or why it failed (with the hint). */
-export type HostTestResult = { ok: true; summary: string } | { ok: false; message: string; needsCtx: boolean }
+export type HostTestResult = { ok: true; summary: string; ctxVersion: string; mock: boolean } | { ok: false; message: string; needsCtx: boolean }
 
 /** `installCtx`'s answer: the installed version line, or why not. */
 export type CtxInstallResult = { ok: true; installed: string } | { ok: false; message: string }
@@ -2634,10 +2634,11 @@ async function startRemote(connection: RemoteConnection): Promise<boolean> {
   // The login shell's environment carries SSH_AUTH_SOCK and the user's PATH
   // (a Homebrew ssh, say); no key is passed along. `--mock` applies to every backend.
   try {
-    const result = await connection.client.start({ mock: mockRequested(launch), host: connection.host })
+    const started = await connection.client.start({ mock: mockRequested(launch), host: connection.host })
+    const result = (await forwardSignIn(connection)) ?? started
     connection.update((c) => (c.state = { kind: 'ready', result }))
     const who = result.host ? `${result.host.user}@${result.host.hostname}` : connection.host.address
-    appendRemoteLog(connection, `connected: ctx ${result.ctx_version} on ${who}`)
+    appendRemoteLog(connection, `connected: ctx ${result.ctx_version} on ${who}` + (result.model.key_forwarded ? ' · using this computer’s sign-in' : ''))
     return true
   } catch (error) {
     const failure = connection.client.lastStartFailure ?? failureOf(error)
@@ -2648,6 +2649,46 @@ async function startRemote(connection: RemoteConnection): Promise<boolean> {
     })
     appendRemoteLog(connection, `connection failed: ${remoteFailureSummary(failure)}`, 'error')
     return false
+  }
+}
+
+/// `forwardSignIn(_:)`: hands the local backend's model endpoint and keys
+/// to the host's ctx (`auth/export` → `auth/forward`), like Claude Code's
+/// SSH sessions use the account of the computer they come from. The host
+/// keeps the keys in memory only, and keeps its own key when it has one.
+/// The app passes the bundle along without storing it. Null (logged) when
+/// either side cannot: an older ctx, or no local backend yet.
+async function forwardSignIn(connection: RemoteConnection): Promise<InitializeResult | null> {
+  if (!isReady(get())) return null
+  let bundle: JSONObject
+  try {
+    bundle = await backend.authExport()
+  } catch (error) {
+    appendRemoteLog(connection, `could not read this computer’s sign-in: ${errorText(error)}`, 'warn')
+    return null
+  }
+  try {
+    return await connection.client.authForward(bundle)
+  } catch (error) {
+    appendRemoteLog(connection, `the host did not take this computer’s sign-in (${errorText(error)}); update ctx on the host`, 'warn')
+    return null
+  }
+}
+
+/// `forwardSignInToHosts()`: after signing in or out here, or switching the
+/// local endpoint, every connected host follows.
+export async function forwardSignInToHosts(): Promise<void> {
+  for (const connection of remoteConnections.values()) {
+    if (!connection.isReady) continue
+    const result = await forwardSignIn(connection)
+    if (result) {
+      connection.update((c) => (c.state = { kind: 'ready', result }))
+      for (const project of projectsOn(get(), connection.id)) {
+        project.models.baseURL = result.model.base_url
+        project.models.invalidate()
+        project.touch()
+      }
+    }
   }
 }
 
@@ -2818,7 +2859,7 @@ async function testHost(host: SSHHost): Promise<HostTestResult> {
   const saved = SSHHosts.host(host.id)
   if (saved && sameHost(saved, probe)) {
     const connection = await connectHost(probe, true)
-    if (connection) return { ok: true, summary: connection.statusText }
+    if (connection) return { ok: true, summary: connection.statusText, ctxVersion: connection.result?.ctx_version ?? '', mock: connection.result?.mock ?? false }
     const failed = remoteConnections.get(host.id)
     const failure = failed?.failure ?? null
     return {
@@ -2833,7 +2874,7 @@ async function testHost(host: SSHHost): Promise<HostTestResult> {
     const result = await client.start({ mock: mockRequested(launch), host: probe })
     const who = result.host ? `${result.host.user}@${result.host.hostname} · ${result.host.os}` : hostTarget(probe)
     await client.remove()
-    return { ok: true, summary: `ctx ${result.ctx_version} · ${who}` }
+    return { ok: true, summary: `ctx ${result.ctx_version} · ${who}`, ctxVersion: result.ctx_version, mock: result.mock }
   } catch (error) {
     const failure = client.lastStartFailure ?? failureOf(error)
     const hint = remoteHint(failure, client.stderrLog, probe)

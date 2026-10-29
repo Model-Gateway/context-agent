@@ -71,6 +71,8 @@ pub(super) struct GatewayStatus {
     pub(super) signed_in: bool,
     pub(super) origin: Option<String>,
     pub(super) account: Option<String>,
+    /// The sign-in is the desktop app's, forwarded for this session.
+    pub(super) forwarded: bool,
 }
 
 impl From<GatewayError> for RpcError {
@@ -109,9 +111,10 @@ impl Server {
 
     /// `gateway/status`: whether a device key is stored, and for whom.
     pub(super) async fn gateway_status(&self) -> RpcResult<Value> {
-        let status = match gateway::stored(&self.layout())? {
-            Some(credential) => GatewayStatus { signed_in: true, origin: credential.origin, account: credential.account },
-            None => GatewayStatus { signed_in: false, origin: None, account: None },
+        let layout = self.layout();
+        let status = match gateway::stored(&layout)? {
+            Some(credential) => GatewayStatus { signed_in: true, origin: credential.origin, account: credential.account, forwarded: gateway::is_forwarded(&layout) },
+            None => GatewayStatus { signed_in: false, origin: None, account: None, forwarded: false },
         };
         to_value(&status)
     }

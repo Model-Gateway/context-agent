@@ -119,10 +119,19 @@ pub async fn call(request: reqwest::RequestBuilder, what: &str) -> GatewayResult
     Ok(envelope.data)
 }
 
-/// The stored credential with a key, if any.
+/// The stored credential with a key, if any: this machine's own, else the
+/// sign-in a desktop app forwarded to this `ctx serve` (`auth/forward`).
 pub fn stored(layout: &DataLayout) -> GatewayResult<Option<StoredCredential>> {
     let store = CredentialStore::load(layout)?;
-    Ok(store.get(CredentialStore::MODELGATEWAY).filter(|c| !c.api_key.trim().is_empty()).cloned())
+    let own = store.get(CredentialStore::MODELGATEWAY).filter(|c| !c.api_key.trim().is_empty()).cloned();
+    Ok(own.or_else(|| ctx_core::Forwarded::credential(CredentialStore::MODELGATEWAY)))
+}
+
+/// Whether the ModelGateway sign-in in use is a forwarded one (this
+/// machine has none of its own).
+pub fn is_forwarded(layout: &DataLayout) -> bool {
+    let own = CredentialStore::load(layout).ok().and_then(|store| store.get(CredentialStore::MODELGATEWAY).filter(|c| !c.api_key.trim().is_empty()).cloned());
+    own.is_none() && ctx_core::Forwarded::credential(CredentialStore::MODELGATEWAY).is_some()
 }
 
 /// Origin + key for an authenticated call: the stored credential, with
@@ -300,6 +309,12 @@ pub fn account_name(poll: &Value) -> Option<String> {
 /// local credential goes even when the gateway cannot be reached; `false`
 /// says the key may still exist there (or there was none to revoke).
 pub async fn sign_out(layout: &DataLayout, base_url: Option<&str>) -> GatewayResult<bool> {
+    // A forwarded key belongs to the computer that forwarded it: revoking it
+    // here would sign that computer out too. Only this session forgets it.
+    if is_forwarded(layout) {
+        ctx_core::Forwarded::remove_credential(CredentialStore::MODELGATEWAY);
+        return Ok(false);
+    }
     let (origin, key) = match login(layout, base_url) {
         Ok(login) => login,
         Err(GatewayError::SignedOut) => return Ok(false),

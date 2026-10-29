@@ -109,8 +109,8 @@ const INSTALL_SCRIPT = [
   'mv -f "$tmp/ctx" "$dir/ctx"',
 ].join('\n')
 
-/** `ssh <host> <command>` with `input` on stdin → `{ code, stdout, stderr }`. */
-function sshRun(host, command, input) {
+/** `ssh <host> <command>` with `input` on stdin → `{ code, stdout, stderr }`; `written(bytes)` follows the upload. */
+function sshRun(host, command, input, written) {
   return new Promise((done, fail) => {
     const child = spawn(sshBinary, [...sshArguments(host), command], { stdio: ['pipe', 'pipe', 'pipe'] })
     const out = []
@@ -120,7 +120,23 @@ function sshRun(host, command, input) {
     child.on('error', fail)
     child.on('close', (code) => done({ code: code ?? -1, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() }))
     child.stdin.on('error', () => undefined)
-    child.stdin.end(input ?? undefined)
+    if (!input) {
+      child.stdin.end()
+      return
+    }
+    // In chunks, so the editor can show the upload (install.rs does the same).
+    let sent = 0
+    const pump = () => {
+      while (sent < input.length) {
+        const chunk = input.subarray(sent, sent + 256 * 1024)
+        sent += chunk.length
+        const more = child.stdin.write(chunk)
+        written?.(sent)
+        if (!more) return void child.stdin.once('drain', pump)
+      }
+      child.stdin.end()
+    }
+    pump()
   })
 }
 
@@ -131,6 +147,8 @@ function installFailure(output, doing) {
 
 /** `ssh_install_ctx({ host })`: probe, download (or read a file:// URL), unpack on the host. Throws a string, like the shell's command. */
 async function installCtx(host) {
+  const progress = (phase, done = 0, total = null) => emit('ssh:install-progress', { host: host.id, phase, done, total })
+  progress('probe')
   const probe = await sshRun(host, 'uname -sm')
   if (probe.code !== 0) throw installFailure(probe, 'ask the host what it runs')
   const [system, machine] = probe.stdout.trim().toLowerCase().split(/\s+/)
@@ -146,9 +164,18 @@ async function installCtx(host) {
     const response = await fetch(url)
     if (response.status === 404) throw `The v${updater.version} release has no Linux build of ctx (${name}). Update Context, or install ctx on the host yourself.`
     if (!response.ok) throw `Downloading ${url} failed (HTTP ${response.status}).`
-    archive = Buffer.from(await response.arrayBuffer())
+    const total = Number(response.headers.get('content-length')) || null
+    const chunks = []
+    let done = 0
+    for await (const chunk of response.body) {
+      chunks.push(chunk)
+      done += chunk.length
+      progress('download', done, total)
+    }
+    archive = Buffer.concat(chunks)
   }
-  const result = await sshRun(host, `sh -c ${shellQuote(INSTALL_SCRIPT)}`, archive)
+  progress('upload', 0, archive.length)
+  const result = await sshRun(host, `sh -c ${shellQuote(INSTALL_SCRIPT)}`, archive, (sent) => progress(sent < archive.length ? 'upload' : 'verify', sent, archive.length))
   if (result.code !== 0) throw installFailure(result, 'install ctx in ~/.local/bin')
   return result.stdout.trim().split('\n').pop() || `ctx ${updater.version}`
 }

@@ -36,7 +36,7 @@ import { toasts, type ToastLevel } from '../components/toasts'
 import { getPref, setPref, usePreferences } from '../models/preferences'
 import { accountInitial, accountName, balanceText as accountBalanceText, formatQuota, usageBreakdownsByRange, type UsageByRange } from '../models/modelGateway'
 import { assistantTurnReportKey, type AssistantTurn } from '../models/transcript'
-import { extendApp, onBackendStarted, touch, useApp, SETTINGS_TAB_ACCOUNT } from './app'
+import { extendApp, forwardSignInToHosts, onBackendStarted, touch, useApp, SETTINGS_TAB_ACCOUNT } from './app'
 import { isReady } from './selectors'
 
 // MARK: - Constants (`GatewayState` statics)
@@ -521,6 +521,8 @@ async function completeGatewaySignIn(task: PollTask, account: GatewayAccount | n
     }
   }
   await refreshGateway()
+  // Connected hosts use this sign-in too.
+  await forwardSignInToHosts()
 }
 
 // MARK: - Sign out
@@ -564,6 +566,8 @@ export async function signOutOfGateway(): Promise<void> {
       toast(`Signed out, but the previous model endpoint could not be restored: ${gatewayMessage(error)}`, 'error')
     }
     toast('Signed out of ModelGateway', 'info')
+    // Connected hosts drop the forwarded key too.
+    await forwardSignInToHosts()
   } finally {
     patch({ signingOut: false })
   }

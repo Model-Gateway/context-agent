@@ -719,6 +719,8 @@ export interface ModelSettings {
   reasoning_effort?: string | null
   /** `model.credential`: the stored credential the key comes from ("modelgateway" while signed in). */
   credential?: string | null
+  /** The key is the app's sign-in forwarded to a remote host (`auth/forward`), not one of the host's own. */
+  key_forwarded?: boolean
 }
 
 /** `PermissionSettings`: the user-level `[permissions]` table. */

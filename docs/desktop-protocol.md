@@ -983,9 +983,31 @@ client happens to be far away. What follows from that:
   the index, sessions, memories, `~/.context-agent` configuration, API keys
   and MCP servers are all the remote host's. `initialize` reports the
   remote `data_dir`, `model` and `host`; `config/patch` edits the remote
-  configuration file. The remote `ctx` must be installed and configured
-  (a key in its `config.toml` or environment, or `ctx` signed in to
-  ModelGateway there) — the app never copies credentials over.
+  configuration file. The remote `ctx` must be installed; its model key
+  can be its own or the app's (next point).
+- **The app's sign-in can be forwarded.** Right after `initialize` the
+  app calls `auth/export` on its local backend and passes the result,
+  unchanged and unstored, to the host's `auth/forward`, the way Claude
+  Code's SSH sessions use the account of the computer they come from.
+  `auth/export` (no params) returns
+  `{ "model": {name, base_url, api_key_env, credential, project_header},
+  "credentials": { "<name>": {api_key, origin, account} }, "env": {
+  "<VAR>": "<key>" } }`: the endpoint of `[model]`, the stored credentials
+  its model chain uses plus the ModelGateway sign-in, and the values of key
+  variables for models without a credential. `auth/forward` takes the same
+  object and keeps `credentials` and `env` in the process's memory only
+  (`ctx_core::Forwarded`; never written to the host's disk, added to every
+  redactor), replacing what was forwarded before; they fill gaps, so the
+  host's own `credentials.toml` and environment win. When the host's own
+  configuration has no key for its model and the forwarded keys cover the
+  forwarded endpoint, the host's `[model]` table follows it
+  (`base_url`, `api_key_env`, `credential`, `project_header`, and `name`
+  when the endpoint changes; no secret is written). The result is
+  `initialize`'s, with `model.key_forwarded: true` when the model's key is
+  a forwarded one. On the host, `gateway/status` adds `forwarded: true`,
+  and `gateway/signout` only forgets a forwarded key (`revoked: false`):
+  revoking it would sign the app's computer out too. The app forwards
+  again after it signs in to or out of ModelGateway.
 - **No shared filesystem.** The app browses folders with `fs/list` and
   sends attachments inline (`task/run` `images` as `{name, data}` and
   `files` as `{name, content}`); `session/history` lists them by name.

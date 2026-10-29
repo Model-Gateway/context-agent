@@ -27,6 +27,12 @@ final class RemoteConnection: Identifiable {
             if case .failed(let f) = self { return f }
             return nil
         }
+
+        /// The host's `initialize` result while connected.
+        var result: InitializeResult? {
+            if case .ready(let result) = self { return result }
+            return nil
+        }
     }
 
     /// The host as configured when the connection was made (Settings edits
@@ -79,6 +85,13 @@ final class RemoteConnection: Identifiable {
 }
 
 /// Why Test connection failed, and whether Install ctx on host would fix it.
+/// A Test connection that got through: what answered, for the editor.
+struct HostTestSuccess {
+    var summary: String
+    var ctxVersion: String
+    var mock: Bool
+}
+
 struct HostTestFailure: LocalizedError {
     var message: String
     var needsCtx: Bool
@@ -146,9 +159,10 @@ extension AppState {
         // user's PATH (a Homebrew ssh, say); no key is passed along.
         let environment = await BackendEnvironment.build(apiKeyEnv: nil)
         do {
-            let result = try await connection.client.start(launch: .ssh(connection.host), environment: environment, dataDir: nil, mock: mockRequested)
+            let started = try await connection.client.start(launch: .ssh(connection.host), environment: environment, dataDir: nil, mock: mockRequested)
+            let result = await forwardSignIn(to: connection) ?? started
             connection.state = .ready(result)
-            appendRemoteLog(connection, "connected: ctx \(result.ctxVersion) on \(result.host.map { "\($0.user)@\($0.hostname)" } ?? connection.host.address)")
+            appendRemoteLog(connection, "connected: ctx \(result.ctxVersion) on \(result.host.map { "\($0.user)@\($0.hostname)" } ?? connection.host.address)" + (result.model.keyForwarded == true ? " · using this Mac’s sign-in" : ""))
             return true
         } catch {
             let failure = Self.failure(from: connection.client.lastStartFailure, error: error)
@@ -157,6 +171,41 @@ extension AppState {
             connection.needsCtx = Self.remoteProblem(for: failure, stderr: connection.client.stderrLog)?.isCtx == true
             appendRemoteLog(connection, "connection failed: \(BackendFailurePanel.summary(for: failure))", level: "error")
             return false
+        }
+    }
+
+    /// Hands the local backend's model endpoint and keys to the host's ctx
+    /// (`auth/export` → `auth/forward`), the way Claude Code's SSH sessions
+    /// use the account of the computer they come from. The host keeps the
+    /// keys in memory only, and keeps its own key when it has one; the app
+    /// passes the bundle along without storing it. Nil (logged) when either
+    /// side cannot: an older ctx, or no local backend yet.
+    private func forwardSignIn(to connection: RemoteConnection) async -> InitializeResult? {
+        guard self.connection.isReady else { return nil }
+        let bundle: JSONValue
+        do {
+            bundle = try await backend.authExport()
+        } catch {
+            appendRemoteLog(connection, "could not read this Mac’s sign-in: \(error.localizedDescription)", level: "warn")
+            return nil
+        }
+        do {
+            return try await connection.client.authForward(bundle)
+        } catch {
+            appendRemoteLog(connection, "the host did not take this Mac’s sign-in (\(error.localizedDescription)); update ctx on the host", level: "warn")
+            return nil
+        }
+    }
+
+    /// After signing in or out here, every connected host follows.
+    func forwardSignInToHosts() async {
+        for connection in remotes.values where connection.isReady {
+            guard let result = await forwardSignIn(to: connection) else { continue }
+            connection.state = .ready(result)
+            for project in projects(on: connection.id) {
+                project.models.baseURL = result.model.baseUrl
+                project.models.invalidate()
+            }
         }
     }
 
@@ -281,13 +330,13 @@ extension AppState {
     /// A host whose ctx path points elsewhere gets the path cleared, so the
     /// installed copy is the one that runs. An unsaved draft (the editor's
     /// Test connection) is only installed to.
-    func installCtx(on host: SSHHost) async -> Result<String, Error> {
+    func installCtx(on host: SSHHost, progress: (@Sendable (RemoteInstaller.Progress) -> Void)? = nil) async -> Result<String, Error> {
         let connection = hosts.host(host.id) == nil ? nil : remote(for: host)
         connection?.installing = true
         defer { connection?.installing = false }
         let environment = await BackendEnvironment.build(apiKeyEnv: nil)
         do {
-            let installed = try await RemoteInstaller.install(on: host, version: Updater.version, environment: environment)
+            let installed = try await RemoteInstaller.install(on: host, version: Updater.version, environment: environment, progress: progress)
             if let connection {
                 appendRemoteLog(connection, "installed \(installed) in \(RemoteInstaller.installDirectory)")
                 if var saved = hosts.host(host.id), !saved.ctxPath.isEmpty {
@@ -391,13 +440,14 @@ extension AppState {
 
     /// `ssh <host> ctx --version`-style probe for the settings form: connects
     /// (or reuses the connection) and reports what answered.
-    func testHost(_ host: SSHHost) async -> Result<String, Error> {
+    func testHost(_ host: SSHHost) async -> Result<HostTestSuccess, Error> {
         let probe = SSHHost(id: host.id, name: host.name, address: host.address, user: host.user, port: host.port, identityFile: host.identityFile, ctxPath: host.ctxPath, extraArguments: host.extraArguments).normalized()
         guard probe.isValid else { return .failure(BackendError.transport("Enter the host's address first.")) }
         // A saved host is tested on its own connection; an unsaved draft on
         // a throwaway client that is stopped afterwards.
         if hosts.host(host.id) == probe, let connection = await connect(probe, quietly: true) {
-            return .success(connection.hostSummary.map { "\(connection.label) · \($0)" } ?? connection.label)
+            let summary = connection.hostSummary.map { "\(connection.label) · \($0)" } ?? connection.label
+            return .success(HostTestSuccess(summary: summary, ctxVersion: connection.state.result?.ctxVersion ?? "", mock: connection.state.result?.mock ?? false))
         }
         if hosts.host(host.id) == probe, let connection = remotes[host.id], let failure = connection.state.failure {
             return .failure(HostTestFailure(message: [BackendFailurePanel.summary(for: failure), connection.hint].compactMap { $0 }.joined(separator: "\n"), needsCtx: connection.needsCtx))
@@ -409,7 +459,7 @@ extension AppState {
             let result = try await client.start(launch: .ssh(probe), environment: environment, dataDir: nil, mock: mockRequested)
             let who = result.host.map { "\($0.user)@\($0.hostname) · \($0.os)" } ?? probe.target
             await client.stop()
-            return .success("ctx \(result.ctxVersion) · \(who)")
+            return .success(HostTestSuccess(summary: "ctx \(result.ctxVersion) · \(who)", ctxVersion: result.ctxVersion, mock: result.mock))
         } catch {
             let failure = Self.failure(from: client.lastStartFailure, error: error)
             let hint = Self.remoteHint(for: failure, stderr: client.stderrLog, host: probe)

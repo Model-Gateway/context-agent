@@ -84,9 +84,20 @@ enum RemoteInstaller {
     mv -f "$tmp/ctx" "$dir/ctx"
     """
 
+    /// Where an install is, for the host editor's step list: bytes of the
+    /// archive while it is downloaded and sent (`total` nil while the
+    /// download's size is unknown).
+    struct Progress: Equatable, Sendable {
+        enum Phase: Sendable { case probe, download, upload, verify }
+        var phase: Phase
+        var done: Int64 = 0
+        var total: Int64? = nil
+    }
+
     /// Probes the host, downloads the matching archive and installs it;
     /// returns what the new binary printed for `--version` ("ctx 0.1.6").
-    static func install(on host: SSHHost, version: String, environment: [String: String]) async throws -> String {
+    static func install(on host: SSHHost, version: String, environment: [String: String], progress: (@Sendable (Progress) -> Void)? = nil) async throws -> String {
+        progress?(Progress(phase: .probe))
         let probe = try await ssh(host, command: "uname -sm", input: nil, environment: environment)
         guard probe.code == 0 else {
             throw InstallError.remote(failureText(probe, doing: "ask the host what it runs"))
@@ -99,20 +110,32 @@ enum RemoteInstaller {
 
         let archive: Data
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (bytes, response) = try await URLSession.shared.bytes(from: url)
             if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                 throw InstallError.download(http.statusCode == 404
                     ? "The v\(version) release has no Linux build of ctx (\(url.lastPathComponent)). Update Context, or install ctx on the host yourself."
                     : "Downloading \(url.absoluteString) failed (HTTP \(http.statusCode)).")
             }
-            archive = data
+            let total = response.expectedContentLength > 0 ? response.expectedContentLength : nil
+            var buffer: [UInt8] = []
+            buffer.reserveCapacity(Int(total ?? 16_000_000))
+            progress?(Progress(phase: .download, done: 0, total: total))
+            for try await byte in bytes {
+                buffer.append(byte)
+                if buffer.count % 131_072 == 0 { progress?(Progress(phase: .download, done: Int64(buffer.count), total: total)) }
+            }
+            archive = Data(buffer)
         } catch let error as InstallError {
             throw error
         } catch {
             throw InstallError.download("Could not download \(url.absoluteString): \(error.localizedDescription)")
         }
 
-        let result = try await ssh(host, command: "sh -c " + BackendLaunch.shellQuote(installScript), input: archive, environment: environment)
+        let size = Int64(archive.count)
+        progress?(Progress(phase: .upload, done: 0, total: size))
+        let result = try await ssh(host, command: "sh -c " + BackendLaunch.shellQuote(installScript), input: archive, environment: environment) { sent in
+            progress?(Progress(phase: sent < size ? .upload : .verify, done: sent, total: size))
+        }
         guard result.code == 0 else {
             throw InstallError.remote(failureText(result, doing: "install ctx in \(installDirectory)"))
         }
@@ -134,7 +157,7 @@ enum RemoteInstaller {
 
     /// `ssh <host's options> -- <address> <command>` with `input` on stdin,
     /// the same way the app connects (`BackendLaunch.sshArguments`).
-    private static func ssh(_ host: SSHHost, command: String, input: Data?, environment: [String: String]) async throws -> Output {
+    private static func ssh(_ host: SSHHost, command: String, input: Data?, environment: [String: String], written: (@Sendable (Int64) -> Void)? = nil) async throws -> Output {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
@@ -159,7 +182,18 @@ enum RemoteInstaller {
                 DispatchQueue.global().async(group: group) { out = stdout.fileHandleForReading.readDataToEndOfFile() }
                 DispatchQueue.global().async(group: group) { err = stderr.fileHandleForReading.readDataToEndOfFile() }
                 if let input {
-                    try? stdin.fileHandleForWriting.write(contentsOf: input)
+                    // In chunks, so the editor can show the upload.
+                    var sent = 0
+                    while sent < input.count {
+                        let end = min(sent + 262_144, input.count)
+                        do {
+                            try stdin.fileHandleForWriting.write(contentsOf: input[sent..<end])
+                        } catch {
+                            break
+                        }
+                        sent = end
+                        written?(Int64(sent))
+                    }
                 }
                 try? stdin.fileHandleForWriting.close()
                 group.wait()

@@ -141,7 +141,9 @@ impl Redactor {
             return text.to_string();
         }
         let mut out = text.to_string();
-        for v in &self.known_values {
+        // A sign-in forwarded after this redactor was built (`auth/forward`).
+        let forwarded = ctx_core::Forwarded::secrets();
+        for v in self.known_values.iter().chain(forwarded.iter().filter(|v| v.len() >= 8)) {
             if out.contains(v.as_str()) {
                 out = out.replace(v.as_str(), REDACTED);
             }

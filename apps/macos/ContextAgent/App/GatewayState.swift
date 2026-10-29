@@ -248,6 +248,8 @@ extension AppState {
             }
         }
         await refreshGateway()
+        // Connected hosts use this sign-in too.
+        await forwardSignInToHosts()
     }
 
     // MARK: Sign out
@@ -288,6 +290,8 @@ extension AppState {
             toasts.show("Signed out, but the previous model endpoint could not be restored: \(Self.gatewayMessage(error))", kind: .error)
         }
         toasts.show("Signed out of ModelGateway", kind: .info)
+        // Connected hosts drop the forwarded key too.
+        await forwardSignInToHosts()
     }
 
     // MARK: Refresh

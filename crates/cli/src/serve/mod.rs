@@ -29,6 +29,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot, watch, Notify};
 use tokio::task::JoinHandle;
 
+mod auth;
 mod browser;
 mod dto;
 mod gateway;
@@ -823,6 +824,8 @@ impl Server {
             "tasks/list" => self.tasks_list(parse(params)?).await,
             "memory/list" => self.memory_list(parse(params)?).await,
             "doctor/run" => self.doctor_run(parse(params)?).await,
+            "auth/export" => self.auth_export().await,
+            "auth/forward" => self.auth_forward(parse(params)?).await,
             "gateway/status" => self.gateway_status().await,
             "gateway/device/start" => self.gateway_device_start(parse(params)?).await,
             "gateway/device/poll" => self.gateway_device_poll(parse(params)?).await,
@@ -879,6 +882,7 @@ impl Server {
                 base_url: c.model.base_url.clone(),
                 api_key_env: c.model.api_key_env.clone(),
                 api_key_set: ctx_core::resolve_api_key(&c, &c.model).is_some(),
+                key_forwarded: ctx_core::resolve_own_api_key(&c, &c.model).is_none() && ctx_core::resolve_api_key(&c, &c.model).is_some(),
                 credential: c.model.credential.clone(),
                 context_window: c.model.context_window,
                 max_output_tokens: c.model.max_output_tokens,

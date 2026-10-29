@@ -445,6 +445,18 @@ export class BackendClient {
     return this.request('config/patch', { values }, normalizeInitializeResult)
   }
 
+  /// `auth/export`: the model endpoint and keys this (local) backend uses,
+  /// handed straight to a remote host's `auth/forward`; never stored here.
+  async authExport(): Promise<JSONObject> {
+    return this.request('auth/export')
+  }
+
+  /// `auth/forward`: a remote host's backend keeps the app's sign-in in
+  /// memory and, without a key of its own, follows its endpoint.
+  async authForward(bundle: JSONObject): Promise<InitializeResult> {
+    return this.request('auth/forward', bundle, normalizeInitializeResult)
+  }
+
   /** `initGit` asks the backend to `git init` a folder outside any repository first. */
   async projectOpen(path: string, exact = false, initGit = false): Promise<ProjectInfo> {
     return this.request('project/open', object({ path, exact, init_git: initGit }))

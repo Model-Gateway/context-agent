@@ -67,6 +67,20 @@ export function hostTarget(host: SSHHost): string {
   return text
 }
 
+/** The editor's single "SSH host" field: "alice@devbox" when a user is set, else the address. */
+export function hostLogin(host: SSHHost): string {
+  const user = host.user.trim()
+  return user.length > 0 ? `${user}@${host.address.trim()}` : host.address.trim()
+}
+
+/** Splits the "SSH host" field ("root@192.168.1.67", "devbox") into user and address at the last `@`. */
+export function splitLogin(text: string): { user: string; address: string } {
+  const trimmed = text.trim()
+  const at = trimmed.lastIndexOf('@')
+  if (at <= 0) return { user: '', address: trimmed.replace(/^@/, '') }
+  return { user: trimmed.slice(0, at), address: trimmed.slice(at + 1) }
+}
+
 /** `SSHHost.isValid`: whether the fields describe something ssh can be given. */
 export function hostIsValid(host: SSHHost): boolean {
   const trimmed = host.address.trim()

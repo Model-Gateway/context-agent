@@ -160,3 +160,123 @@
 .footerSpacer {
   flex: 1 1 auto;
 }
+
+/* The editor: Claude Code's stacked fields with help lines, then the progress list. */
+.intro {
+  margin: 0 0 14px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.fieldLabel {
+  font-size: var(--font-size-secondary);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.help {
+  margin: 0;
+  font-size: var(--font-size-caption, 11px);
+  color: var(--text-tertiary);
+}
+.advancedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-size-secondary);
+  cursor: pointer;
+}
+.advancedToggle:hover {
+  color: var(--text-primary);
+}
+.steps {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+}
+.stepMark {
+  flex: none;
+  width: 12px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.stepDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+.step[data-state='done'] .stepDot {
+  background: var(--success);
+}
+.step[data-state='failed'] .stepDot {
+  background: var(--danger);
+}
+.step[data-state='warning'] .stepDot {
+  background: var(--warning);
+}
+.step[data-state='failed'] {
+  color: var(--danger);
+}
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.progress {
+  position: relative;
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fill-secondary, rgba(127, 127, 127, 0.2));
+  overflow: hidden;
+}
+.progressFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+.progressFill[data-indeterminate='true'] {
+  width: 30%;
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  from {
+    left: -30%;
+  }
+  to {
+    left: 100%;
+  }
+}

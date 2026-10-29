@@ -9,10 +9,11 @@ the host's. The app on your Mac is only the window.
 ## What the host needs
 
 - **`ctx` installed.** On Linux (x86_64 or arm64) the app does this for
-  you: when Test connection or Connect finds no `ctx`, or one older than
-  the app, **Install ctx on host** (in the host editor, the host's row in
-  Settings → Remote hosts, and the sidebar host menu) puts the build of the
-  app's own version in `~/.local/bin` (see "Installing ctx" below). By
+  you: **Add SSH connection** installs it when it finds no `ctx`, or one
+  older than the app, and **Install ctx on host** (the host's row in
+  Settings → Remote hosts, and the sidebar host menu) does the same for a
+  host added earlier: the build of the app's own version goes in
+  `~/.local/bin` (see "Installing ctx" below). By
   hand: download `ctx-x86_64-unknown-linux-musl.tar.gz` or
   `ctx-aarch64-unknown-linux-musl.tar.gz` from the
   [release](https://github.com/Model-Gateway/context-agent/releases) that
@@ -23,12 +24,14 @@ the host's. The app on your Mac is only the window.
   `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin` and `/opt/homebrew/bin`
   as well as the PATH of a non-interactive shell; any other place: set the
   **ctx path** on the host in Settings.
-- **A model configured on the host.** The remote `ctx` reads its own
-  `~/.context-agent/config.toml` and environment: put the API key there
-  (`ctx` → Settings on the host, or `OPENAI_API_KEY` in the login
-  environment of non-interactive shells, e.g. `~/.bashrc` on Ubuntu or
-  `~/.zshenv`), or sign in to ModelGateway with the CLI on the host. The
-  app never copies your local key over.
+- **Nothing for the model.** Like Claude Code over SSH, the host uses the
+  account of the computer you connect from: on connect the app hands your
+  ModelGateway sign-in (or your own API key and endpoint) to the host's
+  `ctx`, which keeps it in memory for the session and never writes it to
+  the host's disk. A host with a key of its own (in its
+  `~/.context-agent/config.toml`, its environment, or its own ModelGateway
+  sign-in) keeps using that one. Signing in or out on your computer
+  applies to connected hosts at once.
 - **Key-based SSH.** The app runs `ssh` with `BatchMode=yes`, so a password
   cannot be typed: use a key in `ssh-agent` or an identity file. Everything
   in `~/.ssh/config` applies (`Host` aliases, `User`, `Port`,
@@ -37,12 +40,18 @@ the host's. The app on your Mac is only the window.
 
 ## Adding a host
 
-Settings (⌘,) → **Remote hosts** → **Add host…** (or pick an alias under
-**From ~/.ssh/config**). Give it an address, optionally a name, user, port,
-identity file, the remote `ctx` path and extra `ssh` options, then **Test
-connection**: the app connects exactly as it will later and reports the
-`ctx` version and user it found, or explains what ssh said (a refused
-key, an unresolvable address, `ctx` not found).
+Settings (⌘, / Ctrl+,) → **Remote hosts** → **Add SSH connection…** (or
+pick an alias under **From ~/.ssh/config**). Give it a name, the SSH host
+(`user@address`, or a `Host` alias from `~/.ssh/config`), and optionally a
+port and a private key; **Advanced** holds the remote `ctx` path and extra
+`ssh` options. **Add SSH connection** then does what the app will do every
+time it connects, showing each step: connect over ssh; when `ctx` is
+missing or older than the app, install it (the download and the upload
+show their progress); start `ctx serve`; forward your sign-in. The host is
+saved and connected when that works; otherwise the sheet explains what ssh
+said (a refused key, an unresolvable address, an unsupported system) and
+**Add anyway** saves it without a connection. Editing a host offers **Test
+connection** for the same check without saving.
 
 ## Installing ctx
 

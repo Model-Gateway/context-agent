@@ -108,6 +108,9 @@ pub(super) struct ModelInfo {
     pub(super) base_url: String,
     pub(super) api_key_env: String,
     pub(super) api_key_set: bool,
+    /// The key is the desktop app's forwarded sign-in (`auth/forward`), not
+    /// one of this machine's own.
+    pub(super) key_forwarded: bool,
     /// `model.credential`: the stored credential the key comes from, if any.
     pub(super) credential: Option<String>,
     pub(super) context_window: u32,

@@ -1533,3 +1533,52 @@ fn remote_client_host_listing_and_inline_attachments() {
     assert_eq!(c.result("shutdown", json!({})), json!({}));
     assert_eq!(c.child.wait().unwrap().code(), Some(0));
 }
+
+/// `auth/export` on the app's backend and `auth/forward` on a host's: the
+/// host uses the forwarded sign-in without writing the key to its disk, and
+/// a host with a key of its own keeps it.
+#[test]
+fn forwarded_sign_in_reaches_a_host_without_touching_its_disk() {
+    let local = tempfile::tempdir().unwrap();
+    std::fs::write(local.path().join("credentials.toml"), "[modelgateway]\napi_key = \"sk-forwarded-test-key-123456\"\norigin = \"https://gateway.example\"\naccount = \"alex\"\n").unwrap();
+    std::fs::write(local.path().join("config.toml"), "[model]\nname = \"gpt-5\"\nbase_url = \"https://gateway.example/v1\"\ncredential = \"modelgateway\"\nproject_header = \"X-ModelGateway-Project\"\n").unwrap();
+    let mut app = Client::spawn_with(local.path(), |command| {
+        command.env_remove("OPENAI_API_KEY");
+    });
+    let bundle = app.result("auth/export", json!({}));
+    assert_eq!(bundle["model"]["base_url"], "https://gateway.example/v1", "{bundle}");
+    assert_eq!(bundle["credentials"]["modelgateway"]["api_key"], "sk-forwarded-test-key-123456");
+
+    let remote = tempfile::tempdir().unwrap();
+    let mut host = Client::spawn_with(remote.path(), |command| {
+        command.env_remove("OPENAI_API_KEY");
+    });
+    let before = host.result("initialize", json!({}));
+    assert_eq!(before["model"]["api_key_set"], false, "{before}");
+    let after = host.result("auth/forward", bundle.clone());
+    assert_eq!(after["model"]["base_url"], "https://gateway.example/v1", "{after}");
+    assert_eq!(after["model"]["name"], "gpt-5");
+    assert_eq!(after["model"]["api_key_set"], true);
+    assert_eq!(after["model"]["key_forwarded"], true);
+    let status = host.result("gateway/status", json!({}));
+    assert_eq!((status["signed_in"].as_bool(), status["forwarded"].as_bool()), (Some(true), Some(true)), "{status}");
+    for entry in std::fs::read_dir(remote.path()).unwrap().flatten() {
+        if entry.path().is_file() {
+            let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
+            assert!(!text.contains("sk-forwarded-test-key"), "{} holds the forwarded key", entry.path().display());
+        }
+    }
+    // Signing out on the host forgets the forwarded key there, without revoking it.
+    let out = host.result("gateway/signout", json!({}));
+    assert_eq!(out["revoked"], false, "{out}");
+    assert_eq!(host.result("gateway/status", json!({}))["signed_in"], false);
+
+    // A host with a key of its own keeps its endpoint.
+    let own = tempfile::tempdir().unwrap();
+    let mut configured = Client::spawn_with(own.path(), |command| {
+        command.env("OPENAI_API_KEY", "sk-own-host-key-abcdef123456");
+    });
+    let kept = configured.result("auth/forward", bundle);
+    assert_eq!(kept["model"]["base_url"], "https://api.openai.com/v1", "{kept}");
+    assert_eq!(kept["model"]["key_forwarded"], false);
+}

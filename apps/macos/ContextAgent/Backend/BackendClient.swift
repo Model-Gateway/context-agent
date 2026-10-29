@@ -298,6 +298,18 @@ final class BackendClient {
         try await request("config/patch", params: .object(["values": .object(values)]))
     }
 
+    /// `auth/export`: the model endpoint and keys this (local) backend uses,
+    /// handed straight to a remote host's `auth/forward`; never stored here.
+    func authExport() async throws -> JSONValue {
+        try await call("auth/export")
+    }
+
+    /// `auth/forward`: a remote host's backend keeps the app's sign-in in
+    /// memory and, without a key of its own, follows its endpoint.
+    func authForward(_ bundle: JSONValue) async throws -> InitializeResult {
+        try await request("auth/forward", params: bundle)
+    }
+
     /// `initGit` asks the backend to `git init` a folder outside any repository first.
     func projectOpen(path: String, exact: Bool = false, initGit: Bool = false) async throws -> ProjectInfo {
         try await request("project/open", params: object(["path": .string(path), "exact": .bool(exact), "init_git": .bool(initGit)]))

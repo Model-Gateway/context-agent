@@ -9,7 +9,8 @@
 
 use std::process::Stdio;
 
-use tauri::AppHandle;
+use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
@@ -21,6 +22,20 @@ use super::launch::{self, BackendLaunch, SshHost};
 pub const RELEASE_BASE: &str = "https://github.com/Model-Gateway/context-agent/releases/download";
 /// Where the binary goes on the host (for messages; the script spells it out).
 pub const INSTALL_DIRECTORY: &str = "~/.local/bin";
+
+/// Install progress for the host editor's step list, as
+/// `ssh:install-progress` events: `phase` is "probe", "download", "upload"
+/// or "verify"; `done`/`total` count bytes of the archive (`total` unknown
+/// while the download's size is).
+pub const PROGRESS_EVENT: &str = "ssh:install-progress";
+
+#[derive(Clone, Serialize)]
+pub struct InstallProgress {
+    pub host: String,
+    pub phase: &'static str,
+    pub done: u64,
+    pub total: Option<u64>,
+}
 
 /// `RemoteInstaller.installScript`: unpacks the archive on stdin next to the
 /// old binary, checks that the new one runs there (a `noexec` home fails
@@ -80,6 +95,11 @@ fn failure_text(output: &Output, doing: &str) -> String {
 /// `ssh <host's options> -- <address> <command>` with `input` on stdin, the
 /// same way the app connects ([`launch::ssh_arguments`]).
 async fn ssh(host: &SshHost, command: &str, input: Option<&[u8]>) -> Result<Output, String> {
+    ssh_with_progress(host, command, input, |_| {}).await
+}
+
+/// [`ssh`], calling `written` with the bytes of `input` sent so far.
+async fn ssh_with_progress(host: &SshHost, command: &str, input: Option<&[u8]>, written: impl Fn(u64) + Send + 'static) -> Result<Output, String> {
     let binary = BackendLaunch::ssh_binary();
     let environment = environment::build(None).await;
     let mut arguments = launch::ssh_arguments(host);
@@ -101,7 +121,14 @@ async fn ssh(host: &SshHost, command: &str, input: Option<&[u8]>) -> Result<Outp
     let data = input.map(<[u8]>::to_vec);
     let writer = tokio::spawn(async move {
         if let (Some(stdin), Some(data)) = (stdin.as_mut(), data) {
-            let _ = stdin.write_all(&data).await;
+            let mut sent = 0u64;
+            for chunk in data.chunks(256 * 1024) {
+                if stdin.write_all(chunk).await.is_err() {
+                    break;
+                }
+                sent += chunk.len() as u64;
+                written(sent);
+            }
             let _ = stdin.shutdown().await;
         }
         drop(stdin);
@@ -115,8 +142,24 @@ async fn ssh(host: &SshHost, command: &str, input: Option<&[u8]>) -> Result<Outp
     })
 }
 
-/// The archive's bytes, through `curl` (which also reads `file://`).
-async fn download(url: &str, version: &str) -> Result<Vec<u8>, String> {
+/// The archive's size from a `HEAD` (after GitHub's redirects), if curl can tell.
+async fn content_length(url: &str) -> Option<u64> {
+    let mut command = Command::new(if cfg!(windows) { "curl.exe" } else { "curl" });
+    command.args(["-sIL", "--max-time", "15", url]).stdin(Stdio::null()).kill_on_drop(true);
+    configure_platform(&mut command);
+    let output = command.output().await.ok()?;
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.split_once(':').filter(|(name, _)| name.trim().eq_ignore_ascii_case("content-length")).and_then(|(_, value)| value.trim().parse::<u64>().ok()))
+        .last()
+        .filter(|length| *length > 0)
+}
+
+/// The archive's bytes, through `curl` (which also reads `file://`);
+/// `progress(done, total)` follows the file as it grows.
+async fn download(url: &str, version: &str, progress: impl Fn(u64, Option<u64>)) -> Result<Vec<u8>, String> {
+    let total = content_length(url).await;
+    progress(0, total);
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_nanos()).unwrap_or_default();
     let path = std::env::temp_dir().join(format!("ctx-download-{}-{nanos}.tar.gz", std::process::id()));
     let mut command = Command::new(if cfg!(windows) { "curl.exe" } else { "curl" });
@@ -127,7 +170,24 @@ async fn download(url: &str, version: &str) -> Result<Vec<u8>, String> {
         .stdin(Stdio::null())
         .kill_on_drop(true);
     configure_platform(&mut command);
-    let output = command.output().await.map_err(|error| format!("Could not run curl to download {url}: {error}"));
+    let running = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn();
+    let output = match running {
+        Ok(child) => {
+            let waiting = child.wait_with_output();
+            tokio::pin!(waiting);
+            loop {
+                tokio::select! {
+                    output = &mut waiting => break output.map_err(|error| format!("Could not run curl to download {url}: {error}")),
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(200)) => {
+                        if let Ok(meta) = std::fs::metadata(&path) {
+                            progress(meta.len(), total);
+                        }
+                    }
+                }
+            }
+        }
+        Err(error) => Err(format!("Could not run curl to download {url}: {error}")),
+    };
     let result = output.and_then(|output| {
         let status = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         if !output.status.success() {
@@ -150,7 +210,10 @@ async fn download(url: &str, version: &str) -> Result<Vec<u8>, String> {
 /// `RemoteInstaller.install`: probes the host, downloads the matching
 /// archive and installs it; returns what the new binary printed for
 /// `--version` ("ctx 0.1.6").
-pub async fn install(host: &SshHost, version: &str) -> Result<String, String> {
+pub async fn install(host: &SshHost, version: &str, report: impl Fn(InstallProgress) + Clone + Send + Sync + 'static) -> Result<String, String> {
+    let id = host.id.clone();
+    let step = move |phase: &'static str, done: u64, total: Option<u64>| report(InstallProgress { host: id.clone(), phase, done, total });
+    step("probe", 0, None);
     let probe = ssh(host, "uname -sm", None).await?;
     if probe.code != 0 {
         return Err(failure_text(&probe, "ask the host what it runs"));
@@ -163,9 +226,15 @@ pub async fn install(host: &SshHost, version: &str) -> Result<String, String> {
         ));
     };
     let url = archive_url(version, target);
-    let archive = download(&url, version).await?;
+    let archive = download(&url, version, |done, total| step("download", done, total)).await?;
+    let size = archive.len() as u64;
+    step("upload", 0, Some(size));
     let command = format!("sh -c {}", launch::shell_quote(INSTALL_SCRIPT));
-    let result = ssh(host, &command, Some(&archive)).await?;
+    let uploading = step.clone();
+    let result = ssh_with_progress(host, &command, Some(&archive), move |sent| {
+        uploading(if sent < size { "upload" } else { "verify" }, sent, Some(size))
+    })
+    .await?;
     if result.code != 0 {
         return Err(failure_text(&result, &format!("install ctx in {INSTALL_DIRECTORY}")));
     }
@@ -180,7 +249,11 @@ pub async fn ssh_install_ctx(app: AppHandle, host: SshHost) -> Result<String, St
     if !host.is_valid() {
         return Err("Enter the host's address first.".to_owned());
     }
-    install(&host, &app.package_info().version.to_string()).await
+    let version = app.package_info().version.to_string();
+    install(&host, &version, move |progress| {
+        let _ = app.emit(PROGRESS_EVENT, progress);
+    })
+    .await
 }
 
 #[cfg(test)]
