@@ -55,7 +55,7 @@ jobs:
         run: |
           bin=target/musl/release/ctx
           file "$bin"
-          file "$bin" | grep -q "statically linked"
+          file "$bin" | grep -Eq "statically linked|static-pie linked"
           "$bin" --version
           "$bin" --help > /dev/null
           if [ -n "$TAG" ]; then
