@@ -21,6 +21,9 @@ const FRESH_FOR: Duration = Duration::from_secs(60 * 60);
 const RETRY_AFTER: Duration = Duration::from_secs(5 * 60);
 const TIMEOUT: Duration = Duration::from_secs(10);
 const CACHE_FILE: &str = "model-stats.json";
+/// Bumped when `ModelStat` gains a field, so a cache an older ctx wrote
+/// (without it) is refetched instead of served for up to an hour.
+const CACHE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModelStat {
@@ -73,6 +76,9 @@ pub type ModelStats = BTreeMap<String, ModelStat>;
 
 #[derive(Serialize, Deserialize)]
 struct CacheFile {
+    /// `CACHE_VERSION` of the ctx that wrote it; 0 before versioning.
+    #[serde(default)]
+    version: u32,
     origin: String,
     /// Unix seconds of the last fetch attempt.
     fetched_at: u64,
@@ -98,7 +104,7 @@ pub fn gateway_origin(config: &Config) -> Option<String> {
 pub async fn load(config: &Config) -> ModelStats {
     let Some(origin) = gateway_origin(config) else { return ModelStats::new() };
     let path = config.layout().root.join(CACHE_FILE);
-    let cached = read_cache(&path).filter(|c| c.origin == origin);
+    let cached = read_cache(&path).filter(|c| c.origin == origin && c.version == CACHE_VERSION);
     if let Some(cache) = &cached {
         let max_age = if cache.complete { FRESH_FOR } else { RETRY_AFTER };
         if now().saturating_sub(cache.fetched_at) < max_age.as_secs() {
@@ -123,7 +129,7 @@ pub async fn load(config: &Config) -> ModelStats {
         }
     }
     models.retain(|_, s| s.savings_percent.is_some() || s.error_rate_24h.is_some() || s.output_price.is_some());
-    let cache = CacheFile { origin, fetched_at: now(), complete, models };
+    let cache = CacheFile { version: CACHE_VERSION, origin, fetched_at: now(), complete, models };
     if let Ok(text) = serde_json::to_vec(&cache) {
         let tmp = path.with_extension("json.tmp");
         if std::fs::write(&tmp, text).is_ok() {
