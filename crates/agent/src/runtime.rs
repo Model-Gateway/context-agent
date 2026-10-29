@@ -1270,10 +1270,13 @@ impl AgentRuntime {
                 }
                 return Ok(StepOutcome::Cancelled);
             }
-            let key = format!("{}:{}", call.name, call.arguments);
-            let repeated = run.recent_calls.iter().filter(|(k, err)| *k == key && *err).count();
             let exec = self.execute_tool(run, tool_ctx, call, working_set).await;
             let is_error = exec.output.is_error;
+            // A failure counts as repeated when the same error comes back,
+            // however the arguments were reworded: a model nudging the same
+            // ambiguous patch around never sends identical calls.
+            let key = if is_error { format!("{}:{}", call.name, exec.output.content) } else { format!("{}:{}", call.name, call.arguments) };
+            let repeated = run.recent_calls.iter().filter(|(k, err)| *k == key && *err).count();
             images.extend(exec.output.images.iter().cloned());
             run.recent_calls.push_back((key, is_error));
             if run.recent_calls.len() > 12 {
@@ -1302,7 +1305,7 @@ impl AgentRuntime {
             self.append(run, AgentMessage::User(UserMessage { text: TOOL_IMAGES_NOTE.to_string(), images, files: Vec::new() })).await;
         }
         if nudge {
-            self.append(run, AgentMessage::user("[Context runtime] You have repeated the same failing tool call several times. Change your approach: re-read the current file contents, search differently, or explain what is blocking you.")).await;
+            self.append(run, AgentMessage::user("[Context runtime] The same tool error has come back several times. Stop adjusting the same call: read the error closely and act on what it says (for example, read the lines or occurrences it points to, or use the option it suggests), search differently, or try a different method.")).await;
         }
         if let Some(outcome) = early_exit {
             return Ok(outcome);

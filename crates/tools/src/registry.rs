@@ -238,7 +238,23 @@ impl ToolRegistry {
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
-        self.tools.iter().find(|t| t.name() == name).cloned()
+        if let Some(tool) = self.tools.iter().find(|tool| tool.name() == name) {
+            return Some(tool.clone());
+        }
+        // Some models (notably GLM) drop the `mcp__<server>__` qualifier.
+        // Exact built-in names always win; a bare MCP suffix is safe only
+        // when exactly one registered tool owns it.
+        if name.starts_with("mcp__") {
+            return None;
+        }
+        let mut matches = self.tools.iter().filter(|tool| {
+            tool.name()
+                .strip_prefix("mcp__")
+                .and_then(|rest| rest.split_once("__"))
+                .is_some_and(|(_, suffix)| suffix == name)
+        });
+        let tool = matches.next()?;
+        matches.next().is_none().then(|| tool.clone())
     }
 
     pub fn names(&self) -> Vec<&str> {
@@ -343,4 +359,45 @@ impl ToolRegistry {
 pub fn unified_diff(path: &str, old: &str, new: &str) -> String {
     let diff = similar::TextDiff::from_lines(old, new);
     diff.unified_diff().context_radius(3).header(&format!("a/{path}"), &format!("b/{path}")).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Named(&'static str);
+
+    #[async_trait]
+    impl Tool for Named {
+        fn name(&self) -> &str { self.0 }
+        fn description(&self) -> &str { "test tool" }
+        fn parameters(&self) -> Value { serde_json::json!({"type": "object"}) }
+        fn action(&self, _args: &Value, _ctx: &ToolContext) -> Result<Action> {
+            unreachable!("lookup tests do not execute tools")
+        }
+        async fn invoke(&self, _args: Value, _ctx: &ToolContext) -> Result<ToolOutput> {
+            unreachable!("lookup tests do not execute tools")
+        }
+    }
+
+    fn registry() -> ToolRegistry {
+        ToolRegistry::new(vec![
+            Arc::new(Named("read_file")),
+            Arc::new(Named("mcp__one__run_command")),
+            Arc::new(Named("mcp__two__run_command")),
+            Arc::new(Named("mcp__one__fetch")),
+            Arc::new(Named("mcp__one__read_file")),
+        ])
+    }
+
+    #[test]
+    fn bare_mcp_aliases_are_unique_and_never_shadow_exact_names() {
+        let tools = registry();
+        assert_eq!(tools.get("fetch").unwrap().name(), "mcp__one__fetch");
+        assert!(tools.get("run_command").is_none(), "ambiguous aliases must fail closed");
+        assert_eq!(tools.get("read_file").unwrap().name(), "read_file");
+        assert!(tools.get("unknown").is_none());
+        assert_eq!(tools.get("mcp__one__fetch").unwrap().name(), "mcp__one__fetch");
+        assert!(tools.get("mcp__two__fetch").is_none());
+    }
 }

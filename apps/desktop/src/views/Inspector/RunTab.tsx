@@ -40,6 +40,7 @@ export function RunTab() {
           <BackendCard />
           <TaskStateCard chat={chat} />
           <ContextStatsCard chat={chat} />
+          {chat.contextStats ? <CompactButton chat={chat} /> : null}
           {project && project.isGitRepository ? <ChangesCard project={project} /> : null}
           <CountersCard chat={chat} />
         </div>
@@ -64,6 +65,22 @@ export function RunTab() {
       </div>
       <EmptyPlaceholder icon="info" title="No chat selected" subtitle="Context statistics and counters of the selected chat show up here." />
     </div>
+  )
+}
+
+// MARK: - Compact
+
+/// `CompactButton`: under the Context card, compacts the chat now instead
+/// of waiting for the prompt to reach the autocompact buffer.
+function CompactButton({ chat }: { chat: ChatState }) {
+  const compact = useApp((state) => state.compact)
+  const canRewind = useApp((state) => state.canRewind)
+  return (
+    <Tooltip content="Replace the older turns with a summary so the next message starts with more free space">
+      <Button variant="bordered" size="small" icon="collapseAll" block loading={chat.compacting} disabled={!canRewind(chat)} onClick={() => void compact(chat)}>
+        {chat.compacting ? 'Compacting…' : 'Compact conversation'}
+      </Button>
+    </Tooltip>
   )
 }
 

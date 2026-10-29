@@ -1635,6 +1635,39 @@ struct RewindResult: Codable, Equatable {
     }
 }
 
+/// `session/compact` result; only `droppedMessages` (0) when there was
+/// nothing to compact.
+struct CompactResult: Codable, Equatable {
+    var droppedMessages: Int
+    var keptMessages: Int = 0
+    var conversationTokens: Int = 0
+    var checkpointTokens: Int = 0
+    var previousCheckpointTokens: Int = 0
+    var tokensBefore: Int = 0
+    var tokensAfter: Int = 0
+
+    enum CodingKeys: String, CodingKey {
+        case droppedMessages = "dropped_messages"
+        case keptMessages = "kept_messages"
+        case conversationTokens = "conversation_tokens"
+        case checkpointTokens = "checkpoint_tokens"
+        case previousCheckpointTokens = "previous_checkpoint_tokens"
+        case tokensBefore = "tokens_before"
+        case tokensAfter = "tokens_after"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        droppedMessages = try c.decode(Int.self, forKey: .droppedMessages)
+        keptMessages = try c.decodeIfPresent(Int.self, forKey: .keptMessages) ?? 0
+        conversationTokens = try c.decodeIfPresent(Int.self, forKey: .conversationTokens) ?? 0
+        checkpointTokens = try c.decodeIfPresent(Int.self, forKey: .checkpointTokens) ?? 0
+        previousCheckpointTokens = try c.decodeIfPresent(Int.self, forKey: .previousCheckpointTokens) ?? 0
+        tokensBefore = try c.decodeIfPresent(Int.self, forKey: .tokensBefore) ?? 0
+        tokensAfter = try c.decodeIfPresent(Int.self, forKey: .tokensAfter) ?? 0
+    }
+}
+
 // MARK: - Task run options
 
 /// `task/run.options`; every field is optional and omitted when nil.
@@ -1673,10 +1706,16 @@ struct ModelStat: Codable, Equatable {
     var savingsPercent: Double?
     /// Share of failed requests over the last 24 hours.
     var errorRate24h: Double?
+    /// USD per million input tokens ModelGateway bills.
+    var inputPrice: Double?
+    /// USD per million output tokens ModelGateway bills.
+    var outputPrice: Double?
 
     enum CodingKeys: String, CodingKey {
         case savingsPercent = "savings_percent"
         case errorRate24h = "error_rate_24h"
+        case inputPrice = "input_price"
+        case outputPrice = "output_price"
     }
 
     /// "98% off"; nil below 1%.
@@ -1690,6 +1729,14 @@ struct ModelStat: Codable, Equatable {
         guard let errorRate24h else { return nil }
         let rounded = (errorRate24h * 10).rounded() / 10
         return rounded == rounded.rounded() ? "\(Int(rounded))%" : String(format: "%.1f%%", rounded)
+    }
+
+    /// "$0.20 in · $1 out per M", or "$1 out per M" without an input price.
+    var costLine: String? {
+        guard let outputPrice else { return nil }
+        let output = ModelsDevInfo.money(outputPrice)
+        guard let inputPrice else { return "\(output) out per M" }
+        return "\(ModelsDevInfo.money(inputPrice)) in · \(output) out per M"
     }
 }
 

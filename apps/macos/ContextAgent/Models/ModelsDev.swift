@@ -390,12 +390,14 @@ extension ModelsDevInfo {
         return "\(count)"
     }
 
-    /// "$2 / $8 per M tokens"; nil without a price.
+    /// "$2 in · $8 out per M"; nil without a price.
     var costLine: String? {
         guard let inputCost, let outputCost else { return nil }
-        func money(_ value: Double) -> String {
-            value.rounded() == value ? "$\(Int(value))" : String(format: "$%.2f", value)
-        }
-        return "\(money(inputCost)) in · \(money(outputCost)) out per M"
+        return "\(Self.money(inputCost)) in · \(Self.money(outputCost)) out per M"
+    }
+
+    /// "$2", "$0.20".
+    static func money(_ value: Double) -> String {
+        value.rounded() == value ? "$\(Int(value))" : String(format: "$%.2f", value)
     }
 }

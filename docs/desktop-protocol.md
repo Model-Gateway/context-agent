@@ -326,6 +326,20 @@ message is the entry with the highest `after_message_id` below it. `tree` is
 `null` when the root is no git work tree. The objects are unreferenced:
 `git gc` prunes them after `gc.pruneExpire` (two weeks by default).
 
+### `session/compact` `{ "project_id", "session_id" }` → `{ "task_id", "checkpoint_id", "dropped_messages": 12, "kept_messages": 5, "conversation_tokens": 2100, "checkpoint_tokens": 500, "previous_checkpoint_tokens": 0, "tokens_before": 9400, "tokens_after": 2600 }` | `{ "dropped_messages": 0 }`
+Compacts the session's active task now, as a run does when the prompt
+reaches the compaction threshold: a checkpoint (reason `compacted on
+request`) stands in for all but the last `context.keep_recent_turns` user
+turns (a single long turn keeps its newer half), and the next `task/run`
+that continues the task starts from it. A `checkpoint` event is recorded
+for the task, so `session/history` shows it; no `event` notification is
+sent. The token counts are estimates of the kept conversation, the new
+checkpoint summary and the one it replaces (for shifting the client's last
+prompt estimate), and of both together before and after.
+`{ "dropped_messages": 0 }` when the session has no task or nothing old
+enough to drop. Refused with `-32002` while a task of that session is
+running; `task/run` for the session is refused meanwhile.
+
 ### `task/run` `{ "project_id", "session_id", "prompt", "images"?: ["/abs/path.png" | { "name"?: "shot.png", "data": "<base64>" }], "files"?: [{ "path": "/abs/notes.txt", "name"?: "report.pdf" } | { "name": "notes.txt", "path"?: "/client/notes.txt", "content": "…" }], "options"?: { "max_steps"?: 40, "proactive_retrieval"?: true, "memory_context"?: true, "stream"?: true, "debug_prompt"?: false } }` → `{ "accepted": true }`
 Starts the agent loop for the prompt in that session. `images` (at most
 20 absolute paths of PNG, JPEG, GIF or WebP files, each at most 20 MB; the
@@ -452,10 +466,14 @@ bypasses the cache.
 `stats` is filled only while signed in to ModelGateway (`model.credential =
 "modelgateway"`), else `{}` (also for a `modelgateway.co` host used with your
 own key). Each entry is
-`{"savings_percent": 98, "error_rate_24h": 1.5}` (both percentages, each
-omitted when unknown): the gateway's discount against the official output
-price (`/api/pricing?view=summary`) and its share of failed requests over the
-last 24 hours (`/api/perf-metrics/summary`). Both public endpoints are fetched
+`{"savings_percent": 98, "error_rate_24h": 1.5, "input_price": 0.2, "output_price": 1}`
+(each omitted when unknown): the gateway's discount against the official
+output price and the USD per million input / output tokens it bills
+(`/api/pricing?view=summary`: `output_price` is the cheapest offer's
+`lowest_price`, `input_price` the official input price scaled by the same
+share, absent without an official price), and its share of failed requests
+over the last 24 hours (`/api/perf-metrics/summary`). The pickers' hover
+cards show these prices in place of models.dev's list price. Both public endpoints are fetched
 together and cached in `<data_dir>/model-stats.json` for an hour (a failed
 fetch keeps the last values and retries after 5 minutes); `refresh` does not
 bypass that cache. The TUI's `/model` picker reads the same cache.

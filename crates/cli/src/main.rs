@@ -7,6 +7,7 @@ mod commands;
 mod computer;
 mod gateway;
 mod headless;
+mod fallback_index;
 mod model_stats;
 mod models_dev;
 mod resume;

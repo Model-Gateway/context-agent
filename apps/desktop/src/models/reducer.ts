@@ -25,6 +25,7 @@ import {
   parseRFC3339,
   type AgentEvent,
   type ApprovalRequest,
+  type CompactResult,
   type ContextStats,
   type ExecutionState,
   type FileUpload,
@@ -1166,6 +1167,27 @@ export class TranscriptReducer {
   }
 
   // MARK: - Log
+
+  /// `ChatState.applyCompaction(_:)`: `session/compact` dropped older
+  /// turns: the last prompt estimate shifts by what the next one leaves
+  /// out, and the transcript gets the checkpoint line a reload would show.
+  applyCompaction(result: CompactResult): void {
+    if (result.dropped_messages <= 0) return
+    const t = this.target
+    const stats = t.contextStats
+    if (stats) {
+      const shift = result.conversation_tokens - stats.conversation_tokens + result.checkpoint_tokens - result.previous_checkpoint_tokens
+      t.contextStats = {
+        ...stats,
+        estimated_prompt_tokens: Math.max(stats.stable_prefix_tokens, stats.estimated_prompt_tokens + shift),
+        conversation_messages: result.kept_messages,
+        conversation_tokens: result.conversation_tokens,
+        compacted: true,
+      }
+    }
+    this.appendNotice('checkpoint: compacted on request', true, new Date())
+    this.addLog(`compacted ${result.dropped_messages} message(s) · ~${result.tokens_before} → ~${result.tokens_after} tok`)
+  }
 
   /** `ChatState.addLog(_:date:level:)`: one Inspector Log line (none while replaying history). */
   addLog(text: string, date: Date = new Date(), level = 'info'): void {

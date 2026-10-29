@@ -7,7 +7,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { modelStatErrorRateLabel, modelStatSavingsLabel, type ModelStat } from '../../backend/types'
+import { modelStatCostLine, modelStatErrorRateLabel, modelStatSavingsLabel, type ModelStat } from '../../backend/types'
 import { Chip } from '../../components/Chip'
 import { MiddleTruncate, type TextRun } from '../../components/MiddleTruncate'
 import { useReducedMotion } from '../../components/BrailleSpinner'
@@ -39,14 +39,15 @@ export function modelCard(id: string): ModelHoverCardProps | null {
 }
 
 /// `ModelHoverCard` (ModelHoverCard.swift): the lab's logo, models.dev's
-/// name and one-line description, context / output limits, capability chips
-/// and price, then ModelGateway's 24 h error rate and savings. Either source
+/// name and one-line description, context / output limits and capability
+/// chips, the price (what ModelGateway bills, else models.dev's list price),
+/// then ModelGateway's 24 h error rate and savings. Either source
 /// may be missing, not both. 280 px wide.
 export function ModelHoverCard({ modelId, name, info, stat }: ModelHoverCardProps) {
   useModelsDevVersion()
   const savings = stat ? modelStatSavingsLabel(stat) : null
   const errorLabel = stat ? modelStatErrorRateLabel(stat) : null
-  const cost = info ? modelsDevCostLine(info) : null
+  const cost = (stat ? modelStatCostLine(stat) : null) ?? (info ? modelsDevCostLine(info) : null)
   return (
     <div className={styles.card}>
       <div className={styles.header}>
@@ -87,9 +88,9 @@ export function ModelHoverCard({ modelId, name, info, stat }: ModelHoverCardProp
               {info.openWeights ? <Chip icon="openWeights">Open</Chip> : null}
             </span>
           </AutoScrollingRow>
-          {cost !== null ? <div className={styles.cost}>{cost}</div> : null}
         </>
       ) : null}
+      {cost !== null ? <div className={styles.cost}>{cost}</div> : null}
       {stat && (stat.error_rate_24h != null || savings !== null) ? (
         <div className={styles.stats}>
           {stat.error_rate_24h != null && errorLabel !== null ? (

@@ -9,6 +9,7 @@
 pub mod config;
 pub mod credentials;
 pub mod error;
+pub mod fallback_index;
 pub mod events;
 pub mod ids;
 pub mod message;

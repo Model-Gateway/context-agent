@@ -854,3 +854,44 @@ async fn mentioned_files_reach_the_model_and_count_as_read() {
     assert!(instructions.contains("not readable under the active permissions") && instructions.contains(".env"), "credential files are refused: {instructions}");
     assert!(ctx_agent::runtime::is_hidden_note(ctx_agent::runtime::FILE_MENTIONS_NOTE));
 }
+
+#[tokio::test]
+async fn compacting_on_request_drops_old_turns_and_the_next_run_continues_from_the_checkpoint() {
+    let dir = repo();
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = config(dir.path(), data.path());
+    cfg.agent.auto_validate = false;
+    cfg.context.keep_recent_turns = 1;
+    let ctx = RepositoryContext::open_ephemeral(dir.path(), cfg).unwrap();
+    let provider = Arc::new(MockProvider::new(vec![
+        MockTurn::ToolCalls(vec![("read_file".into(), json!({"path": "svc/pricing.py"}))]),
+        MockTurn::Text("apply_discount subtracts the percentage.".into()),
+        MockTurn::Text("It returns an int for int inputs.".into()),
+        MockTurn::Text("Still an int.".into()),
+    ]));
+    let (rt, _events) = runtime(ctx.clone(), provider.clone());
+    let session = rt.sessions().start("test", "mock").unwrap();
+    assert!(rt.sessions().compact(&session).unwrap().is_none(), "nothing to compact before the first run");
+    let first = rt.run(&session, "Explain apply_discount in svc/pricing.py").await.unwrap();
+    let session = ctx.stores.sessions.get_session(&session.id).unwrap().unwrap();
+    let second = rt.run(&session, "What type does apply_discount in svc/pricing.py return?").await.unwrap();
+    assert_eq!(second.task_id, first.task_id, "the follow-up continues the task");
+
+    let session = ctx.stores.sessions.get_session(&session.id).unwrap().unwrap();
+    let outcome = rt.sessions().compact(&session).unwrap().expect("the first turn is dropped");
+    assert_eq!(outcome.task_id, first.task_id.as_str());
+    assert!(outcome.dropped_messages >= 4, "{outcome:?}");
+    assert!(outcome.tokens_after < outcome.tokens_before + 200, "{outcome:?}");
+    let checkpoint = ctx.stores.sessions.latest_checkpoint(first.task_id.as_str()).unwrap().expect("checkpoint stored");
+    assert_eq!(checkpoint.id, outcome.checkpoint_id);
+    assert!(ctx.stores.sessions.events_for_task(first.task_id.as_str(), 0, 1000).unwrap().iter().any(|e| e.kind == "checkpoint"));
+
+    let session = ctx.stores.sessions.get_session(&session.id).unwrap().unwrap();
+    let third = rt.run(&session, "Does apply_discount in svc/pricing.py handle a float price?").await.unwrap();
+    assert_eq!(third.task_id, first.task_id);
+    let request = provider.requests().last().unwrap().clone();
+    let users: Vec<String> = request.messages.iter().filter_map(|m| if let AgentMessage::User(u) = m { Some(u.text.clone()) } else { None }).collect();
+    assert!(!users.iter().any(|t| t.contains("Explain apply_discount")), "the compacted turn is gone: {users:?}");
+    let context = request.messages.iter().find_map(|m| if let AgentMessage::Context(c) = m { Some(c) } else { None }).expect("context payload");
+    assert!(context.sections.iter().any(|s| s.title.starts_with("checkpoint ")), "{:?}", context.sections.iter().map(|s| s.title.clone()).collect::<Vec<_>>());
+}

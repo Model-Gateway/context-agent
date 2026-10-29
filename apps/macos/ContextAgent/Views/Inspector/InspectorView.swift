@@ -148,6 +148,9 @@ private struct RunTab: View {
                     BackendCard()
                     TaskStateCard(chat: chat)
                     ContextStatsCard(chat: chat)
+                    if chat.contextStats != nil {
+                        CompactButton(chat: chat)
+                    }
                     if let project = appState.selectedProject, project.isGitRepository {
                         ChangesCard(project: project)
                     }
@@ -485,6 +488,33 @@ private struct ContextStatsCard: View {
         guard window > 0, tokens > 0 else { return "0%" }
         let value = Double(tokens) / Double(window) * 100
         return value < 0.1 ? "<0.1%" : String(format: "%.1f%%", value)
+    }
+}
+
+/// Under the Context card: compacts the chat now instead of waiting for
+/// the prompt to reach the autocompact buffer.
+private struct CompactButton: View {
+    @Environment(AppState.self) private var appState
+    var chat: ChatState
+
+    var body: some View {
+        Button {
+            Task { await appState.compact(chat) }
+        } label: {
+            HStack(spacing: 6) {
+                if chat.compacting {
+                    BrailleSpinner(size: 10, tint: Theme.textTertiary)
+                } else {
+                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                }
+                Text(chat.compacting ? "Compacting…" : "Compact conversation")
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(chat.compacting || !appState.canRewind(chat))
+        .help("Replace the older turns with a summary so the next message starts with more free space")
     }
 }
 

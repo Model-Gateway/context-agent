@@ -43,6 +43,7 @@ pub fn load_config(cli: &Cli) -> Result<Config> {
         config.model.reasoning_effort = Some(ReasoningEffort::parse(effort).ok_or_else(|| CtxError::Config(format!("unknown reasoning effort `{effort}` (a model's effort value such as low, high or max, or ultra)")))?);
     }
     config.validate()?;
+    crate::fallback_index::start(&config);
     Ok(config)
 }
 

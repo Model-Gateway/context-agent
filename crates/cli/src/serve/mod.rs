@@ -565,6 +565,7 @@ pub async fn run(cli: &Cli, mock: bool) -> Result<i32> {
     // Logs go to the file: stdout carries protocol frames only.
     app::init_logging(cli, &config, true);
     crate::billing::install(&config);
+    crate::fallback_index::start(&config);
     let (out, out_rx) = Outbox::new();
     let writer = tokio::spawn(writer_task(out_rx, out.queued.clone(), out.drained.clone()));
     let mut redactor = Redactor::new(config.telemetry.redact_secrets);
@@ -776,6 +777,7 @@ impl Server {
             "session/rename" => self.session_rename(parse(params)?).await,
             "session/delete" => self.session_delete(parse(params)?).await,
             "session/rewind" => self.session_rewind(parse(params)?).await,
+            "session/compact" => self.session_compact(parse(params)?).await,
             "session/history" => self.session_history(parse(params)?).await,
             "task/run" => self.task_run(parse(params)?).await,
             "task/steer" => self.task_steer(parse(params)?).await,
@@ -1594,6 +1596,37 @@ impl Server {
         })
         .await?;
         to_value(&snapshot::RewindResult { removed_tasks: report.removed_tasks, removed_messages: report.removed_messages, files, session })
+    }
+
+    /// Compact the session's active task now (the Inspector's Compact
+    /// button). Refused while a task of the session runs; `task/run` for the
+    /// session is refused meanwhile (the `deleting` guard again).
+    async fn session_compact(&self, params: SessionParams) -> RpcResult<Value> {
+        let project = self.project(&params.project_id)?;
+        let session_id = params.session_id.clone();
+        {
+            let running = project.running.lock();
+            if session_slot_taken(&running, &session_id) {
+                return Err(RpcError::session_task_running());
+            }
+            let mut deleting = project.deleting.lock();
+            if deleting.contains(&session_id) {
+                return Err(RpcError::invalid_params(format!("session {session_id} is being deleted")));
+            }
+            deleting.insert(session_id.clone());
+        }
+        let ctx = project.ctx.clone();
+        let result = blocking(move || {
+            let session = ctx.stores.sessions.get_session(&params.session_id)?.ok_or_else(|| CtxError::InvalidArgument(format!("unknown session {}", params.session_id)))?;
+            SessionManager::new(ctx).compact(&session)
+        })
+        .await
+        .map_err(unknown_id_is_invalid_params);
+        project.deleting.lock().remove(&session_id);
+        match result? {
+            Some(outcome) => to_value(&outcome),
+            None => Ok(json!({ "dropped_messages": 0 })),
+        }
     }
 
     async fn session_history(&self, params: SessionParams) -> RpcResult<Value> {

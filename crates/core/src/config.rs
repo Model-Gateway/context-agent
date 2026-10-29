@@ -134,6 +134,10 @@ pub struct ModelConfig {
     /// "the same endpoint, another model".
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fallbacks: Vec<FallbackModel>,
+    /// With no `fallbacks` of its own, a ModelGateway model falls back to
+    /// the models closest to it in intelligence, from the fallback index
+    /// (`fallback_index.rs`).
+    pub auto_fallbacks: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -204,6 +208,7 @@ impl FallbackModel {
             retry_max_delay_ms: primary.retry_max_delay_ms,
             fallback_cooldown_secs: primary.fallback_cooldown_secs,
             fallbacks: Vec::new(),
+            auto_fallbacks: primary.auto_fallbacks,
             temperature: self.temperature.or(primary.temperature),
             reasoning_effort: self.reasoning_effort.clone().or_else(|| primary.reasoning_effort.clone()),
             extra_headers: self.extra_headers.clone().unwrap_or_else(|| primary.extra_headers.clone()),
@@ -232,6 +237,7 @@ impl Default for ModelConfig {
             retry_max_delay_ms: 20_000,
             fallback_cooldown_secs: 60,
             fallbacks: Vec::new(),
+            auto_fallbacks: true,
             temperature: None,
             reasoning_effort: None,
             extra_headers: BTreeMap::new(),
@@ -297,18 +303,46 @@ impl ModelConfig {
     }
 
     /// The primary model followed by its resolved fallbacks, in the order
-    /// they are tried. A fallback that names the primary again (or an
-    /// earlier fallback) is dropped, so switching the primary to a model
-    /// from the fallback list never tries it twice.
+    /// they are tried: `fallbacks` when configured, else the automatic ones
+    /// (see [`Self::automatic_fallbacks`]). A fallback that names the primary
+    /// again (or an earlier fallback) is dropped, so switching the primary
+    /// to a model from the fallback list never tries it twice.
     pub fn chain(&self) -> Vec<ModelConfig> {
         let mut out = vec![ModelConfig { fallbacks: Vec::new(), ..self.clone() }];
-        for fb in &self.fallbacks {
+        let fallbacks = if self.fallbacks.is_empty() { self.automatic_fallbacks() } else { self.fallbacks.clone() };
+        for fb in &fallbacks {
             let resolved = fb.resolve(self);
             if out.iter().all(|m| m.identity() != resolved.identity()) {
                 out.push(resolved);
             }
         }
         out
+    }
+
+    /// The fallback index's picks for this model, as same-endpoint
+    /// fallbacks: only for a signed-in ModelGateway model with
+    /// `auto_fallbacks` on. An effort past `high`, which other models may
+    /// not accept, is narrowed to `high`.
+    pub fn automatic_fallbacks(&self) -> Vec<FallbackModel> {
+        if !self.auto_fallbacks || self.credential.as_deref().map(str::trim) != Some(crate::CredentialStore::MODELGATEWAY) {
+            return Vec::new();
+        }
+        let effort = self.reasoning_effort.as_ref().filter(|e| matches!(e.as_str(), "xhigh" | "max")).map(|_| crate::model::ReasoningEffort::level("high"));
+        crate::fallback_index::current()
+            .fallbacks_for(&self.name, self.context_window)
+            .into_iter()
+            .map(|name| FallbackModel { reasoning_effort: effort.clone(), ..FallbackModel::named(name) })
+            .collect()
+    }
+
+    /// The chain and its cooldown for diagnostics, saying when the fallbacks
+    /// came from the fallback index; `none` without fallbacks.
+    pub fn fallbacks_summary(&self) -> String {
+        if self.chain().len() < 2 {
+            return "none".to_string();
+        }
+        let source = if self.fallbacks.is_empty() { format!("automatic, index of {}; ", crate::fallback_index::current().updated) } else { String::new() };
+        format!("{} ({source}cooldown {}s)", self.chain_summary(), self.fallback_cooldown_secs)
     }
 
     /// Short human-readable description of the chain, e.g.
@@ -1294,6 +1328,13 @@ fn apply_env_overrides(table: &mut toml::Table) {
             .collect();
         set_nested(table, &["model", "fallbacks"], toml::Value::Array(entries));
     }
+    if let Ok(v) = std::env::var("CTX_MODEL_AUTO_FALLBACKS") {
+        match v.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => set_nested(table, &["model", "auto_fallbacks"], toml::Value::Boolean(true)),
+            "0" | "false" | "no" | "off" => set_nested(table, &["model", "auto_fallbacks"], toml::Value::Boolean(false)),
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1378,6 +1419,33 @@ name = "primary"
         let mut bad = cfg.clone();
         bad.model.retry_max_delay_ms = 10;
         assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn a_gateway_model_without_fallbacks_uses_the_fallback_index() {
+        let mut model = ModelConfig {
+            name: "kimi-k3.1-pro".into(),
+            base_url: "https://www.modelgateway.co/v1".into(),
+            credential: Some(crate::CredentialStore::MODELGATEWAY.into()),
+            reasoning_effort: Some(crate::model::ReasoningEffort::level("max")),
+            ..Default::default()
+        };
+        let chain = model.chain();
+        assert_eq!(chain.len(), 4, "{}", model.chain_summary());
+        for fallback in &chain[1..] {
+            assert_eq!(fallback.base_url, model.base_url);
+            assert_eq!(fallback.credential, model.credential);
+            assert_eq!(fallback.reasoning_effort, Some(crate::model::ReasoningEffort::level("high")));
+        }
+
+        model.auto_fallbacks = false;
+        assert_eq!(model.chain().len(), 1);
+        model.auto_fallbacks = true;
+        model.credential = None;
+        assert_eq!(model.chain().len(), 1, "another endpoint does not serve the index's model IDs");
+        model.credential = Some(crate::CredentialStore::MODELGATEWAY.into());
+        model.fallbacks = vec![FallbackModel::named("mine")];
+        assert_eq!(model.chain_summary(), "kimi-k3.1-pro → mine");
     }
 
     #[test]

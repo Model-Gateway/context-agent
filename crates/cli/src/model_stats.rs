@@ -1,6 +1,7 @@
 //! ModelGateway's per-model numbers for the model pickers (the TUI's
-//! `/model` and the app's `models/list`): how far below the official list
-//! price a model is billed, and its error rate over the last 24 hours. Both
+//! `/model` and the app's `models/list`): what a model is billed per million
+//! tokens, how far that is below the official list price, and its error rate
+//! over the last 24 hours. All
 //! come from the gateway's public endpoints (`/api/pricing?view=summary`,
 //! `/api/perf-metrics/summary`) and are cached in
 //! `<data_dir>/model-stats.json` for an hour, so opening a picker rarely
@@ -29,6 +30,12 @@ pub struct ModelStat {
     /// Percent of requests that failed over the last 24 hours; none without traffic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_rate_24h: Option<f64>,
+    /// USD per million input tokens ModelGateway bills (its cheapest offer); none without an official price to scale.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_price: Option<f64>,
+    /// USD per million output tokens ModelGateway bills (its cheapest offer).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_price: Option<f64>,
 }
 
 impl ModelStat {
@@ -42,6 +49,23 @@ impl ModelStat {
         let rounded = (self.error_rate_24h? * 10.0).round() / 10.0;
         Some(if rounded.fract() == 0.0 { format!("{rounded:.0}%") } else { format!("{rounded:.1}%") })
     }
+
+    /// "$0.20 in · $1 out per M", or "$1 out per M" without an input price.
+    pub fn cost_line(&self) -> Option<String> {
+        let output = crate::models_dev::fmt_money(self.output_price?);
+        Some(match self.input_price {
+            Some(input) => format!("{} in · {output} out per M", crate::models_dev::fmt_money(input)),
+            None => format!("{output} out per M"),
+        })
+    }
+}
+
+/// One `/api/pricing` row: discount and billed prices.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct GatewayPrice {
+    savings_percent: Option<f64>,
+    input_price: Option<f64>,
+    output_price: Option<f64>,
 }
 
 /// Model id → its stats.
@@ -82,13 +106,14 @@ pub async fn load(config: &Config) -> ModelStats {
         }
     }
 
-    let (savings, errors) = fetch(&origin).await;
-    let complete = savings.is_some() && errors.is_some();
+    let (prices, errors) = fetch(&origin).await;
+    let complete = prices.is_some() && errors.is_some();
     let mut models = cached.map(|c| c.models).unwrap_or_default();
-    if let Some(savings) = savings {
-        models.values_mut().for_each(|s| s.savings_percent = None);
-        for (name, percent) in savings {
-            models.entry(name).or_default().savings_percent = Some(percent);
+    if let Some(prices) = prices {
+        models.values_mut().for_each(|s| (s.savings_percent, s.input_price, s.output_price) = (None, None, None));
+        for (name, price) in prices {
+            let stat = models.entry(name).or_default();
+            (stat.savings_percent, stat.input_price, stat.output_price) = (price.savings_percent, price.input_price, price.output_price);
         }
     }
     if let Some(errors) = errors {
@@ -97,7 +122,7 @@ pub async fn load(config: &Config) -> ModelStats {
             models.entry(name).or_default().error_rate_24h = Some(rate);
         }
     }
-    models.retain(|_, s| s.savings_percent.is_some() || s.error_rate_24h.is_some());
+    models.retain(|_, s| s.savings_percent.is_some() || s.error_rate_24h.is_some() || s.output_price.is_some());
     let cache = CacheFile { origin, fetched_at: now(), complete, models };
     if let Ok(text) = serde_json::to_vec(&cache) {
         let tmp = path.with_extension("json.tmp");
@@ -116,14 +141,14 @@ fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-/// `(savings, error rates)`; each `None` when its endpoint failed.
-async fn fetch(origin: &str) -> (Option<Vec<(String, f64)>>, Option<Vec<(String, f64)>>) {
+/// `(prices, error rates)`; each `None` when its endpoint failed.
+async fn fetch(origin: &str) -> (Option<Vec<(String, GatewayPrice)>>, Option<Vec<(String, f64)>>) {
     let Ok(client) = reqwest::Client::builder().timeout(TIMEOUT).user_agent(format!("context-agent/{}", env!("CARGO_PKG_VERSION"))).build() else {
         return (None, None);
     };
     let (pricing_url, health_url) = (format!("{origin}/api/pricing?view=summary"), format!("{origin}/api/perf-metrics/summary?hours=24"));
     let (pricing, health) = tokio::join!(get(&client, &pricing_url), get(&client, &health_url));
-    (pricing.map(|v| parse_savings(&v)), health.map(|v| parse_error_rates(&v)))
+    (pricing.map(|v| parse_prices(&v)), health.map(|v| parse_error_rates(&v)))
 }
 
 /// The JSON body of a `{success: true, …}` reply.
@@ -136,10 +161,25 @@ async fn get(client: &reqwest::Client, url: &str) -> Option<Value> {
     (body.get("success").and_then(Value::as_bool) == Some(true)).then_some(body)
 }
 
-/// `data[]` of `/api/pricing`: `model_name` and `discount_percent`.
-fn parse_savings(body: &Value) -> Vec<(String, f64)> {
+/// `data[]` of `/api/pricing`: `model_name`, `discount_percent` and
+/// `lowest_price` (the cheapest offer's output price per M). An offer bills
+/// a whole request at one share of the official price, so its input price
+/// is `official_input_price` scaled by `lowest_price / official_output_price`.
+fn parse_prices(body: &Value) -> Vec<(String, GatewayPrice)> {
     let rows = body.get("data").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
-    rows.iter().filter_map(|m| Some((m.get("model_name")?.as_str()?.to_string(), m.get("discount_percent")?.as_f64()?))).collect()
+    rows.iter()
+        .filter_map(|m| {
+            let name = m.get("model_name")?.as_str()?.to_string();
+            let number = |key: &str| m.get(key).and_then(Value::as_f64);
+            let output_price = number("lowest_price").filter(|p| *p > 0.0);
+            let input_price = match (output_price, number("official_input_price"), number("official_output_price")) {
+                (Some(output), Some(input), Some(official)) if official > 0.0 => Some(input * output / official),
+                _ => None,
+            };
+            let price = GatewayPrice { savings_percent: number("discount_percent"), input_price, output_price };
+            (price != GatewayPrice::default()).then_some((name, price))
+        })
+        .collect()
 }
 
 /// `data.windows["24h"].models[]` (else `data.models[]`) of
@@ -172,14 +212,26 @@ mod tests {
 
     #[test]
     fn parses_discounts_and_24h_error_rates() {
-        let pricing = json!({"success": true, "data": [{"model_name": "a", "discount_percent": 98.0}, {"model_name": "b"}]});
-        assert_eq!(parse_savings(&pricing), vec![("a".to_string(), 98.0)]);
+        let pricing = json!({"success": true, "data": [
+            {"model_name": "a", "discount_percent": 98.0, "lowest_price": 1.0, "official_input_price": 10.0, "official_output_price": 50.0},
+            {"model_name": "c", "lowest_price": 3.0},
+            {"model_name": "b"}
+        ]});
+        assert_eq!(
+            parse_prices(&pricing),
+            vec![
+                ("a".to_string(), GatewayPrice { savings_percent: Some(98.0), input_price: Some(0.2), output_price: Some(1.0) }),
+                ("c".to_string(), GatewayPrice { savings_percent: None, input_price: None, output_price: Some(3.0) }),
+            ]
+        );
         let perf = json!({"success": true, "data": {"models": [{"model_name": "x", "error_rate": 50.0, "request_count": 2}], "windows": {"24h": {"models": [
             {"model_name": "a", "error_rate": 1.5, "request_count": 10},
             {"model_name": "idle", "error_rate": 0.0, "request_count": 0}
         ]}}}});
         assert_eq!(parse_error_rates(&perf), vec![("a".to_string(), 1.5)]);
-        assert_eq!(ModelStat { savings_percent: Some(97.6), error_rate_24h: None }.savings_label().as_deref(), Some("98% off"));
-        assert_eq!(ModelStat { savings_percent: Some(0.2), error_rate_24h: None }.savings_label(), None);
+        assert_eq!(ModelStat { savings_percent: Some(97.6), ..Default::default() }.savings_label().as_deref(), Some("98% off"));
+        assert_eq!(ModelStat { savings_percent: Some(0.2), ..Default::default() }.savings_label(), None);
+        assert_eq!(ModelStat { input_price: Some(0.2), output_price: Some(1.0), ..Default::default() }.cost_line().as_deref(), Some("$0.20 in · $1 out per M"));
+        assert_eq!(ModelStat { output_price: Some(5.98), ..Default::default() }.cost_line().as_deref(), Some("$5.98 out per M"));
     }
 }

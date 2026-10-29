@@ -1333,6 +1333,31 @@ final class AppState {
         rewindRequest = RewindRequest(chat: chat, turn: turn, at: index, mode: .undo)
     }
 
+    /// The Inspector's Compact button: `session/compact` for the chat's
+    /// active task, so the next message starts from a checkpoint.
+    func compact(_ chat: ChatState) async {
+        guard let project = project(for: chat.projectId), !chat.compacting else { return }
+        guard canRewind(chat) else {
+            toasts.show("Wait for the running task to finish before compacting.", kind: .info)
+            return
+        }
+        chat.compacting = true
+        defer { chat.compacting = false }
+        let result: CompactResult
+        do {
+            result = try await project.backend.sessionCompact(projectId: project.id, sessionId: chat.sessionId)
+        } catch {
+            toasts.show("Could not compact the chat: \(error.localizedDescription)", kind: .error, details: error.localizedDescription)
+            return
+        }
+        guard result.droppedMessages > 0 else {
+            toasts.show("Nothing to compact yet: only the most recent turns are in context.", kind: .info)
+            return
+        }
+        chat.applyCompaction(result)
+        toasts.show("Compacted \(result.droppedMessages) message\(result.droppedMessages == 1 ? "" : "s") into a summary (\(TranscriptFormat.tokens(result.tokensBefore)) → \(TranscriptFormat.tokens(result.tokensAfter)) tokens).", kind: .success)
+    }
+
     /// The sheet's Keep files / Revert files: `session/rewind`, reload the
     /// chat from storage, then re-send (edit) or refill the composer (undo).
     func performRewind(_ request: RewindRequest, restoreFiles: Bool) async {

@@ -1,10 +1,11 @@
 //! Sessions, task resolution and conversation persistence (spec §9.4).
 
 use crate::repository::RepositoryContext;
-use ctx_core::{AgentMessage, CtxError, ExecutionState, Result, SessionId, TaskId};
+use ctx_context::{compact, TaskCheckpoint};
+use ctx_core::{estimate_tokens, AgentEvent, AgentMessage, CtxError, ExecutionState, Result, SessionId, TaskId};
 use ctx_memory::{classify_boundary, extract_keywords, BoundaryDecision, TaskBoundary, TaskState, TaskSummary};
 use ctx_retrieval::analyze_query;
-use ctx_storage::{SessionRecord, SessionStore, TaskRecord};
+use ctx_storage::{CheckpointRecord, SessionRecord, SessionStore, TaskRecord};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -182,4 +183,73 @@ impl SessionManager {
     pub fn last_message_id(&self, task_id: &TaskId) -> Result<i64> {
         self.ctx.stores.sessions.last_message_id(task_id.as_str())
     }
+
+    /// Compact the session's active task now, the way a run does at the
+    /// threshold: a checkpoint replaces all but the recent turns, which the
+    /// next run continues from. `None` when there is no task or nothing old
+    /// enough to drop. The caller makes sure no run of the session is going.
+    pub fn compact(&self, session: &SessionRecord) -> Result<Option<CompactOutcome>> {
+        let store = &self.ctx.stores.sessions;
+        let Some(task) = session.active_task_id.as_deref().map(|id| store.get_task(id)).transpose()?.flatten() else { return Ok(None) };
+        let Some(mut state) = TaskState::from_json(&task.state_json) else { return Ok(None) };
+        let task_id = TaskId::from_string(task.id.clone());
+        let conversation = self.conversation(&task_id, state.compacted_before)?;
+        let previous = store.latest_checkpoint(&task.id)?.and_then(|c| TaskCheckpoint::from_json(&c.summary));
+        let messages: Vec<AgentMessage> = conversation.iter().map(|(_, m)| m.clone()).collect();
+        let tokens = |messages: &[AgentMessage]| messages.iter().map(|m| estimate_tokens(&m.text_for_estimate())).sum::<usize>();
+        let previous_checkpoint_tokens = previous.as_ref().map_or(0, |c| estimate_tokens(&c.summary));
+        let tokens_before = tokens(&messages) + previous_checkpoint_tokens;
+        let max_kept = (messages.len() / 2).max(4);
+        let (checkpoint, kept) = compact(&state, &messages, self.ctx.config.context.keep_recent_turns, max_kept, "compacted on request");
+        let dropped = conversation.len() - kept.len();
+        if dropped == 0 {
+            return Ok(None);
+        }
+        let boundary_id = conversation[dropped - 1].0;
+        store.insert_checkpoint(&CheckpointRecord {
+            id: checkpoint.id.to_string(),
+            task_id: task.id.clone(),
+            session_id: Some(session.id.clone()),
+            reason: checkpoint.reason.clone(),
+            summary: checkpoint.to_json(),
+            event_seq: store.last_event_id(&task.id).unwrap_or(0),
+            conversation_seq: boundary_id,
+            created_at: ctx_core::now(),
+        })?;
+        state.compacted_before = boundary_id;
+        state.checkpoints += 1;
+        self.ctx.memory.save_task_state(&state)?;
+        let event = AgentEvent::Checkpoint { task_id: task_id.clone(), checkpoint_id: checkpoint.id.clone(), reason: checkpoint.reason.clone() };
+        if let Err(e) = self.ctx.events.record(&SessionId::from_string(session.id.clone()), &event) {
+            tracing::warn!(error = %e, "failed to persist event");
+        }
+        Ok(Some(CompactOutcome {
+            task_id: task.id,
+            checkpoint_id: checkpoint.id.to_string(),
+            dropped_messages: dropped,
+            kept_messages: kept.len(),
+            conversation_tokens: tokens(&kept),
+            checkpoint_tokens: estimate_tokens(&checkpoint.summary),
+            previous_checkpoint_tokens,
+            tokens_before,
+            tokens_after: tokens(&kept) + estimate_tokens(&checkpoint.summary),
+        }))
+    }
+}
+
+/// What `SessionManager::compact` did. The token counts are estimates: the
+/// kept conversation, the new checkpoint summary and the one it replaces
+/// (so a client can shift its last prompt estimate), and both together
+/// before and after.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CompactOutcome {
+    pub task_id: String,
+    pub checkpoint_id: String,
+    pub dropped_messages: usize,
+    pub kept_messages: usize,
+    pub conversation_tokens: usize,
+    pub checkpoint_tokens: usize,
+    pub previous_checkpoint_tokens: usize,
+    pub tokens_before: usize,
+    pub tokens_after: usize,
 }

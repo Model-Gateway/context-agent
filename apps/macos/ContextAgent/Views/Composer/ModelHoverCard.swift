@@ -3,8 +3,8 @@ import AppKit
 
 /// The card shown beside the model picker while a row is hovered: the lab's
 /// logo, models.dev's name and one-line description, context / output
-/// limits, capability chips and price, then ModelGateway's 24 h error rate
-/// and savings. Content comes from `ModelsDevInfo` and `ModelStat` (either
+/// limits and capability chips, the price (what ModelGateway bills, else
+/// models.dev's list price), then ModelGateway's 24 h error rate and savings. Content comes from `ModelsDevInfo` and `ModelStat` (either
 /// may be missing, not both); the logo from `ModelsDevCatalog.logo(for:)`.
 struct ModelHoverCard: View {
     let modelId: String
@@ -30,11 +30,11 @@ struct ModelHoverCard: View {
                 }
                 limits(info)
                 capabilities(info)
-                if let cost = info.costLine {
-                    Text(verbatim: cost)
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                }
+            }
+            if let cost = stat?.costLine ?? info?.costLine {
+                Text(verbatim: cost)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.textTertiary)
             }
             if let stat, stat.errorRate24h != nil || stat.savingsLabel != nil {
                 gateway(stat)
@@ -374,7 +374,7 @@ struct HoverAnchorView: NSViewRepresentable {
             toolCall: true, reasoning: false, vision: true, openWeights: false,
             knowledge: "2024-04", releaseDate: "2025-04-14", inputCost: 2, outputCost: 8
         ),
-        stat: ModelStat(savingsPercent: 98, errorRate24h: 1.5),
+        stat: ModelStat(savingsPercent: 98, errorRate24h: 1.5, inputPrice: 0.04, outputPrice: 0.16),
         catalog: ModelsDevCatalog()
     )
 }

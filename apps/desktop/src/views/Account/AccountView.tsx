@@ -523,7 +523,7 @@ function inviteTerms(summary: GatewayReferralSummary, account: GatewayAccount): 
   if (summary.share_rate_percent > 0) {
     text += `, and you earn ${summary.share_rate_percent}% of what they spend for ${summary.share_days} days (up to ${formatGatewayCents(account, summary.share_cap_cents)})`
   }
-  return `${text}. One reward per computer; plans do not count as adding funds.`
+  return `${text}.`
 }
 
 /** The split slider: whole dollars between half the pool and all of it; sent when the drag ends. */

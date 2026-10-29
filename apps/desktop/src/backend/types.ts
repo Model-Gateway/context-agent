@@ -1531,6 +1531,30 @@ export function normalizeRewindResult(raw: RewindResult): RewindResult {
   return { ...raw, files: raw.files ?? null, session: normalizeSessionSummary(raw.session) }
 }
 
+/// `CompactResult` (`session/compact`); only `dropped_messages` (0) when
+/// there was nothing to compact.
+export interface CompactResult {
+  dropped_messages: number
+  kept_messages: number
+  conversation_tokens: number
+  checkpoint_tokens: number
+  previous_checkpoint_tokens: number
+  tokens_before: number
+  tokens_after: number
+}
+
+export function normalizeCompactResult(raw: Partial<CompactResult> & { dropped_messages: number }): CompactResult {
+  return {
+    dropped_messages: raw.dropped_messages,
+    kept_messages: raw.kept_messages ?? 0,
+    conversation_tokens: raw.conversation_tokens ?? 0,
+    checkpoint_tokens: raw.checkpoint_tokens ?? 0,
+    previous_checkpoint_tokens: raw.previous_checkpoint_tokens ?? 0,
+    tokens_before: raw.tokens_before ?? 0,
+    tokens_after: raw.tokens_after ?? 0,
+  }
+}
+
 // MARK: - Task run options
 
 /** `TaskRunOptions` (`task/run.options`): every field is optional and omitted when unset. */
@@ -1557,12 +1581,16 @@ export interface ModelsList {
   stats?: { [model: string]: ModelStat } | null
 }
 
-/** `ModelStat` (`models/list.stats` entry): percentages, each null when unknown. */
+/** `ModelStat` (`models/list.stats` entry): each null when unknown. */
 export interface ModelStat {
   /** Discount against the official output price. */
   savings_percent?: number | null
   /** Share of failed requests over the last 24 hours. */
   error_rate_24h?: number | null
+  /** USD per million input tokens ModelGateway bills. */
+  input_price?: number | null
+  /** USD per million output tokens ModelGateway bills. */
+  output_price?: number | null
 }
 
 /** `ModelStat.savingsLabel`: "98% off"; null below 1%. */
@@ -1578,6 +1606,15 @@ export function modelStatErrorRateLabel(stat: ModelStat): string | null {
   if (rate == null) return null
   const rounded = Math.round(rate * 10) / 10
   return Number.isInteger(rounded) ? `${rounded}%` : `${rounded.toFixed(1)}%`
+}
+
+/** `ModelStat.costLine`: "$0.20 in · $1 out per M", or "$1 out per M" without an input price. */
+export function modelStatCostLine(stat: ModelStat): string | null {
+  if (stat.output_price == null) return null
+  // `ModelsDevInfo.money(_:)`: "$2", "$0.20".
+  const money = (value: number) => (Math.round(value) === value ? `$${Math.trunc(value)}` : `$${value.toFixed(2)}`)
+  const output = `${money(stat.output_price)} out per M`
+  return stat.input_price == null ? output : `${money(stat.input_price)} in · ${output}`
 }
 
 /** `CapabilitySummary` (`models/switch.capability`). */

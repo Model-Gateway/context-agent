@@ -1868,7 +1868,9 @@ const CARD_WIDTH: u16 = 40;
 /// error rate and savings. `None` when there is nothing to show beyond the id.
 fn model_card(id: &str, info: Option<&models_dev::ModelInfo>, stat: Option<&model_stats::ModelStat>, width: usize) -> Option<Vec<Line<'static>>> {
     let gateway = stat.filter(|s| s.error_rate_label().is_some() || s.savings_label().is_some());
-    if info.is_none() && gateway.is_none() {
+    // What ModelGateway bills, else models.dev's list price.
+    let cost = stat.and_then(|s| s.cost_line()).or_else(|| info.and_then(|i| i.cost_line()));
+    if info.is_none() && gateway.is_none() && cost.is_none() {
         return None;
     }
     let dim = Style::default().fg(DIM);
@@ -1947,11 +1949,11 @@ fn model_card(id: &str, info: Option<&models_dev::ModelInfo>, stat: Option<&mode
                 used += w;
             }
             out.push(Line::from(row));
-            if let Some(cost) = info.cost_line() {
-                out.push(Line::styled(clip(&cost), dim));
-            }
         }
         None => out.push(Line::styled(clip(id), bold)),
+    }
+    if let Some(cost) = cost {
+        out.push(Line::styled(clip(&cost), dim));
     }
     if let Some(stat) = gateway {
         // Green under 5%, amber under 20%.
@@ -2015,7 +2017,7 @@ mod tests {
         p.filter = "gpt".into();
         p.selected = 1;
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 20)).unwrap();
-        let stats = ModelStats::from([("gpt-4.1-mini".to_string(), model_stats::ModelStat { savings_percent: Some(98.0), error_rate_24h: None })]);
+        let stats = ModelStats::from([("gpt-4.1-mini".to_string(), model_stats::ModelStat { savings_percent: Some(98.0), ..Default::default() })]);
         terminal.draw(|f| draw_picker(f, &p, "gpt-4.1", &stats, None, "")).unwrap();
         let screen: String = terminal.backend().buffer().content().chunks(80).map(|row| row.iter().map(|c| c.symbol()).collect::<String>() + "\n").collect();
         println!("{screen}");
@@ -2037,12 +2039,12 @@ mod tests {
         let p = picker(&["gpt-4.1", "o3"], "o3");
         let mut p = p;
         p.selected = 0;
-        let stats = ModelStats::from([("gpt-4.1".to_string(), model_stats::ModelStat { savings_percent: Some(98.0), error_rate_24h: Some(1.5) })]);
+        let stats = ModelStats::from([("gpt-4.1".to_string(), model_stats::ModelStat { savings_percent: Some(98.0), error_rate_24h: Some(1.5), input_price: Some(0.04), output_price: Some(0.16) })]);
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).unwrap();
         terminal.draw(|f| draw_picker(f, &p, "o3", &stats, Some(&index), "")).unwrap();
         let screen: String = terminal.backend().buffer().content().chunks(120).map(|row| row.iter().map(|c| c.symbol()).collect::<String>() + "\n").collect();
         println!("{screen}");
-        for text in ["GPT-4.1", "OpenAI · gpt-4.1", "Long-lived GPT workhorse", "Context  Output  Knowledge", "1M       32K     2024-04", " Tools ", " Vision ", "$2 in · $8 out per M", "Errors (24h)  Cost", "● 1.5%        98% off"] {
+        for text in ["GPT-4.1", "OpenAI · gpt-4.1", "Long-lived GPT workhorse", "Context  Output  Knowledge", "1M       32K     2024-04", " Tools ", " Vision ", "$0.04 in · $0.16 out per M", "Errors (24h)  Cost", "● 1.5%        98% off"] {
             assert!(screen.contains(text), "missing {text:?}");
         }
         // A model with neither models.dev data nor gateway numbers has no card.

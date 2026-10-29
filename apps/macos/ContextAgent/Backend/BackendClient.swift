@@ -343,6 +343,10 @@ final class BackendClient {
         ]))
     }
 
+    func sessionCompact(projectId: String, sessionId: String) async throws -> CompactResult {
+        try await request("session/compact", params: object(["project_id": .string(projectId), "session_id": .string(sessionId)]))
+    }
+
     func sessionHistory(projectId: String, sessionId: String) async throws -> SessionHistory {
         try await request("session/history", params: object(["project_id": .string(projectId), "session_id": .string(sessionId)]))
     }

@@ -87,7 +87,7 @@ import {
 import { lastPathComponent, RecentProjects, standardizePath, type RecentProject } from '../models/recentProject'
 import { chatStatusIsRunning, type LogLine } from '../models/reducer'
 import { decodeRemoteProject, hostDisplayName, hostIsValid, hostTarget, isRemoteProjectKey, normalizeHost, projectKey, sameHost, SSHHosts, type SSHHost } from '../models/sshHost'
-import { makeNoticeItem, makeUserTurn, outgoingPrompt, userTurnIsRewindable, type OutgoingPrompt, type UserTurn } from '../models/transcript'
+import { TranscriptFormat, makeNoticeItem, makeUserTurn, outgoingPrompt, userTurnIsRewindable, type OutgoingPrompt, type UserTurn } from '../models/transcript'
 import type { IconName } from '../theme/icons'
 import { BrowserWorkspace } from './browser'
 import { ChatState } from './chat'
@@ -383,6 +383,7 @@ export interface AppActions {
   undoLastTurn: () => void
   undo: (turn: UserTurn, chat: ChatState) => void
   performRewind: (request: RewindRequest, restoreFiles: boolean) => Promise<void>
+  compact: (chat: ChatState) => Promise<void>
 
   // Approvals and questions
   primaryAction: () => void
@@ -1706,6 +1707,37 @@ function undo(turn: UserTurn, chat: ChatState): void {
 
 /// The sheet's Keep files / Revert files: `session/rewind`, reload the chat
 /// from storage, then re-send (edit) or refill the composer (undo).
+/// The Inspector's Compact button: `session/compact` for the chat's active
+/// task, so the next message starts from a checkpoint.
+async function compact(chat: ChatState): Promise<void> {
+  const project = projectById(get(), chat.projectId)
+  if (!project || chat.compacting) return
+  if (!canRewind(chat)) {
+    toast('Wait for the running task to finish before compacting.', 'info')
+    return
+  }
+  chat.update((c) => {
+    c.compacting = true
+  })
+  try {
+    const result = await project.backend.sessionCompact(project.id, chat.sessionId)
+    if (result.dropped_messages <= 0) {
+      toast('Nothing to compact yet: only the most recent turns are in context.', 'info')
+      return
+    }
+    chat.applyCompaction(result)
+    const n = result.dropped_messages
+    toast(`Compacted ${n} message${n === 1 ? '' : 's'} into a summary (${TranscriptFormat.tokens(result.tokens_before)} → ${TranscriptFormat.tokens(result.tokens_after)} tokens).`, 'success')
+  } catch (error) {
+    const message = errorText(error)
+    toast(`Could not compact the chat: ${message}`, 'error', message)
+  } finally {
+    chat.update((c) => {
+      c.compacting = false
+    })
+  }
+}
+
 async function performRewind(request: RewindRequest, restoreFiles: boolean): Promise<void> {
   const chat = request.chat
   const messageId = request.turn.messageId
@@ -2905,6 +2937,7 @@ const actions: AppActions = {
   undoLastTurn,
   undo,
   performRewind,
+  compact,
   primaryAction,
   denyPendingApproval,
   respond,

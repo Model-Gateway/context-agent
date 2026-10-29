@@ -19,6 +19,7 @@ import { debug } from './log'
 import { decodeNotification, type BackendNotification } from './notifications'
 import {
   normalizeRewindResult,
+  normalizeCompactResult,
   normalizeSessionHistory,
   normalizeSessionSummary,
   normalizeTaskSummary,
@@ -87,6 +88,7 @@ import {
   type ProjectInfo,
   type QuestionAnswer,
   type RewindResult,
+  type CompactResult,
   type SessionHistory,
   type SessionHistoryWire,
   type SessionSummary,
@@ -484,6 +486,10 @@ export class BackendClient {
       object({ project_id: projectId, session_id: sessionId, message_id: messageId, restore_files: restoreFiles }),
       normalizeRewindResult,
     )
+  }
+
+  async sessionCompact(projectId: string, sessionId: string): Promise<CompactResult> {
+    return this.request('session/compact', object({ project_id: projectId, session_id: sessionId }), normalizeCompactResult)
   }
 
   async sessionHistory(projectId: string, sessionId: string): Promise<SessionHistory> {

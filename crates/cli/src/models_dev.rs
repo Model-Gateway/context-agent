@@ -41,9 +41,13 @@ pub struct ModelInfo {
 impl ModelInfo {
     /// "$2 in · $8 out per M"; none without a price.
     pub fn cost_line(&self) -> Option<String> {
-        let money = |v: f64| if v.round() == v { format!("${v:.0}") } else { format!("${v:.2}") };
-        Some(format!("{} in · {} out per M", money(self.input_cost?), money(self.output_cost?)))
+        Some(format!("{} in · {} out per M", fmt_money(self.input_cost?), fmt_money(self.output_cost?)))
     }
+}
+
+/// "$2", "$0.20".
+pub fn fmt_money(value: f64) -> String {
+    if value.round() == value { format!("${value:.0}") } else { format!("${value:.2}") }
 }
 
 /// "1M", "1.5M", "200K", "32K" (powers of two read as such).

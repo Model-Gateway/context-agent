@@ -646,7 +646,7 @@ pub(super) fn build_doctor_report(config: &Config, project: Option<&Project>, pr
     let wrapper = ctx_security::SandboxStatus::from_config(&config.permissions.sandbox);
     report.row("permissions", format!("{}{}", config.permissions.profile.as_str(), if wrapper.enforced { format!(" · command wrapper (developer mode): {}", wrapper.description) } else { String::new() }), true);
     report.row("reasoning effort", config.model.reasoning_effort.as_ref().map(|e| format!("{}{}", e.as_str(), if e.deploys_agents() { " (deploys sub-agents)" } else { "" })).unwrap_or_else(|| "auto".into()), true);
-    report.row("model resilience", format!("{} retries (backoff {}–{} ms) · fallbacks: {}", config.model.max_retries, config.model.retry_base_delay_ms, config.model.retry_max_delay_ms, if config.model.fallbacks.is_empty() { "none".to_string() } else { format!("{} (cooldown {}s)", config.model.chain_summary(), config.model.fallback_cooldown_secs) }), true);
+    report.row("model resilience", format!("{} retries (backoff {}–{} ms) · fallbacks: {}", config.model.max_retries, config.model.retry_base_delay_ms, config.model.retry_max_delay_ms, config.model.fallbacks_summary()), true);
     for fb in config.model.chain().iter().skip(1) {
         // A fallback sharing the primary's key is covered by the line above.
         if (fb.api_key_env != config.model.api_key_env || fb.credential != config.model.credential) && ctx_core::resolve_api_key(&config, fb).is_none() && !fb.base_url.contains("localhost") && !fb.base_url.contains("127.0.0.1") {

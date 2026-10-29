@@ -338,7 +338,7 @@ pub async fn doctor(cli: &Cli, probe: bool) -> Result<i32> {
 
     println!("\n== model provider");
     println!("endpoint        {} · model {} · key {} ({})", config.model.base_url, config.model.name, ctx_core::api_key_source(&config.model), if ctx_core::resolve_api_key(&config, &config.model).is_some() { "set" } else { "NOT SET" });
-    println!("resilience      {} retries (backoff {}–{} ms) · fallbacks: {}", config.model.max_retries, config.model.retry_base_delay_ms, config.model.retry_max_delay_ms, if config.model.fallbacks.is_empty() { "none".to_string() } else { format!("{} (cooldown {}s)", config.model.chain_summary(), config.model.fallback_cooldown_secs) });
+    println!("resilience      {} retries (backoff {}–{} ms) · fallbacks: {}", config.model.max_retries, config.model.retry_base_delay_ms, config.model.retry_max_delay_ms, config.model.fallbacks_summary());
     for fb in config.model.chain().iter().skip(1) {
         // A fallback sharing the primary's key is covered by the line above.
         if (fb.api_key_env != config.model.api_key_env || fb.credential != config.model.credential) && ctx_core::resolve_api_key(&config, fb).is_none() && !fb.base_url.contains("localhost") && !fb.base_url.contains("127.0.0.1") {

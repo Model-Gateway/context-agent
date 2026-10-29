@@ -85,6 +85,8 @@ final class ChatState: Identifiable {
     var usage: TokenUsage?
     var costUsd: Double?
     var contextStats: ContextStats?
+    /// True while `session/compact` is in flight.
+    var compacting = false
     var pendingApproval: ApprovalRequest?
     /// True while `approval/respond` is in flight.
     var approvalInFlight = false
@@ -1016,6 +1018,23 @@ final class ChatState: Identifiable {
             }
         }
         updateCall(callId) { $0.output = out }
+    }
+
+    /// `session/compact` dropped older turns: the last prompt estimate
+    /// shifts by what the next one leaves out, and the transcript gets the
+    /// checkpoint line a reload would show.
+    func applyCompaction(_ result: CompactResult) {
+        guard result.droppedMessages > 0 else { return }
+        if var stats = contextStats {
+            let shift = result.conversationTokens - stats.conversationTokens + result.checkpointTokens - result.previousCheckpointTokens
+            stats.estimatedPromptTokens = max(stats.stablePrefixTokens, stats.estimatedPromptTokens + shift)
+            stats.conversationMessages = result.keptMessages
+            stats.conversationTokens = result.conversationTokens
+            stats.compacted = true
+            contextStats = stats
+        }
+        appendNotice(line: "checkpoint: compacted on request", detail: true, date: Date())
+        addLog("compacted \(result.droppedMessages) message(s) · ~\(result.tokensBefore) → ~\(result.tokensAfter) tok")
     }
 
     /// Consecutive notices coalesce into one item.

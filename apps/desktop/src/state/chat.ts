@@ -11,7 +11,7 @@
 // project's version and the store's. Code outside the class changes fields
 // through `update(change)` (or the small setters), which touches for it.
 
-import type { ApprovalRequest, ContextStats, QuestionRequest, SessionSummary, TaskFinished, TokenUsage, AgentEvent, SessionHistory } from '../backend/types'
+import type { ApprovalRequest, CompactResult, ContextStats, QuestionRequest, SessionSummary, TaskFinished, TokenUsage, AgentEvent, SessionHistory } from '../backend/types'
 import type { ComposerAttachment } from '../models/attachments'
 import {
   TranscriptReducer,
@@ -58,6 +58,8 @@ export class ChatState implements ReducerTarget {
   usage: TokenUsage | null = null
   costUsd: number | null = null
   contextStats: ContextStats | null = null
+  /** True while `session/compact` is in flight. */
+  compacting = false
   pendingApproval: ApprovalRequest | null = null
   /** True while `approval/respond` is in flight. */
   approvalInFlight = false
@@ -321,6 +323,12 @@ export class ChatState implements ReducerTarget {
   /** `addLog(_:date:level:)`: one Inspector Log line. */
   addLog(text: string, date: Date = new Date(), level = 'info'): void {
     this.reducer.addLog(text, date, level)
+    this.touch()
+  }
+
+  /** `applyCompaction(_:)`: see `TranscriptReducer.applyCompaction`. */
+  applyCompaction(result: CompactResult): void {
+    this.reducer.applyCompaction(result)
     this.touch()
   }
 

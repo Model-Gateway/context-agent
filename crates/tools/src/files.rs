@@ -259,10 +259,17 @@ impl Tool for ListFiles {
 
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct Edit {
     pub old_text: String,
     pub new_text: String,
+    /// When `old_text` occurs more than once: change the occurrence
+    /// nearest this line.
+    #[serde(default)]
+    pub near_line: Option<usize>,
+    /// Change every occurrence of `old_text`.
+    #[serde(default)]
+    pub replace_all: bool,
 }
 
 #[derive(Deserialize)]
@@ -285,21 +292,96 @@ pub fn apply_edits(content: &str, edits: &[Edit]) -> std::result::Result<String,
             }
             return Err(format!("edit {} has empty old_text but the file is not empty; provide the exact text to replace", i + 1));
         }
+        if edit.replace_all && edit.near_line.is_some() {
+            return Err(format!("edit {}: set either near_line or replace_all, not both", i + 1));
+        }
         let (old_text, new_text) = line_ending_adapted(&current, &edit.old_text, &edit.new_text);
-        let count = current.matches(old_text.as_ref()).count();
-        match count {
-            1 => {
-                current = current.replacen(old_text.as_ref(), new_text.as_ref(), 1);
-            }
+        let starts: Vec<usize> = current.match_indices(old_text.as_ref()).map(|(at, _)| at).collect();
+        match starts.len() {
             0 => {
                 return Err(format!("edit {}: old_text was not found in the current file.{}", i + 1, nearest_hint(&current, &edit.old_text)));
             }
-            n => {
-                return Err(format!("edit {}: old_text occurs {n} times; include more surrounding lines so it is unique", i + 1));
+            1 => {
+                current = current.replacen(old_text.as_ref(), new_text.as_ref(), 1);
+            }
+            _ if edit.replace_all => {
+                current = current.replace(old_text.as_ref(), new_text.as_ref());
+            }
+            _ => {
+                let Some(near) = edit.near_line else {
+                    return Err(duplicate_error(i, &current, &starts, &old_text));
+                };
+                // Distance from `near` to each match's span of lines, so a
+                // line inside the match counts as on it.
+                let span_lines = old_text.trim_end_matches('\n').matches('\n').count();
+                let distance = |at: usize| {
+                    let first = line_of(&current, at);
+                    let last = first + span_lines;
+                    if near < first { first - near } else { near.saturating_sub(last) }
+                };
+                let mut by_distance: Vec<(usize, usize)> = starts.iter().map(|&at| (distance(at), at)).collect();
+                by_distance.sort();
+                if by_distance[0].0 == by_distance[1].0 {
+                    return Err(format!(
+                        "edit {}: near_line {near} is equally close to the occurrences of old_text at lines {} and {}; give the line of the one to change",
+                        i + 1,
+                        line_of(&current, by_distance[0].1),
+                        line_of(&current, by_distance[1].1)
+                    ));
+                }
+                let at = by_distance[0].1;
+                current.replace_range(at..at + old_text.len(), new_text.as_ref());
             }
         }
     }
     Ok(current)
+}
+
+/// The 1-based line that byte offset `at` of `content` falls on.
+fn line_of(content: &str, at: usize) -> usize {
+    content[..at].matches('\n').count() + 1
+}
+
+/// Where each occurrence of an ambiguous `old_text` is, so the model can
+/// see the copies it has not read and say which one it means.
+fn duplicate_error(i: usize, current: &str, starts: &[usize], old_text: &str) -> String {
+    const SHOWN: usize = 5;
+    let lines: Vec<&str> = current.lines().collect();
+    let mut s = format!("edit {}: old_text occurs {} times but must match once", i + 1, starts.len());
+    if i > 0 {
+        s.push_str(&format!(" (line numbers count edits 1-{i} of this patch as applied)"));
+    }
+    s.push_str(":\n");
+    for &at in starts.iter().take(SHOWN) {
+        let line = line_of(current, at);
+        let first_match = line + old_text[..old_text.len() - old_text.trim_start().len()].matches('\n').count();
+        match enclosing_definition(&lines, first_match) {
+            Some(def) => s.push_str(&format!("- line {first_match}, in `{def}`:\n")),
+            None => s.push_str(&format!("- line {first_match}:\n")),
+        }
+        let lo = first_match.saturating_sub(2).max(1);
+        for n in lo..=first_match.min(lines.len()) {
+            s.push_str(&format!("{n:>6} | {}\n", lines[n - 1]));
+        }
+    }
+    if starts.len() > SHOWN {
+        s.push_str(&format!("- … and {} more\n", starts.len() - SHOWN));
+    }
+    s.push_str("Set near_line to the line of the one to change, set replace_all=true to change all of them, or extend old_text with nearby lines that differ between the copies.");
+    s
+}
+
+/// The nearest top-level line above `line` that starts a definition (`fn`,
+/// `def`, `class`, ...: unindented and starting with a word); `None` when
+/// `line` is itself top-level.
+fn enclosing_definition(lines: &[&str], line: usize) -> Option<String> {
+    let starts_word = |l: &str| l.chars().next().is_some_and(|c| c.is_alphanumeric() || c == '_');
+    if lines.get(line.wrapping_sub(1)).is_some_and(|l| starts_word(l)) {
+        return None;
+    }
+    let idx = lines[..line.saturating_sub(1).min(lines.len())].iter().rposition(|l| starts_word(l))?;
+    let def = lines[idx].trim_end();
+    Some(if def.chars().count() > 80 { format!("{}…", def.chars().take(80).collect::<String>()) } else { def.to_string() })
 }
 
 /// The edit as it applies to `current`. Models write `\n`; a file checked
@@ -358,7 +440,7 @@ impl Tool for ApplyPatch {
     }
 
     fn description(&self) -> &str {
-        "Edit a file by replacing exact text spans. Each edit's old_text must match the current file exactly once (include enough context to be unique). Read the file first: the patch is rejected if this session has not read it or if it changed since the last read (other sessions may be editing the same checkout)."
+        "Edit a file by replacing exact text spans. Each edit's old_text must match the current file exactly once (include enough context to be unique); when the same text occurs more than once, set near_line to the line number (from read_file) of the occurrence to change, or replace_all to change every one. Edits apply in order, each to the result of the ones before. Read the file first: the patch is rejected if this session has not read it or if it changed since the last read (other sessions may be editing the same checkout)."
     }
 
     fn parameters(&self) -> Value {
@@ -373,7 +455,9 @@ impl Tool for ApplyPatch {
                         "type": "object",
                         "properties": {
                             "old_text": {"type": "string", "description": "Exact current text to replace (may span lines)"},
-                            "new_text": {"type": "string", "description": "Replacement text"}
+                            "new_text": {"type": "string", "description": "Replacement text"},
+                            "near_line": {"type": "integer", "minimum": 1, "description": "Only when old_text occurs more than once: the line number of the occurrence to change; the nearest one is changed"},
+                            "replace_all": {"type": "boolean", "description": "Change every occurrence of old_text (default false)"}
                         },
                         "required": ["old_text", "new_text"],
                         "additionalProperties": false
@@ -552,10 +636,10 @@ mod tests {
     #[test]
     fn edits_follow_the_file_line_endings() {
         let crlf = "fn a() {\r\n    1\r\n}\r\n";
-        let edits = vec![Edit { old_text: "fn a() {\n    1\n}".into(), new_text: "fn a() {\n    2\n    3\n}".into() }];
+        let edits = vec![Edit { old_text: "fn a() {\n    1\n}".into(), new_text: "fn a() {\n    2\n    3\n}".into(), ..Default::default() }];
         let out = apply_edits(crlf, &edits).unwrap();
         assert_eq!(out, "fn a() {\r\n    2\r\n    3\r\n}\r\n");
-        let one_line = vec![Edit { old_text: "    1".into(), new_text: "    1\n    1b".into() }];
+        let one_line = vec![Edit { old_text: "    1".into(), new_text: "    1\n    1b".into(), ..Default::default() }];
         assert_eq!(apply_edits(crlf, &one_line).unwrap(), "fn a() {\r\n    1\r\n    1b\r\n}\r\n");
         let lf = "fn a() {\n    1\n}\n";
         assert_eq!(apply_edits(lf, &edits).unwrap(), "fn a() {\n    2\n    3\n}\n", "LF files are untouched");
@@ -573,12 +657,31 @@ mod tests {
     #[test]
     fn edits_require_unique_matches() {
         let src = "a\nb\nc\nb\n";
-        assert_eq!(apply_edits(src, &[Edit { old_text: "a\n".into(), new_text: "A\n".into() }]).unwrap(), "A\nb\nc\nb\n");
-        let err = apply_edits(src, &[Edit { old_text: "b\n".into(), new_text: "B\n".into() }]).unwrap_err();
+        assert_eq!(apply_edits(src, &[Edit { old_text: "a\n".into(), new_text: "A\n".into(), ..Default::default() }]).unwrap(), "A\nb\nc\nb\n");
+        let err = apply_edits(src, &[Edit { old_text: "b\n".into(), new_text: "B\n".into(), ..Default::default() }]).unwrap_err();
         assert!(err.contains("occurs 2 times"));
-        let err = apply_edits(src, &[Edit { old_text: "zzz".into(), new_text: "y".into() }]).unwrap_err();
+        let err = apply_edits(src, &[Edit { old_text: "zzz".into(), new_text: "y".into(), ..Default::default() }]).unwrap_err();
         assert!(err.contains("not found"));
-        let err = apply_edits("fn main() {\n    let x = 1;\n}\n", &[Edit { old_text: "fn main() {\n  let x = 1;\n}".into(), new_text: "".into() }]).unwrap_err();
+        let err = apply_edits("fn main() {\n    let x = 1;\n}\n", &[Edit { old_text: "fn main() {\n  let x = 1;\n}".into(), new_text: "".into(), ..Default::default() }]).unwrap_err();
         assert!(err.contains("indentation"), "{err}");
+    }
+
+    #[test]
+    fn duplicate_matches_are_located_and_can_be_picked() {
+        let src = "def a():\n    x = [\n        cred.host,\n    ]\n\ndef b():\n    y = [\n        cred.host,\n    ]\n";
+        let edit = |near_line, replace_all| Edit { old_text: "        cred.host,\n    ]".into(), new_text: "        cred.id,\n    ]".into(), near_line, replace_all };
+        let err = apply_edits(src, &[edit(None, false)]).unwrap_err();
+        assert!(err.contains("occurs 2 times"), "{err}");
+        assert!(err.contains("line 3, in `def a():`") && err.contains("line 8, in `def b():`"), "{err}");
+        assert!(err.contains("near_line") && err.contains("replace_all"), "{err}");
+
+        let second = apply_edits(src, &[edit(Some(9), false)]).unwrap();
+        assert_eq!(second, src.replacen("def b():\n    y = [\n        cred.host", "def b():\n    y = [\n        cred.id", 1));
+        let first = apply_edits(src, &[edit(Some(4), false)]).unwrap();
+        assert!(first.starts_with("def a():\n    x = [\n        cred.id,"), "{first}");
+        assert!(apply_edits(src, &[edit(Some(6), false)]).unwrap_err().contains("equally close"));
+        assert_eq!(apply_edits(src, &[edit(None, true)]).unwrap(), src.replace("cred.host", "cred.id"));
+        assert!(apply_edits(src, &[edit(Some(3), true)]).unwrap_err().contains("not both"));
+        assert_eq!(apply_edits(src, &[Edit { old_text: "x = [".into(), new_text: "x = (".into(), near_line: Some(40), ..Default::default() }]).unwrap(), src.replace("x = [", "x = ("), "a unique match ignores near_line");
     }
 }
