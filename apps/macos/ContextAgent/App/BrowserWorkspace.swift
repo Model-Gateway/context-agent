@@ -233,8 +233,8 @@ final class BrowserWorkspace: NSObject {
             case "evaluate":
                 guard hasPage else { return failure("no page is open; use navigate first") }
                 guard let source = action["script"]?.stringValue else { return failure("evaluate needs `script`") }
-                let value = try await webView.callAsyncJavaScript(source, arguments: [:], in: nil, contentWorld: .page)
-                reply = BrowserReply(ok: true, content: Self.render(value), url: url?.absoluteString, title: title)
+                let value = try await webView.callAsyncJavaScript(Self.evaluateScript(source), arguments: ["maxChars": Self.maxTextChars], in: nil, contentWorld: .page)
+                reply = BrowserReply(ok: true, content: value as? String ?? "undefined", url: url?.absoluteString, title: title)
             case "screenshot":
                 guard hasPage else { return failure("no page is open; use navigate first") }
                 let path = try await screenshot()
@@ -318,16 +318,6 @@ final class BrowserWorkspace: NSObject {
         return file.path
     }
 
-    private static func render(_ value: Any?) -> String {
-        guard let value else { return "undefined" }
-        if let string = value as? String { return string }
-        if JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]), let text = String(data: data, encoding: .utf8) {
-            return text
-        }
-        if let number = value as? NSNumber { return number.stringValue }
-        return String(describing: value)
-    }
-
     private static func describe(_ error: Error) -> String {
         let nsError = error as NSError
         if let message = nsError.userInfo["WKJavaScriptExceptionMessage"] as? String {
@@ -361,6 +351,64 @@ final class BrowserWorkspace: NSObject {
     }
 
     // MARK: - Scripts (function bodies for callAsyncJavaScript)
+
+    /// Runs the agent's function body and renders its value as JSON text in
+    /// the page. Handing WebKit the raw value is not safe: page objects
+    /// (React fibers, DOM nodes) bridge into huge, deeply nested dictionaries
+    /// whose description overflowed the main thread's stack. Cycles, depth
+    /// and size are bounded here, and the text is cut at `maxChars`.
+    private static func evaluateScript(_ source: String) -> String {
+        "const ctxValue = await (async () => {\n" + source + "\n})();\n" + evaluateRenderer
+    }
+
+    private static let evaluateRenderer = #"""
+    {
+        let budget = 5000;
+        const ancestors = [];
+        const clone = (v, depth) => {
+            if (v === null || v === undefined || typeof v === 'boolean' || typeof v === 'string') return v;
+            if (typeof v === 'number') return Number.isFinite(v) ? v : String(v);
+            if (typeof v === 'bigint') return v + 'n';
+            if (typeof v === 'symbol') return v.toString();
+            if (typeof v === 'function') return '[function ' + (v.name || 'anonymous') + ']';
+            if (ancestors.includes(v)) return '[circular]';
+            if (--budget < 0) return '…';
+            try {
+                if (v instanceof Date) return isNaN(v) ? 'Invalid Date' : v.toISOString();
+                if (v instanceof Error) return v.name + ': ' + v.message;
+                if (v instanceof Element) return '<' + v.tagName.toLowerCase() + (v.id ? '#' + v.id : '') + '>';
+                if (v instanceof Node) return v.nodeName;
+                if (v === window) return '[window]';
+                const list = Array.isArray(v) || ArrayBuffer.isView(v) || v instanceof Set;
+                if (depth >= 8) return list ? '[array]' : '[object]';
+                ancestors.push(v);
+                try {
+                    if (list) {
+                        const out = [];
+                        for (const item of v) {
+                            if (budget <= 0) { out.push('…'); break; }
+                            out.push(clone(item, depth + 1));
+                        }
+                        return out;
+                    }
+                    const entries = v instanceof Map ? [...v].map(([k, x]) => [String(k), x]) : Object.keys(v).map(k => [k, v[k]]);
+                    const out = {};
+                    for (const [key, item] of entries) {
+                        if (budget <= 0) { out['…'] = '…'; break; }
+                        out[key] = clone(item, depth + 1);
+                    }
+                    return out;
+                } finally {
+                    ancestors.pop();
+                }
+            } catch (error) {
+                return '[unreadable]';
+            }
+        };
+        const text = typeof ctxValue === 'string' ? ctxValue : ctxValue === undefined ? 'undefined' : (JSON.stringify(clone(ctxValue, 0), null, 2) ?? String(ctxValue));
+        return text.length > maxChars ? text.slice(0, maxChars) + '… [' + (text.length - maxChars) + ' more characters]' : text;
+    }
+    """#
 
     /// Numbers the visible interactive elements with `data-ctx-ref` and
     /// returns the page text and one line per element.
