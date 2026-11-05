@@ -1213,6 +1213,8 @@ struct McpCatalogInput: Codable, Equatable, Identifiable, Hashable {
     var required: Bool
     /// `env` or `header`.
     var kind: String
+    /// Put in front of the entered value when missing (`Bearer `); the backend applies it.
+    var prefix: String? = nil
     var id: String { key }
 }
 

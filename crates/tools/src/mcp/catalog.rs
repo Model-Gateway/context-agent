@@ -17,6 +17,10 @@ pub struct CatalogInput {
     pub required: bool,
     /// Where the value goes: `env` or `header`.
     pub kind: String,
+    /// Put in front of what the user enters when it is not already there
+    /// (`Bearer ` for an `Authorization` header that takes an API key).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
 }
 
 /// One line of "What Context can access" on the connect screen: a group of
@@ -102,12 +106,16 @@ impl CatalogApp {
         server.exclude_tools.clear();
         for input in &self.inputs {
             let Some(value) = inputs.get(&input.key).map(|v| v.trim()).filter(|v| !v.is_empty()) else { continue };
+            let value = match &input.prefix {
+                Some(prefix) if !value.starts_with(prefix.as_str()) => format!("{prefix}{value}"),
+                _ => value.to_string(),
+            };
             match input.kind.as_str() {
                 "header" => {
-                    server.headers.insert(input.key.clone(), value.to_string());
+                    server.headers.insert(input.key.clone(), value);
                 }
                 _ => {
-                    server.env.insert(input.key.clone(), value.to_string());
+                    server.env.insert(input.key.clone(), value);
                 }
             }
         }
@@ -121,7 +129,12 @@ impl CatalogApp {
 }
 
 fn env_input(key: &str, label: &str, help: &str) -> CatalogInput {
-    CatalogInput { key: key.into(), label: label.into(), help: help.into(), secret: true, required: true, kind: "env".into() }
+    CatalogInput { key: key.into(), label: label.into(), help: help.into(), secret: true, required: true, kind: "env".into(), prefix: None }
+}
+
+/// A required `Authorization: Bearer <key>` header the user fills with a key.
+fn bearer_input(label: &str, help: &str) -> CatalogInput {
+    CatalogInput { key: "Authorization".into(), label: label.into(), help: help.into(), secret: true, required: true, kind: "header".into(), prefix: Some("Bearer ".into()) }
 }
 
 fn npx(package: &str) -> McpServerConfig {
@@ -163,6 +176,55 @@ fn all_apps() -> Vec<CatalogApp> {
             template: McpServerConfig::builtin("computer-use"),
         },
         CatalogApp {
+            id: "brave-search".into(),
+            name: "Brave Search".into(),
+            tagline: "Search the web, news, images and places".into(),
+            example_prompt: "Search for the latest release notes of the libraries we depend on".into(),
+            description: "Web search through the Brave Search API: web, news, image, video and local results, page summaries and ready-to-read context for a query. The free plan covers a few thousand queries a month.".into(),
+            icon: "magnifyingglass".into(),
+            logo: Some("brave".into()),
+            logo_monochrome: true,
+            category: "Web".into(),
+            vendor: "Brave".into(),
+            homepage: Some("https://github.com/brave/brave-search-mcp-server".into()),
+            builtin: false,
+            default_installed: false,
+            requirements: node.clone(),
+            inputs: vec![env_input("BRAVE_API_KEY", "API key", "From api-dashboard.search.brave.com after signing up at brave.com/search/api.")],
+            access: vec![
+                access("Search the web", "Web and news results, summaries and context for a query", &["brave_web_search", "brave_news_search", "brave_summarizer", "brave_llm_context"]),
+                access("Search images, videos and places", "Image, video and local business results", &["brave_image_search", "brave_video_search", "brave_local_search", "brave_place_search"]),
+            ],
+            oauth: None,
+            template: McpServerConfig::stdio("npx", vec!["-y".into(), "@brave/brave-search-mcp-server".into(), "--transport".into(), "stdio".into()]),
+        },
+        CatalogApp {
+            id: "chrome-devtools".into(),
+            name: "Chrome DevTools".into(),
+            tagline: "Debug and profile a page in Chrome".into(),
+            example_prompt: "Open the dashboard, record a performance trace and tell me what makes it slow".into(),
+            description: "Drives a Chrome instance through the DevTools Protocol: navigate, click and fill forms, read console and network logs, run scripts, record performance traces and Lighthouse audits, take heap snapshots. Starts its own Chrome; nothing to configure.".into(),
+            icon: "wrench.and.screwdriver".into(),
+            logo: Some("chrome".into()),
+            logo_monochrome: true,
+            category: "Web".into(),
+            vendor: "Google".into(),
+            homepage: Some("https://github.com/ChromeDevTools/chrome-devtools-mcp".into()),
+            builtin: false,
+            default_installed: false,
+            requirements: node.clone(),
+            inputs: Vec::new(),
+            access: vec![
+                access("Browse and read pages", "Open pages, take screenshots and snapshots, read console and network logs and styles", &["list_pages", "navigate_page", "new_page", "select_page", "close_page", "wait_for", "take_screenshot", "take_snapshot", "list_console_messages", "get_console_message", "list_network_requests", "get_network_request", "get_css_styles", "emulate", "resize_page"]),
+                access("Interact with pages", "Click, type, fill forms, upload files and answer dialogs", &["click", "click_at", "drag", "fill", "fill_form", "handle_dialog", "hover", "press_key", "type_text", "upload_file"]),
+                access("Profile performance and memory", "Record traces, run Lighthouse audits, record the screen and analyze heap snapshots", &["performance_*", "lighthouse_audit", "screencast_*", "*heapsnapshot*"]),
+                access("Run scripts", "Evaluate JavaScript in the page and set logpoints", &["evaluate_script", "set_logpoints"]),
+                access("Manage extensions and apps", "Install and drive extensions, progressive web apps, WebAuthn and third-party developer tools", &["*_extension", "list_extensions", "*_pwa", "get_os_app_state", "configure_webauthn", "*_3p_developer_tool*", "*_webmcp_tool*"]),
+            ],
+            oauth: None,
+            template: npx("chrome-devtools-mcp@latest"),
+        },
+        CatalogApp {
             id: "context7".into(),
             name: "Context7".into(),
             tagline: "Up-to-date library documentation".into(),
@@ -177,7 +239,7 @@ fn all_apps() -> Vec<CatalogApp> {
             builtin: false,
             default_installed: false,
             requirements: node.clone(),
-            inputs: vec![CatalogInput { key: "CONTEXT7_API_KEY".into(), label: "API key".into(), help: "Optional; raises the rate limit. From context7.com.".into(), secret: true, required: false, kind: "env".into() }],
+            inputs: vec![CatalogInput { key: "CONTEXT7_API_KEY".into(), label: "API key".into(), help: "Optional; raises the rate limit. From context7.com.".into(), secret: true, required: false, kind: "env".into(), prefix: None }],
             access: vec![required("Read library documentation", "Look up libraries and fetch their current docs and examples")],
             oauth: None,
             template: npx("@upstash/context7-mcp"),
@@ -201,6 +263,29 @@ fn all_apps() -> Vec<CatalogApp> {
             access: vec![required("Fetch web pages", "Download a URL and read it as Markdown")],
             oauth: None,
             template: McpServerConfig::stdio("uvx", vec!["mcp-server-fetch".into()]),
+        },
+        CatalogApp {
+            id: "figma".into(),
+            name: "Figma".into(),
+            tagline: "Read designs from the Figma desktop app".into(),
+            example_prompt: "Implement the selected frame as a SwiftUI view, matching its variables".into(),
+            description: "Connects to the Dev Mode MCP server inside the Figma desktop app: the agent reads the selected layers as structured context and code, takes screenshots of them, lists the variables and styles they use, converts FigJam boards and maps components to code with Code Connect. In Figma, open a design file, switch to Dev Mode and enable the desktop MCP server in the right sidebar.".into(),
+            icon: "paintbrush.pointed".into(),
+            logo: Some("figma".into()),
+            logo_monochrome: true,
+            category: "Design".into(),
+            vendor: "Figma".into(),
+            homepage: Some("https://developers.figma.com/docs/figma-mcp-server/".into()),
+            builtin: false,
+            default_installed: false,
+            requirements: vec!["Figma desktop app with the Dev Mode MCP server enabled".into()],
+            inputs: Vec::new(),
+            access: vec![
+                access("Read designs", "Design context and code, screenshots, variables, styles, motion, shaders and FigJam boards for the selection", &["get_design_context", "get_metadata", "get_screenshot", "get_variable_defs", "get_figjam", "get_motion_context", "get_shader", "list_shaders"]),
+                access("Map components to code", "Read and write Code Connect mappings between components and code", &["get_code_connect_map", "get_code_connect_suggestions", "add_code_connect_map", "send_code_connect_mappings"]),
+            ],
+            oauth: None,
+            template: McpServerConfig::http("http://127.0.0.1:3845/mcp"),
         },
         CatalogApp {
             id: "github".into(),
@@ -233,6 +318,30 @@ fn all_apps() -> Vec<CatalogApp> {
                 available: crate::mcp::oauth::github_client_id().is_some(),
             }),
             template: npx("@modelcontextprotocol/server-github"),
+        },
+        CatalogApp {
+            id: "linear".into(),
+            name: "Linear".into(),
+            tagline: "Issues, projects and cycles".into(),
+            example_prompt: "Summarize what is assigned to me this cycle and open an issue for the bug we just found".into(),
+            description: "Linear's hosted MCP server: find, create and update issues, comments, projects and documents in your workspace with a personal API key. A key with only the Read permission keeps the agent read-only.".into(),
+            icon: "checklist".into(),
+            logo: Some("linear".into()),
+            logo_monochrome: true,
+            category: "Project management".into(),
+            vendor: "Linear".into(),
+            homepage: Some("https://linear.app/docs/mcp".into()),
+            builtin: false,
+            default_installed: false,
+            requirements: Vec::new(),
+            inputs: vec![bearer_input("API key", "A personal API key from linear.app → Settings → Security & access → Personal API keys.")],
+            access: vec![
+                access("Read the workspace", "List and search issues, comments, projects, cycles, documents, teams and users", &["list_*", "get_*", "search_*"]),
+                access("Create issues and comments", "Open issues, add comments, create projects, labels and documents", &["create_*"]),
+                access("Update issues and projects", "Edit issues, projects and documents", &["update_*"]),
+            ],
+            oauth: None,
+            template: McpServerConfig::http("https://mcp.linear.app/mcp"),
         },
         CatalogApp {
             id: "memory".into(),
@@ -283,6 +392,33 @@ fn all_apps() -> Vec<CatalogApp> {
             template: npx("@playwright/mcp@latest"),
         },
         CatalogApp {
+            id: "sentry".into(),
+            name: "Sentry".into(),
+            tagline: "Errors, traces and releases".into(),
+            example_prompt: "Look at the top unresolved issue in production and find where in our code it comes from".into(),
+            description: "Search and read issues, events, stack traces, traces, logs, replays and releases across your Sentry organizations, triage issues, and manage projects, alert rules and monitors, with a user auth token. The AI-powered search tools also need an LLM provider key in the server's environment (OPENAI_API_KEY or ANTHROPIC_API_KEY).".into(),
+            icon: "exclamationmark.triangle".into(),
+            logo: Some("sentry".into()),
+            logo_monochrome: true,
+            category: "Monitoring".into(),
+            vendor: "Sentry".into(),
+            homepage: Some("https://github.com/getsentry/sentry-mcp".into()),
+            builtin: false,
+            default_installed: false,
+            requirements: node.clone(),
+            inputs: vec![
+                env_input("SENTRY_AUTH_TOKEN", "User auth token", "From sentry.io → Settings → Auth Tokens, with org:read, project:read, project:write, team:read, team:write and event:write."),
+                CatalogInput { key: "SENTRY_HOST".into(), label: "Host".into(), help: "Optional; a self-hosted Sentry's host name (sentry.example.com). Leave empty for sentry.io.".into(), secret: false, required: false, kind: "env".into(), prefix: None },
+            ],
+            access: vec![
+                access("Read issues and events", "Find organizations, projects, releases and monitors; read and search issues, events, stack traces, traces, logs, profiles and replays", &["find_*", "get_*", "search_*", "whoami"]),
+                access("Triage issues", "Resolve, assign and annotate issues, link them to external trackers, analyze them with Seer", &["update_issue", "add_issue_note", "link_issue", "unlink_issue", "analyze_issue_with_seer"]),
+                access("Manage projects and alerts", "Create and change projects, teams, DSNs, alert rules and monitors", &["create_*", "delete_*", "update_project", "update_dsn", "update_alert_rule", "update_metric_monitor", "update_uptime_monitor", "add_team_to_project", "remove_team_from_project"]),
+            ],
+            oauth: None,
+            template: npx("@sentry/mcp-server@latest"),
+        },
+        CatalogApp {
             id: "sequential-thinking".into(),
             name: "Sequential Thinking".into(),
             tagline: "Structured step-by-step reasoning".into(),
@@ -301,6 +437,31 @@ fn all_apps() -> Vec<CatalogApp> {
             access: vec![required("Think step by step", "Work through a problem as revisable steps")],
             oauth: None,
             template: npx("@modelcontextprotocol/server-sequential-thinking"),
+        },
+        CatalogApp {
+            id: "supabase".into(),
+            name: "Supabase".into(),
+            tagline: "Your Supabase projects and databases".into(),
+            example_prompt: "List the tables in the staging project and generate TypeScript types for them".into(),
+            description: "Supabase's hosted MCP server: inspect tables, migrations, logs and advisors, run SQL and migrations, deploy Edge Functions and manage projects and branches, with a personal access token. The token's scope is the whole account; keep the write groups off below for read-only use.".into(),
+            icon: "cylinder.split.1x2".into(),
+            logo: Some("supabase".into()),
+            logo_monochrome: true,
+            category: "Data".into(),
+            vendor: "Supabase".into(),
+            homepage: Some("https://supabase.com/docs/guides/getting-started/mcp".into()),
+            builtin: false,
+            default_installed: false,
+            requirements: Vec::new(),
+            inputs: vec![bearer_input("Personal access token", "From supabase.com/dashboard/account/tokens.")],
+            access: vec![
+                access("Read projects and databases", "List projects, tables, extensions, migrations, functions and keys; read logs, advisors, costs and docs; generate types", &["list_*", "get_*", "query_logs", "search_docs", "generate_typescript_types"]),
+                access("Change the database", "Run SQL and apply migrations", &["execute_sql", "apply_migration"]),
+                access("Deploy Edge Functions", "Deploy functions and set their secrets", &["deploy_edge_function", "create_edge_function_secret"]),
+                access("Manage projects and branches", "Create, pause and restore projects, confirm costs, work with branches and storage settings", &["create_project", "pause_project", "restore_project", "confirm_cost", "*_branch", "update_storage_config", "submit_feedback", "delete_feedback"]),
+            ],
+            oauth: None,
+            template: McpServerConfig::http("https://mcp.supabase.com/mcp"),
         },
     ]
 }
@@ -331,6 +492,34 @@ mod tests {
             app.server(&BTreeMap::new()).validate(&app.id).unwrap();
             assert_eq!(app.builtin, app.template.transport == ctx_core::McpTransport::Builtin);
         }
+    }
+
+    #[test]
+    fn logos_are_bundled_by_both_desktop_apps() {
+        // The catalog names brand marks the clients bundle as `logo-<name>`
+        // (an unknown name silently falls back to the symbol).
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        if !root.join("apps/macos").is_dir() || !root.join("apps/desktop/src").is_dir() {
+            return;
+        }
+        for app in all_apps() {
+            let Some(logo) = &app.logo else { continue };
+            let macos = root.join(format!("apps/macos/ContextAgent/Resources/Assets.xcassets/Logos/logo-{logo}.imageset/logo-{logo}.svg"));
+            let desktop = root.join(format!("apps/desktop/src/assets/logos/logo-{logo}.svg"));
+            assert!(macos.is_file(), "{}: {} is missing", app.id, macos.display());
+            assert!(desktop.is_file(), "{}: {} is missing", app.id, desktop.display());
+        }
+    }
+
+    #[test]
+    fn header_inputs_get_their_prefix_once() {
+        let linear = catalog_app("linear").unwrap();
+        let mut inputs = BTreeMap::new();
+        inputs.insert("Authorization".to_string(), "lin_api_abc".to_string());
+        assert_eq!(linear.server(&inputs).headers["Authorization"], "Bearer lin_api_abc");
+        inputs.insert("Authorization".to_string(), "Bearer lin_api_abc".to_string());
+        assert_eq!(linear.server(&inputs).headers["Authorization"], "Bearer lin_api_abc");
+        assert!(linear.server(&inputs).env.is_empty());
     }
 
     #[test]

@@ -689,7 +689,8 @@ tools join each run's tool set as `mcp__<server>__<tool>` (see docs/configuratio
   "description", "tools": ["<pattern>"], "required" }] (the connect page's "What Context can
   access"; unchecked groups' patterns are sent as `exclude_tools`), "requirements":
   ["Node.js (npx)"], "inputs": [{ "key", "label", "help", "secret", "required", "kind":
-  "env"|"header" }], "template": McpServerConfig }`. An app is installed when
+  "env"|"header", "prefix"? }], "template": McpServerConfig }` (`prefix`, such as `Bearer `, is put in
+  front of the entered value by `mcp/install` when it is not already there; clients send the value as typed). An app is installed when
   `mcp.servers` has its `id`.
 - `mcp/install` `{ "id", "inputs"?: { "<key>": "<value>" }, "exclude_tools"?: ["create_*"] }` → the `config/get` result:
   writes `mcp.servers.<id>` from the template with the inputs in `env` / `headers`

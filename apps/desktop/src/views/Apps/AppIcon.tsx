@@ -1,17 +1,29 @@
 import type { CSSProperties } from 'react'
 import type { McpCatalogApp } from '../../backend/types'
 import { Icon, Icons, type IconName } from '../../theme/icons'
+import braveLogo from '../../assets/logos/logo-brave.svg'
+import chromeLogo from '../../assets/logos/logo-chrome.svg'
+import figmaLogo from '../../assets/logos/logo-figma.svg'
 import githubLogo from '../../assets/logos/logo-github.svg'
+import linearLogo from '../../assets/logos/logo-linear.svg'
 import mcpLogo from '../../assets/logos/logo-mcp.svg'
 import playwrightLogo from '../../assets/logos/logo-playwright.svg'
+import sentryLogo from '../../assets/logos/logo-sentry.svg'
+import supabaseLogo from '../../assets/logos/logo-supabase.svg'
 import upstashLogo from '../../assets/logos/logo-upstash.svg'
 import styles from './AppIcon.module.css'
 
 /** The brand marks of `Resources/Assets.xcassets/Logos` (`logo-<name>`), by name. */
 const LOGOS: Readonly<Record<string, string>> = {
+  brave: braveLogo,
+  chrome: chromeLogo,
+  figma: figmaLogo,
   github: githubLogo,
+  linear: linearLogo,
   mcp: mcpLogo,
   playwright: playwrightLogo,
+  sentry: sentryLogo,
+  supabase: supabaseLogo,
   upstash: upstashLogo,
 }
 
@@ -19,12 +31,18 @@ const LOGOS: Readonly<Record<string, string>> = {
 /// so `appLogo` also answers for an app id when a caller only has that
 /// (the composer's `@` menu lists servers by name).
 const CATALOG_LOGOS: Readonly<Record<string, string>> = {
+  'brave-search': 'brave',
+  'chrome-devtools': 'chrome',
   context7: 'upstash',
   fetch: 'mcp',
+  figma: 'figma',
   github: 'github',
+  linear: 'linear',
   memory: 'mcp',
   playwright: 'playwright',
+  sentry: 'sentry',
   'sequential-thinking': 'mcp',
+  supabase: 'supabase',
 }
 
 /// The SF Symbols `mcp/catalog` names for its apps (`CatalogApp.icon`),
@@ -37,6 +55,12 @@ const SYMBOLS: Readonly<Record<string, IconName>> = {
   brain: 'thinking',
   theatermasks: 'theaterMasks',
   'list.number': 'listNumber',
+  magnifyingglass: 'search',
+  'wrench.and.screwdriver': 'tools',
+  'paintbrush.pointed': 'paintbrush',
+  checklist: 'checkboxOn',
+  'exclamationmark.triangle': 'warning',
+  'cylinder.split.1x2': 'database',
   'puzzlepiece.extension': 'mcp',
   'square.grid.2x2': 'apps',
 }

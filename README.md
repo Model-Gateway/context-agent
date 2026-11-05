@@ -126,7 +126,7 @@ The app is a native SwiftUI client for the same Rust runtime. It launches `ctx s
 - **Inspector** with the run's plan and status, the files it touched, an embedded terminal, live sub-agents, and a browser the agent can read pages through.
 - **Changes**: git status, diffs, staging, commits, branches and worktrees for parallel sessions.
 - **Editor** with Tree-sitter highlighting, symbol search, and completions, hover, definitions and diagnostics from language servers (rust-analyzer, pyright, typescript-language-server, gopls, clangd, …).
-- **Apps**: install Model Context Protocol servers from a catalog (GitHub, Context7, Computer Use and more) or add your own, with per-tool permissions.
+- **Apps**: install Model Context Protocol servers from a catalog (GitHub, Linear, Sentry, Supabase, Figma, Chrome DevTools, Computer Use and more) or add your own, with per-tool permissions.
 - **Settings**: model and endpoint, bring-your-own-key, permission profile, reasoning effort, spending limits and pricing.
 - **Remote hosts**: open projects that live on another machine over SSH, as with Claude Code or Codex; the app runs `ctx serve` there and everything — files, index, chats, terminal — is the host's ([docs/remote-hosts.md](docs/remote-hosts.md)).
 

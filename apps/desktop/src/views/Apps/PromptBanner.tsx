@@ -20,13 +20,19 @@ const SKY_IMAGES: Readonly<Record<Sky, string>> = {
 
 /** The skies chosen for the catalog's own apps. */
 const CHOSEN: Readonly<Record<string, Sky>> = {
+  'brave-search': 'ember',
+  'chrome-devtools': 'dusk',
   'computer-use': 'ember',
   context7: 'forest',
   fetch: 'pastel',
+  figma: 'pastel',
   github: 'dusk',
+  linear: 'dusk',
   memory: 'dusk',
   playwright: 'forest',
+  sentry: 'ember',
   'sequential-thinking': 'pastel',
+  supabase: 'forest',
 }
 
 /** The marketplace's three pills sit offset like a conversation. */

@@ -1134,6 +1134,8 @@ export interface McpCatalogInput {
   required: boolean
   /** `env` or `header`. */
   kind: string
+  /** Put in front of the entered value when missing (`Bearer `); the backend applies it. */
+  prefix?: string | null
 }
 
 /** `McpCatalogResponse` (`mcp/catalog`). */
