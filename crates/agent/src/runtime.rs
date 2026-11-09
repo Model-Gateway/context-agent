@@ -134,10 +134,6 @@ pub struct RunOptions {
     pub adaptive: bool,
     pub max_steps: Option<u32>,
     pub stream: bool,
-    /// Run the project's validation automatically when edits were never
-    /// validated (also gated by `agent.auto_validate`). Sub-agents leave
-    /// validation to the lead agent.
-    pub auto_validate: bool,
     /// Reconcile the index before the run; sub-agents skip it because the
     /// lead agent just did.
     pub reconcile_index: bool,
@@ -154,7 +150,7 @@ pub struct RunOptions {
 
 impl Default for RunOptions {
     fn default() -> Self {
-        Self { proactive_retrieval: true, compaction: true, memory_context: true, adaptive: true, max_steps: None, stream: true, auto_validate: true, reconcile_index: true, instructions: None, live_config: None, debug_prompt: false }
+        Self { proactive_retrieval: true, compaction: true, memory_context: true, adaptive: true, max_steps: None, stream: true, reconcile_index: true, instructions: None, live_config: None, debug_prompt: false }
     }
 }
 
@@ -276,8 +272,9 @@ struct RunState {
     model_calls: u32,
     tool_calls: u32,
     steps: u32,
-    modified_since_validation: bool,
-    validation_declined: bool,
+    /// Outcome of the last validation batch of this turn, if any; an edit
+    /// clears it, so it describes the files as they are now.
+    turn_validation: Option<bool>,
     consecutive_failures: u32,
     recent_calls: VecDeque<(String, bool)>,
     steps_without_progress: u32,
@@ -295,7 +292,6 @@ struct RunState {
     /// The user agreed to ModelGateway's less discounted providers; the
     /// rest of the run's requests go without the discount guard.
     discount_drop_accepted: bool,
-    recovery_exhausted: bool,
     started: Instant,
     metrics: MetricsCollector,
 }
@@ -755,11 +751,6 @@ impl AgentRuntime {
         }
         let metrics = MetricsCollector::new(self.ctx.stores.sessions.clone(), task_id.clone());
         let compacted_before = state.compacted_before;
-        let mut state = state;
-        // Each user turn gets a fresh recovery budget; the historical count
-        // stays in the event log.
-        state.recovery_cycles = 0;
-        let unvalidated = state.unvalidated_changes;
         let mut run = RunState {
             session: session.clone(),
             task_id: task_id.clone(),
@@ -778,8 +769,7 @@ impl AgentRuntime {
             model_calls: 0,
             tool_calls: 0,
             steps: 0,
-            modified_since_validation: unvalidated,
-            validation_declined: false,
+            turn_validation: None,
             consecutive_failures: 0,
             recent_calls: VecDeque::new(),
             steps_without_progress: 0,
@@ -788,7 +778,6 @@ impl AgentRuntime {
             stream_resumes: 0,
             model_failures: 0,
             discount_drop_accepted: false,
-            recovery_exhausted: false,
             started,
             metrics,
         };
@@ -853,15 +842,14 @@ impl AgentRuntime {
         Ok(outcome)
     }
 
+    /// Validation is never required: a turn completes when the model stops,
+    /// validated or not. It is blocked only when the model ran validation
+    /// on the current state of the files in this turn and it failed.
     fn final_status(&self, run: &RunState) -> TaskStatus {
-        if run.state.modified_files.is_empty() {
-            return TaskStatus::Completed;
+        if !run.state.modified_files.is_empty() && run.turn_validation == Some(false) {
+            return TaskStatus::Blocked;
         }
-        match run.state.last_validation_passed() {
-            Some(true) if !run.modified_since_validation => TaskStatus::Completed,
-            Some(false) => TaskStatus::Blocked,
-            _ => TaskStatus::Completed,
-        }
+        TaskStatus::Completed
     }
 
     async fn step(&self, run: &mut RunState, tool_ctx: &ToolContext, repository_summary: &str, explanation: &Arc<RwLock<Option<ctx_context::ContextExplanation>>>, working_set: &Arc<RwLock<Vec<String>>>) -> Result<StepOutcome> {
@@ -892,12 +880,6 @@ impl AgentRuntime {
                 let more = if idle.len() > LISTED { format!(" and {} more (read_agent lists them)", idle.len() - LISTED) } else { String::new() };
                 dynamic.push_str(&format!("Sub-agents that keep their conversation and take follow-ups through send_input: {}{more}. ", idle[..idle.len().min(LISTED)].join(", ")));
             }
-        }
-        if run.state.recovery_cycles > 0 {
-            dynamic.push_str(&format!("Recovery cycle {} of {}. ", run.state.recovery_cycles, config.agent.max_recovery_cycles));
-        }
-        if run.recovery_exhausted {
-            dynamic.push_str("The recovery budget is exhausted: do not make further edits; summarize the state, what failed, and what you verified. ");
         }
         if !run.state.modified_files.is_empty() {
             dynamic.push_str(&format!("Files modified so far: {}. ", run.state.modified_files.join(", ")));
@@ -1228,25 +1210,6 @@ impl AgentRuntime {
                 }
             }
             let text = result.text.clone().unwrap_or_default();
-            // Automatic validation when edits were never validated.
-            if run.state.modified_files.len() > 0 && run.modified_since_validation && config.agent.auto_validate && self.options.auto_validate && !tool_ctx.validation_commands.is_empty() && !run.validation_declined && !run.recovery_exhausted {
-                self.transition(run, ExecutionState::Validating).await;
-                let call = ToolCall { id: format!("auto_validate_{}", run.steps), name: "run_validation".into(), arguments: serde_json::json!({"kind": "test"}) };
-                self.append(run, AgentMessage::Assistant(AssistantMessage { text: None, tool_calls: vec![call.clone()], provider_metadata: None })).await;
-                let exec = self.execute_tool(run, tool_ctx, &call, working_set).await;
-                let failed = exec.output.is_error || exec.output.effects.iter().any(|e| matches!(e, ToolEffect::Validation { record } if !record.passed));
-                if !exec.executed {
-                    run.validation_declined = true;
-                    run.state.note_unresolved("validation was not run (declined or unavailable); changes are unverified");
-                    self.persist_state(run);
-                    return Ok(StepOutcome::Finished(text));
-                }
-                if failed {
-                    return Ok(self.begin_recovery(run, "The automatic validation run after your changes did not pass (see the run_validation result above)").await);
-                }
-                self.persist_state(run);
-                return Ok(StepOutcome::Finished(text));
-            }
             if run.state.modified_files.is_empty() {
                 self.transition(run, ExecutionState::Completed).await;
             }
@@ -1255,7 +1218,6 @@ impl AgentRuntime {
 
         // ----- execute tool calls in order ------------------------------------
         let mut any_progress = false;
-        let mut validation_failed = false;
         let mut nudge = false;
         let mut early_exit: Option<StepOutcome> = None;
         // Images tools returned; they follow the whole batch of tool results
@@ -1291,9 +1253,6 @@ impl AgentRuntime {
             if exec.output.effects.iter().any(|e| matches!(e, ToolEffect::FileCreated { .. } | ToolEffect::FileModified { .. })) {
                 any_progress = true;
             }
-            if exec.output.effects.iter().any(|e| matches!(e, ToolEffect::Validation { record } if !record.passed)) {
-                validation_failed = true;
-            }
             if repeated >= 2 && is_error {
                 nudge = true;
             }
@@ -1318,40 +1277,8 @@ impl AgentRuntime {
                 return Ok(StepOutcome::Blocked(format!("no progress in the last {} steps", run.steps_without_progress)));
             }
         }
-        if validation_failed {
-            return Ok(self.begin_recovery(run, "Validation did not pass").await);
-        }
         self.persist_state(run);
         Ok(StepOutcome::Continue)
-    }
-
-    /// Bounded recovery (spec §10.6): count the cycle, re-retrieve with the
-    /// failure as the query when adaptive, and let the model continue; when
-    /// the budget is exhausted, ask for a summary instead of more edits.
-    async fn begin_recovery(&self, run: &mut RunState, reason: &str) -> StepOutcome {
-        run.state.recovery_cycles += 1;
-        run.metrics.set("agent.recovery_cycles", run.state.recovery_cycles as f64);
-        let max = self.ctx.config.agent.max_recovery_cycles;
-        self.transition(run, ExecutionState::Recovering).await;
-        if run.state.recovery_cycles > max {
-            run.recovery_exhausted = true;
-            run.state.note_unresolved(format!("validation still failing after {max} recovery cycles"));
-            self.append(run, AgentMessage::user(format!("[Context runtime] {reason}. The recovery budget ({max} cycles) is exhausted. Do not make further edits. Report what you changed, what the failing validation shows, whether the failure predates your change, and what remains."))).await;
-        } else {
-            let last = run.state.validation.last().cloned();
-            if self.options.adaptive {
-                if let Some(v) = &last {
-                    let query = format!("{} {}", run.state.objective, v.summary);
-                    if let Some(r) = self.retrieve(run, &query, RetrievalStage::Recovery).await {
-                        run.retrieval = Some(r);
-                    }
-                }
-            }
-            self.append(run, AgentMessage::user(format!("[Context runtime] {reason}. Recovery cycle {} of {max}: inspect the failure output, determine whether it predates your change (git_diff, git_status), retrieve any additional context you need, fix the cause, and re-run validation.", run.state.recovery_cycles))).await;
-        }
-        self.transition(run, ExecutionState::Investigating).await;
-        self.persist_state(run);
-        StepOutcome::Continue
     }
 
     async fn execute_tool(&self, run: &mut RunState, tool_ctx: &ToolContext, call: &ToolCall, working_set: &Arc<RwLock<Vec<String>>>) -> ctx_tools::ToolExecution {
@@ -1380,7 +1307,7 @@ impl AgentRuntime {
                 ToolEffect::FileCreated { path } | ToolEffect::FileModified { path } => {
                     let kind = if matches!(effect, ToolEffect::FileCreated { .. }) { FileChangeKind::Created } else { FileChangeKind::Modified };
                     run.state.note_file_modified(path.clone());
-                    run.modified_since_validation = true;
+                    run.turn_validation = None;
                     run.state.unvalidated_changes = true;
                     if run.machine != ExecutionState::Implementing {
                         self.transition(run, ExecutionState::Implementing).await;
@@ -1392,7 +1319,7 @@ impl AgentRuntime {
                 }
                 ToolEffect::FileDeleted { path } => {
                     run.state.note_file_modified(path.clone());
-                    run.modified_since_validation = true;
+                    run.turn_validation = None;
                     run.state.unvalidated_changes = true;
                     self.emit(&run.session, AgentEvent::FileChanged { task_id: run.task_id.clone(), path: path.clone(), kind: FileChangeKind::Deleted }).await;
                 }
@@ -1405,10 +1332,9 @@ impl AgentRuntime {
                     }
                     run.state.note_validation(record.clone());
                     run.state.last_validation_batch_passed = batch_passed;
+                    run.turn_validation = batch_passed;
                     if batch_passed == Some(true) {
-                        run.modified_since_validation = false;
                         run.state.unvalidated_changes = false;
-                        run.state.unresolved.retain(|u| !u.starts_with("validation still failing") && !u.starts_with("validation was not run"));
                     }
                     if record.passed {
                         let _ = self.ctx.memory.remember(

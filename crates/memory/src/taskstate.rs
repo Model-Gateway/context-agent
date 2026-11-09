@@ -53,9 +53,6 @@ pub struct TaskState {
     /// Number of checkpoints taken.
     #[serde(default)]
     pub checkpoints: u32,
-    /// Recovery cycles consumed.
-    #[serde(default)]
-    pub recovery_cycles: u32,
     /// Conversation sequence id before which history was compacted.
     #[serde(default)]
     pub compacted_before: i64,
@@ -87,7 +84,6 @@ impl TaskState {
             remaining_work: Vec::new(),
             keywords,
             checkpoints: 0,
-            recovery_cycles: 0,
             compacted_before: 0,
             unvalidated_changes: false,
             last_validation_batch_passed: None,

@@ -165,11 +165,11 @@ fn headless_run_against_fake_openai_server() {
     let (base_url, server) = fake_server(vec![
         serde_json::json!({"tool": {"name": "read_file", "arguments": {"path": "svc/pricing.py"}}}),
         serde_json::json!({"tool": {"name": "apply_patch", "arguments": {"path": "svc/pricing.py", "edits": [{"old_text": "return round(price - pct, 2)", "new_text": "return round(price * (100 - pct) / 100, 2)"}]}}}),
-        serde_json::json!({"text": "Fixed the percentage discount. Validation: see the automatic test run."}),
+        serde_json::json!({"text": "Fixed the percentage discount."}),
     ]);
     std::fs::write(
         repo.path().join(".context-agent.toml"),
-        format!("[validation]\ncommands = [\"{} -m unittest discover -s tests -v\"]\n[agent]\nauto_validate = true\n[permissions]\nprofile = \"workspace_autonomous\"\n", ctx_core::platform::python_interpreter()),
+        format!("[validation]\ncommands = [\"{} -m unittest discover -s tests -v\"]\n[permissions]\nprofile = \"workspace_autonomous\"\n", ctx_core::platform::python_interpreter()),
     )
     .unwrap();
     let out = ctx(data.path(), repo.path())
@@ -186,7 +186,7 @@ fn headless_run_against_fake_openai_server() {
     let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("{e}: {stdout}"));
     assert_eq!(json["outcome"]["status"], "completed", "{json:#}");
     assert_eq!(json["outcome"]["modified_files"][0], "svc/pricing.py", "{json:#}\nstderr:\n{stderr}");
-    assert_eq!(json["outcome"]["validation"][0]["passed"], true, "automatic validation ran: {json:#}");
+    assert!(json["outcome"]["validation"].as_array().is_some_and(|v| v.is_empty()), "no automatic validation: {json:#}");
     assert_eq!(json["outcome"]["usage"]["source"], "reported");
     assert_eq!(json["outcome"]["usage"]["cached_prompt_tokens"], 64 * 3);
     assert!(stderr.contains("\"event\":\"tool_call_finished\""), "{stderr}");

@@ -585,10 +585,8 @@ pub struct AgentConfig {
     /// Step budget of a task; 0 means no limit (the stall and tool-failure
     /// guards still stop a run that is going nowhere).
     pub max_steps: u32,
-    pub max_recovery_cycles: u32,
     pub max_consecutive_tool_failures: u32,
     pub command_timeout_secs: u64,
-    pub auto_validate: bool,
     /// Steps without new information or edits before the agent is considered
     /// stuck.
     pub stall_threshold: u32,
@@ -608,10 +606,8 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             max_steps: 0,
-            max_recovery_cycles: 3,
             max_consecutive_tool_failures: 5,
             command_timeout_secs: 600,
-            auto_validate: false,
             stall_threshold: 8,
             max_parallel_agents: 4,
             max_agents_per_call: 6,

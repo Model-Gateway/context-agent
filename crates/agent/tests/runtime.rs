@@ -27,8 +27,6 @@ fn config(root: &std::path::Path, data: &std::path::Path) -> Config {
     cfg.embeddings.backend = EmbeddingBackend::Hashing;
     cfg.embeddings.dimension = 64;
     cfg.agent.command_timeout_secs = 60;
-    // Opt-in; these tests cover the automatic run.
-    cfg.agent.auto_validate = true;
     cfg.validation.commands = vec![format!("{} -m unittest discover -s tests -v", ctx_core::platform::python_interpreter())];
     let _ = root;
     cfg
@@ -51,11 +49,11 @@ fn runtime(ctx: Arc<RepositoryContext>, provider: Arc<dyn ModelProvider>) -> (Ag
 }
 
 #[tokio::test]
-async fn fixes_bug_with_validation_and_recovery() {
+async fn fixes_bug_after_failing_validation() {
     let dir = repo();
     let data = tempfile::tempdir().unwrap();
     let ctx = RepositoryContext::open_ephemeral(dir.path(), config(dir.path(), data.path())).unwrap();
-    // Scripted model: a wrong fix first (validation fails → recovery), then
+    // Scripted model: a wrong fix first (validation fails), then
     // the right one, then a final report.
     let provider = Arc::new(MockProvider::new(vec![
         MockTurn::ToolCalls(vec![("read_file".into(), json!({"path": "svc/pricing.py"}))]),
@@ -82,10 +80,9 @@ async fn fixes_bug_with_validation_and_recovery() {
     assert!(ctx_msg.sections.iter().any(|s| s.title.contains("svc/pricing.py")), "{:?}", ctx_msg.sections.iter().map(|s| s.title.clone()).collect::<Vec<_>>());
     assert!(first.messages[0].is_trusted_instruction());
 
-    // Events: recovery happened and files changed.
+    // Events: files changed and the task completed.
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let events = events.lock().clone();
-    assert!(events.iter().any(|e| matches!(e, AgentEvent::StateChanged { to: ctx_core::ExecutionState::Recovering, .. })));
     assert!(events.iter().any(|e| matches!(e, AgentEvent::FileChanged { .. })));
     assert!(events.iter().any(|e| matches!(e, AgentEvent::TaskCompleted { .. })));
     // Episodic memory recorded and the task persisted with status.
@@ -98,7 +95,7 @@ async fn fixes_bug_with_validation_and_recovery() {
 }
 
 #[tokio::test]
-async fn auto_validation_runs_when_model_forgets_and_follow_up_continues_task() {
+async fn follow_up_continues_task_without_automatic_validation() {
     let dir = repo();
     let data = tempfile::tempdir().unwrap();
     let ctx = RepositoryContext::open_ephemeral(dir.path(), config(dir.path(), data.path())).unwrap();
@@ -113,14 +110,13 @@ async fn auto_validation_runs_when_model_forgets_and_follow_up_continues_task() 
     let session = rt.sessions().start("test", "mock").unwrap();
     let outcome = rt.run(&session, "Fix the discount bug in svc/pricing.py").await.unwrap();
     assert_eq!(outcome.status, TaskStatus::Completed, "{outcome:#?}");
-    assert_eq!(outcome.validation.len(), 1, "runtime ran validation automatically");
-    assert!(outcome.validation[0].passed);
+    assert!(outcome.validation.is_empty(), "nothing runs unless the model asks: {outcome:#?}");
     let first_task = outcome.task_id.clone();
     let session = ctx.stores.sessions.get_session(&session.id).unwrap().unwrap();
     let outcome2 = rt.run(&session, "Make it return a float").await.unwrap();
     assert_eq!(outcome2.task_id, first_task, "refinement stays on the same task");
     assert_eq!(outcome2.status, TaskStatus::Completed, "{outcome2:#?}");
-    assert_eq!(outcome2.validation.len(), 2);
+    assert!(outcome2.validation.is_empty());
     // Unrelated follow-up starts a new task.
     let provider2 = Arc::new(MockProvider::new(vec![MockTurn::Text("The README describes pricing helpers.".into())]));
     let (rt2, _events2) = runtime(ctx.clone(), provider2);
@@ -132,11 +128,10 @@ async fn auto_validation_runs_when_model_forgets_and_follow_up_continues_task() 
 }
 
 #[tokio::test]
-async fn blocked_after_recovery_budget_and_explore_tools_cannot_edit() {
+async fn blocked_after_failing_validation_and_explore_tools_cannot_edit() {
     let dir = repo();
     let data = tempfile::tempdir().unwrap();
-    let mut cfg = config(dir.path(), data.path());
-    cfg.agent.max_recovery_cycles = 1;
+    let cfg = config(dir.path(), data.path());
     let ctx = RepositoryContext::open_ephemeral(dir.path(), cfg).unwrap();
     // Always makes a wrong edit, validates, and eventually reports.
     let provider = Arc::new(MockProvider::new(vec![
@@ -149,7 +144,6 @@ async fn blocked_after_recovery_budget_and_explore_tools_cannot_edit() {
     let session = rt.sessions().start("test", "mock").unwrap();
     let outcome = rt.run(&session, "Fix pricing").await.unwrap();
     assert_eq!(outcome.status, TaskStatus::Blocked, "{outcome:#?}");
-    assert!(outcome.unresolved.iter().any(|u| u.contains("recovery") || u.contains("validation")));
 
     let cfg = config(dir.path(), data.path());
     let ctx = RepositoryContext::open_ephemeral(dir.path(), cfg).unwrap();
@@ -176,7 +170,6 @@ async fn mixed_validation_batch_is_not_a_pass_and_unvalidated_edits_persist() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = config(dir.path(), data.path());
     cfg.validation.commands = vec![format!("{} -m unittest discover -s tests -v", ctx_core::platform::python_interpreter()), "sh -c 'exit 0'".into()];
-    cfg.agent.max_recovery_cycles = 1;
     let ctx = RepositoryContext::open_ephemeral(dir.path(), cfg).unwrap();
     // Wrong edit, validate (unittest fails, sh passes), then stop with text:
     // the task must not be reported as completed.
@@ -189,8 +182,9 @@ async fn mixed_validation_batch_is_not_a_pass_and_unvalidated_edits_persist() {
     let outcome = rt.run(&session, "Fix pricing").await.unwrap();
     assert_eq!(outcome.status, TaskStatus::Blocked, "{outcome:#?}");
 
-    // A later turn that edits after a pass and stops without validating must
-    // re-validate automatically, even though it is a new runtime instance.
+    // A later turn that edits and stops without validating is not held to
+    // the earlier failure: nothing runs automatically and the turn
+    // completes, with the edits unverified.
     let provider = Arc::new(MockProvider::new(vec![
         MockTurn::ToolCalls(vec![("apply_patch".into(), json!({"path": "svc/pricing.py", "edits": [{"old_text": "return price - pct - 1", "new_text": "return price * (100 - pct) / 100"}]}))]),
         MockTurn::Text("Fixed.".into()),
@@ -199,7 +193,7 @@ async fn mixed_validation_batch_is_not_a_pass_and_unvalidated_edits_persist() {
     let session = ctx.stores.sessions.get_session(&session.id).unwrap().unwrap();
     let outcome = rt.run(&session, "try again, the tests still fail").await.unwrap();
     assert_eq!(outcome.status, TaskStatus::Completed, "{outcome:#?}");
-    assert!(outcome.validation.iter().rev().take(2).all(|v| v.passed));
+    assert_eq!(outcome.validation.len(), 2, "no validation ran in the second turn: {:?}", outcome.validation);
     assert!(outcome.unresolved.is_empty(), "{:?}", outcome.unresolved);
 }
 
@@ -860,7 +854,6 @@ async fn compacting_on_request_drops_old_turns_and_the_next_run_continues_from_t
     let dir = repo();
     let data = tempfile::tempdir().unwrap();
     let mut cfg = config(dir.path(), data.path());
-    cfg.agent.auto_validate = false;
     cfg.context.keep_recent_turns = 1;
     let ctx = RepositoryContext::open_ephemeral(dir.path(), cfg).unwrap();
     let provider = Arc::new(MockProvider::new(vec![

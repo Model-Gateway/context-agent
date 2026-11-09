@@ -181,7 +181,7 @@ Everything else (retries and fallbacks, token budgets per task category, web sea
 2. The index is reconciled with the working tree. Retrieval runs path, lexical, symbol, semantic and memory strategies in parallel, fuses them with reciprocal-rank fusion, expands along imports, tests and styles, re-verifies every snippet, and selects within the task category's token budget.
 3. The context compiler assembles stable policy and tool schemas, the repository summary and task instructions, the untrusted repository and memory payload inside explicit data delimiters, the retained conversation, and the request.
 4. The model acts through tools (`read_file`, `search_code`, `find_symbol`, `find_references`, `apply_patch`, `execute_command`, `run_validation`, `git_diff`, `web_search`, MCP tools, …). Each call is schema-checked and permission-gated; each effect is recorded.
-5. If edits were never validated, the runtime runs the project's validation itself. Failures start bounded recovery cycles with fresh retrieval. The final report never claims a passing test that no tool observed.
+5. Validation is the model's call: `run_validation` runs the project's detected test, build, typecheck and lint commands when the model asks, and nothing runs it for the model. The final report never claims a passing test that no tool observed.
 6. Task state, checkpoints, the event log and episodic memory are persisted so later messages and later sessions build on the work instead of replaying it.
 
 ## Architecture

@@ -240,7 +240,7 @@ pub fn task(cli: &Cli, cmd: &TaskCmd) -> Result<i32> {
             }
             let metrics = MetricsCollector::summarize(&ctx.stores.sessions, &t.id, None)?;
             let totals = ctx.stores.sessions.usage_totals(Some(&t.id), None)?;
-            println!("model calls {} · tool calls {} · prompt tokens {} · completion {} · cached {} · usage source {} · latency {} ms · recovery cycles {} · duration {} ms", metrics.model_invocations, metrics.tool_invocations, totals.prompt_tokens, totals.completion_tokens, totals.cached_tokens, if totals.estimated_requests > 0 && totals.reported_requests == 0 { "estimated" } else if totals.estimated_requests > 0 { "mixed" } else { "reported" }, totals.total_latency_ms, metrics.recovery_cycles, metrics.duration_ms);
+            println!("model calls {} · tool calls {} · prompt tokens {} · completion {} · cached {} · usage source {} · latency {} ms · duration {} ms", metrics.model_invocations, metrics.tool_invocations, totals.prompt_tokens, totals.completion_tokens, totals.cached_tokens, if totals.estimated_requests > 0 && totals.reported_requests == 0 { "estimated" } else if totals.estimated_requests > 0 { "mixed" } else { "reported" }, totals.total_latency_ms, metrics.duration_ms);
             if let Some(cost) = totals.cost() {
                 println!("cost ${cost:.4}");
             }

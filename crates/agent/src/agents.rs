@@ -500,7 +500,6 @@ async fn run_turn(host: &Arc<AgentHost>, agent: &Arc<Agent>, message: &str, canc
     let (tx, rx) = mpsc::channel::<AgentEvent>(256);
     let options = RunOptions {
         max_steps: Some(host.max_steps),
-        auto_validate: false,
         reconcile_index: false,
         // The prompt view shows the lead agent's prompt only.
         debug_prompt: false,

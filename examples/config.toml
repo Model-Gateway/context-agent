@@ -32,7 +32,6 @@ keep_recent_turns = 6
 
 [agent]
 max_steps = 80
-max_recovery_cycles = 3
 command_timeout_secs = 600
 
 [pricing]
